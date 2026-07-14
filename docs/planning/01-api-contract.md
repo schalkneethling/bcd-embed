@@ -83,7 +83,7 @@ GET /v1/{snapshot}/index/{namespace}.json
 
 The enumerable list of every valid key. Without this, a consumer cannot distinguish "no data for this feature" from "the key is misspelled," and cannot build autocomplete or client-side validation. MDN's undocumented endpoint has no equivalent.
 
-The full index is large (roughly 15,000 entries) and is also published sharded by top-level BCD namespace — `css`, `api`, `html`, `javascript`, `http`, `svg`, `mathml`, `webassembly`, `webdriver`, `webextensions` — so a consumer can load only what it needs.
+The full index is large (roughly 15,000 entries) and is also published sharded by top-level BCD namespace (`css`, `api`, `html`, and so on) so a consumer can load only what it needs. The shard list is derived from the data at generation time, never hardcoded — BCD's top-level namespaces have changed before and may change again — and each generation's list is enumerated in `meta.json` (§4.4).
 
 ### 4.4 Metadata
 
@@ -91,7 +91,7 @@ The full index is large (roughly 15,000 entries) and is also published sharded b
 GET /v1/meta.json
 ```
 
-Contract version, available snapshots, the current alias target, and generation timestamp. Used by a consumer to identify what it is talking to and by a cache to decide whether to revalidate.
+Contract version, available snapshots, the current alias target, generation timestamp, and the list of top-level namespace shards in the current generation (§4.3). Used by a consumer to identify what it is talking to and by a cache to decide whether to revalidate.
 
 ### 4.5 Raw feature data
 
@@ -139,6 +139,8 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
         "standardTrack": true,
         "deprecated": false
       },
+      "tags": ["web-features:display"], // BCD's tags, passed through verbatim; [] when BCD has none
+
       "support": {
         "chrome": {
           "summary": {
@@ -193,25 +195,29 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 
 **`support` is keyed by support target identifier; a given target may be absent.** Absence means BCD has no entry at all for that browser or runtime, which is distinct from a present entry with `state: "unknown"` (BCD explicitly records unknown support). Consumers must handle both.
 
-**`branches` holds the pre-grouped parallel-implementation structure.** At most one branch is marked `canonical` (no prefix, no alternative name) and it sorts first when present. Remaining branches sort deterministically by `(alternativeName, prefix)`, independent of BCD's internal ordering. Within a branch, `statements` are ordered most-recent-first.
+**`branches` holds the pre-grouped parallel-implementation structure.** At most one branch is marked `canonical` (no prefix, no alternative name) and it sorts first when present. Remaining branches sort deterministically by `(alternativeName, prefix)`, independent of BCD's internal ordering. Within a branch, `statements` are ordered most-recent-first, with "recent" defined precisely rather than left to intuition: a statement whose `versionAdded` resolves to a release sorts by that release's position in the support target's release order (release order, not string or numeric version comparison), newest first; a statement with `isPreview: true` sorts before all released statements; a statement whose recency cannot be resolved (`versionAdded` of `null` or `false`) sorts last. Ties preserve BCD source order.
 
 **`versionAddedIsApproximate`** captures BCD's `≤` notation as a boolean rather than embedding a sigil in a version string. MDN displays these as exact versions; the contract preserves the distinction and leaves the choice to the consumer.
 
 **`flags` is always an array**, empty rather than absent, so a consumer testing "behind a flag" does not have to distinguish `undefined` from `[]`.
 
+**`tags` passes through BCD's `tags` verbatim**, always an array, empty rather than absent. BCD requires every tag to be namespaced, and the only namespace it currently defines is `web-features:*`, which maps a BCD key to its `web-features` feature group. The contract does not interpret these values — no Baseline status is computed or implied, consistent with §3 — it simply declines to discard a mapping BCD itself publishes. If a bridge to `web-features` vocabulary is ever wanted, it already exists in the data, on BCD's own terms.
+
 ---
 
 ## 6. The `state` enum
 
-`summary.state` takes one of five values, determined as follows:
+`summary.state` takes one of five values. The conditions below can overlap on a single statement — removed *and* partial, partial *and* preview-only — so they are evaluated in the order listed, top to bottom, first match wins:
 
 | `state` | Condition |
 | --- | --- |
-| `unknown` | BCD records `version_added: null`. |
 | `unsupported` | `version_added` is `false`, or a `version_removed` is present. |
+| `unknown` | BCD records `version_added: null`. |
 | `preview` | Support was added in a release with status `beta`, `nightly`, or `planned`, or in the literal `preview` version. |
 | `partial` | The selected statement carries `partial_implementation`. |
-| `supported` | `version_added` is a real version value, with no `version_removed`, no `partial_implementation`, and not added in a preview-status release — unconditionally supported in this specific support target. |
+| `supported` | `version_added` is a real version value — none of the conditions above applied, so the feature is unconditionally supported in this specific support target. |
+
+The evaluation order resolves every overlap deterministically: a statement that is both removed and partial is `unsupported`, because the removal is the operative fact today; a partial implementation available only in a preview release is `preview`, because absence from any stable release dominates the partiality. Every plausible pairing has a dedicated fixture (Document 2 §8).
 
 **`state` is orthogonal to the modifiers.** `behindFlag`, `prefix`, and `alternativeName` are separate fields and do not collapse `state` to `unsupported`. MDN's table renders a flag-gated feature as unsupported; that is a rendering decision, and encoding it into the data would prevent a consumer from taking the opposite position. A consumer wanting MDN's behavior computes `state === "supported" && !behindFlag`; a consumer building a "what works behind a flag today" view has the data it needs either way.
 
@@ -234,7 +240,7 @@ Two independent axes.
 
 **Contract version** (`v1` in the path) describes the shape of the JSON. It changes only on a breaking change to the response format. Additive fields ship within `v1`; the `contract` field in the body carries a full semantic version so a consumer can detect additions.
 
-**Snapshot** identifies the BCD release the data was generated from. `current` is a moving alias to the most recent generation and is the component's default. Every generation is also published under an immutable, content-addressed path, so a consumer needing short-to-medium-term build stability can pin to it. Retention is bounded, not indefinite (Document 2 §3, default 90 days): pinning is for keeping a build or a staged rollout stable across a release cycle, not for indefinite historical reference. A pinned snapshot older than the retention window returns `snapshot_not_found` (§8); this project does not serve as a historical archive of past BCD data (Document 0 §3).
+**Snapshot** identifies one generation of the data. `current` is a moving alias to the most recent generation and is the component's default. Every generation is also published under an immutable path whose identifier encodes both inputs that determine the output — the BCD version and the generator version, e.g. `bcd-7.1.3-gen-1.2.0` — so a consumer needing short-to-medium-term build stability can pin to it. The BCD version alone would not be a sufficient identifier: a fix to the transformation logic regenerates from the same BCD release, and must land as a new immutable snapshot rather than silently replacing an existing one (Document 2 §3). Retention is bounded, not indefinite (Document 2 §3, default 90 days): pinning is for keeping a build or a staged rollout stable across a release cycle, not for indefinite historical reference. A pinned snapshot older than the retention window returns `snapshot_not_found` (§8); this project does not serve as a historical archive of past BCD data (Document 0 §3).
 
 **Relationship between the two:** each contract version is pinned to a BCD major version. A breaking schema change in BCD itself is unlikely at this point — BCD has enough downstream consumers that such a change would be disruptive well beyond this project — but the policy exists as a safeguard regardless: if it happens, `v1` continues to be generated from the last compatible BCD major (frozen, and marked as such in `meta.json`), and `v2` is introduced for the new BCD major. `v1` is never silently reshaped. Deprecation of a contract version is announced in `meta.json` with a sunset date in advance.
 
@@ -251,8 +257,7 @@ Errors are JSON, never HTML, and carry a machine-readable `code`.
   "error": {
     "code": "feature_not_found",
     "message": "No compatibility data for key 'css.properties.dispaly'.",
-    "query": "css.properties.dispaly",
-    "didYouMean": ["css.properties.display"]
+    "query": "css.properties.dispaly"
   }
 }
 ```
@@ -266,7 +271,7 @@ Errors are JSON, never HTML, and carry a machine-readable `code`.
 | 429 | `rate_limited` | Bandwidth protection. Carries `Retry-After`. |
 | 503 | `generation_in_progress` | Only possible in a self-hosted dynamic deployment. |
 
-`didYouMean` is optional, generated from the index by edit distance. A typo in a BCD key is the most likely consumer error.
+A typo in a BCD key is the most likely consumer error. A `didYouMean` suggestion field was considered and deferred out of v1: edit-distance suggestions require request-time computation over the index, which this architecture otherwise never performs (Document 2 §1), and the index (§4.3) already serves the same need at authoring time. It remains a candidate additive field (§11).
 
 `invalid_key` (400) and `feature_not_found` (404) are distinct: the former means the request is malformed and the consumer should fix its code; the latter means the key is plausible but BCD has no data, and the consumer's appropriate response is a "report missing data" affordance rather than a bare error.
 
@@ -276,9 +281,13 @@ Errors are JSON, never HTML, and carry a machine-readable `code`.
 
 ## 9. Caching and transport
 
-`current` responses use a moderate `max-age` with a longer `stale-while-revalidate`. Pinned snapshots are immutable, served with `max-age=31536000, immutable`.
+`current` responses are served with `cache-control: max-age=86400, stale-while-revalidate=604800`: cache for a day, then serve stale for up to a week while revalidating in the background. The one-day `max-age` is what bounds staleness — the seven-day `stale-while-revalidate` window does not meaningfully extend it, because a stale hit triggers immediate background revalidation; it exists so an embedded table renders instantly from cache instead of blocking on the network. BCD publishes a few times a week, so the end-to-end freshness guarantee composes as: BCD release → pipeline run (hours, Document 2 §5) → at most one further day of client and CDN cache. Repointing the `current` alias does not purge already-cached responses — purge-by-prefix is not assumed to be available (Document 2 §4) — so `max-age` is the invalidation mechanism, and one day keeps it comfortably inside BCD's own publish cadence.
 
-Every response carries a strong `ETag` and supports conditional requests.
+Pinned snapshots are immutable, served with `max-age=31536000, immutable`. One consequence: a snapshot pruned from storage (§7, Document 2 §3) can keep being served from intermediary caches until their copies expire, so retirement is eventual rather than immediate; `snapshot_not_found` is guaranteed only once caches drain.
+
+Error responses are cacheable: `invalid_key`, `feature_not_found`, and `namespace_not_queryable` carry `max-age=3600`, so a page embedding a typo'd key does not invoke the Worker on every load. `rate_limited` responses are `no-store` and carry `Retry-After`.
+
+Every response carries a strong `ETag` and supports conditional requests. Because `ETag` and `Retry-After` are not on the CORS-safelisted response-header list, every response also carries `access-control-expose-headers: etag, retry-after`; without it a cross-origin consumer could read neither header.
 
 All responses are compressed, Brotli where the client supports it (falling back to gzip otherwise). Compatibility JSON is highly repetitive — a small vocabulary of field names and values (`versionAdded`, `partialImplementation`, browser identifiers) repeated across many entries — and compresses well under Brotli specifically; this affects the component's performance budget directly.
 
@@ -292,6 +301,16 @@ What remains is bandwidth, handled at the edge: per-IP rate limiting, standard C
 
 A published fair-use expectation and an easy self-hosting path (Document 2 §7) are the primary mitigation against sustained abuse: standing up an independent copy is intentionally a low-effort exercise.
 
+### Fair use
+
+The expectation itself, published with the contract rather than drafted after the first incident:
+
+- The hosted API is free to use without registration or a key, for embedding the component or comparable per-page feature lookups, on any site, commercial or otherwise.
+- It is not a bulk-data channel. Mirroring the key space or sustained programmatic harvesting should use the `@mdn/browser-compat-data` npm package — the actual source, built for exactly that — or a self-hosted copy (Document 2 §7).
+- Consumers with sustained high traffic (as a guideline, more than roughly a million requests a month) are asked to self-host. The generator makes that a one-command exercise by design; this is a request to use the cheap path, not a licensing restriction — the data is CC0 either way.
+- Rate limits exist for bandwidth protection and are sized to never trouble legitimate embedding (Document 2 §6). Traffic indistinguishable from abuse may be throttled or blocked without notice.
+- No SLA. Availability is best-effort. A consumer needing hard guarantees should self-host or pin a snapshot behind their own cache; the hosted endpoint is a convenience, never a dependency (Document 0 §5).
+
 ---
 
 ## 11. Open questions
@@ -301,5 +320,7 @@ A published fair-use expectation and an easy self-hosting path (Document 2 §7) 
 **Index metadata.** A bare key list is small. A key list with titles and status flags is more useful for autocomplete but larger. Namespace sharding may make the size difference immaterial.
 
 **Batch endpoint.** A page documenting five features currently makes five requests. HTTP/2 and static files both make this cheap; a batch route would complicate the static-file model for marginal benefit. Recommendation: no batch endpoint in `v1`.
+
+**`didYouMean` suggestions.** Deferred out of v1 (§8). Revisit only with a design that keeps the computation off the hot path — bounded, once-per-unique-miss work behind a cached 404 would qualify; anything per-request does not.
 
 **Naming.** Settled — `bcd-embed`.

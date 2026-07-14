@@ -15,7 +15,9 @@ Three constraints follow and shape every decision below.
 
 **Accessible by design, not by remediation.** The multi-dimensional nature of the data (§5) makes this the section with the most engineering risk and the most room for improvement over existing implementations of this kind of table.
 
-**Cheap.** A single documentation page may embed several tables. The component must not require a framework runtime or block on a network round trip to render.
+**Cheap.** A single documentation page may embed several tables. The component must not require a framework runtime or block on a network round trip to render. Concrete budget in §6.
+
+One further decision belongs here because everything downstream assumes it. **Browser support floor: Baseline 2025.** A compatibility tool that never declares its own compatibility would be an ironic omission, so it is declared: the component targets browsers with Baseline 2025 support or newer — the audience is overwhelmingly developers on current browsers — which comfortably covers the platform features this design leans on (container queries, `@property`, `light-dark()`; all Baseline 2023–2024). Anything newer than the floor is progressive enhancement over a cross-browser default (§5 tracks one such candidate). The floor is documented and versioned with the component; raising it is a deliberate, announced decision, not drift.
 
 ---
 
@@ -30,6 +32,8 @@ Lit is used. Cost/benefit:
 A hand-rolled element is feasible given the low dynamism, but correct attribute reflection, batched updates, and lifecycle handling are non-trivial to implement reliably, and the resulting custom implementation would need the same testing investment as Lit already has. Lit is the more efficient choice.
 
 **Constraint:** Lit is an implementation detail, not part of the public contract. No Lit type appears in any exposed attribute, property, event, or CSS surface. Replacing Lit later should require no consumer-facing change.
+
+The same budget discipline governs `@bcd-embed/schema`: the element imports its types only (`import type`), never Zod at runtime. Zod is roughly twice Lit's size, and its runtime validation earns its keep on the server and at build time, not in the browser (Document 2 §2) — a malformed payload here is an error state (§9), not a schema-validation report.
 
 ---
 
@@ -77,17 +81,28 @@ Two standing rules govern every line of CSS this project authors and ships, not 
 **Attributes/properties.**
 - `query` — BCD dotted key. Only required input.
 - `endpoint` — overrides the API base URL. This is the entire self-hosting mechanism.
-- `browsers` — optional space-separated override of the displayed support-target set (browsers and runtimes, Document 1 §5.1). Defaults to `chrome firefox safari nodejs` — the three independent rendering engines plus Node.js, not a popularity pick (§11). The API itself returns everything; this attribute is the only curation point.
-- `locale` — selects the string table.
+- `browsers` — optional space-separated override of the displayed support-target set (browsers and runtimes, Document 1 §5.1). The default is `chrome firefox safari nodejs` — the three independent rendering engines plus Node.js, not a popularity pick (§11) — **intersected with the support targets actually present in the payload**: Node.js appears on a `javascript.builtins.*` table and not on a `css.*` one, where a permanently empty column would be noise. An explicitly set `browsers` attribute is honored literally — a listed target absent from the payload renders as a "no data" column, because the author asked for it (§11). The API itself returns everything; this attribute is the only curation point.
+- `locale` — selects the string table ("Strings and localization readiness," below). v1 ships English only; the attribute exists from the start so adding a locale later is additive, not breaking.
 - `loading` — `lazy` (default) or `eager`. Mirrors native `<img loading>` rather than inventing new vocabulary. `lazy` is the `IntersectionObserver`-deferred behavior in §6, the right default given several tables per page is the stated design case; `eager` opts a specific instance out — a table already known to be above the fold, or test automation where waiting on intersection timing adds flakiness rather than value.
 - `.data` (property only) — a contract-conformant payload set directly. When present, no fetch occurs, so `loading` has no effect: there is nothing to defer. This is the build-time property-assignment path (§7).
-- `source` — the `id` of a sibling `<script type="application/json">` element carrying a contract-conformant payload. Read once in `connectedCallback`, synchronously, no fetch, no script execution required beyond the component's own (§7). Takes priority in a documented, fixed order if `query`, `.data`, and `source` are somehow set simultaneously — `source` and `.data` before `query`, since an already-present payload should never be discarded in favor of a network request.
+- `source` — the `id` of a sibling `<script type="application/json">` element carrying a contract-conformant payload. Read once in `connectedCallback`, synchronously, no fetch, no script execution required beyond the component's own (§7). If `query`, `.data`, and `source` are somehow set simultaneously, the documented total order is `.data`, then `source`, then `query`: an already-present payload is never discarded in favor of a network request, and between the two payload paths the directly assigned property wins — it is the more explicit act, and the only one that can be updated programmatically at runtime.
 
 **Multiple features.** Use multiple elements rather than a `query` list attribute. Each element needs independent loading state, error state, and cache entry, and stacking several features into one table is an authoring decision, not a component default. BCD's own key nesting (a query returning a parent and its descendants) is already one table by definition and is handled without special-casing.
 
 **Events.** Lifecycle events for load and error, so a host page can detect and surface a failed table rather than let it fail silently.
 
 **Slots.** Author-supplied fallback content for the no-JavaScript and error cases (§7). In light DOM this means rendering provided children rather than replacing them, distinct from shadow-DOM slotting but similar in authoring model.
+
+### Strings and localization readiness
+
+v1 is English-only, but internationalization shares a property with accessibility: bolted on later, it means reopening every template. The door is held open structurally from the first line of code:
+
+- Every human-readable string the component renders — including the generated accessible names in §5, which are full sentences, not labels — lives in a single strings module keyed by message id, with placeholders for interpolated values (`supported-since: "Supported since {browser} {version}"`). No string literal appears in a template.
+- Accessible-name sentences are messages with placeholders, never concatenated fragments — word order differs across languages, and concatenation is the classic mistake that turns later localization into a rewrite instead of a translation.
+- The `locale` attribute selects the string table; unknown locales fall back to English. Locale tables beyond English load on demand (dynamic import), so the English-only default pays no bundle cost for a capability it is not using.
+- The model to draw from is MDN's own localization pipeline (`mdn/content` with its `mdn/translated-content` counterpart, community-translated via Mozilla's Pontoon): a strings file in the repository first, Pontoon integration later if and when translation contributions are wanted. The strings-file format should be chosen with Pontoon's supported formats in mind — Fluent being the Mozilla-native choice — so that step is an integration, not a migration.
+
+The Phase 1 markup exercise (§10) produces the initial string inventory as a side effect: hand-writing the target markup enumerates every sentence the component will ever generate.
 
 ### Styling surface
 
@@ -183,6 +198,8 @@ Rendering happens once from fully resolved data rather than progressively, avoid
 
 The package ships as ESM, tree-shakeable, with the table renderer in a separate chunk from the element shell. `sideEffects` in `package.json` is deliberately **not** a blanket `false`: the element package's entry point calls `customElements.define(...)` at module scope — a genuine side effect a bundler must not remove, and exactly what a bare `"sideEffects": false` risks dropping ([rollup/rollup#5538](https://github.com/rollup/rollup/issues/5538) documents this happening for prototype-mutation side effects; the underlying `sideEffects`/`moduleSideEffects` confusion is tracked in [rollup/rollup#5987](https://github.com/rollup/rollup/issues/5987)). [vitejs/vite#14321](https://github.com/vitejs/vite/issues/14321) covers the equivalent gap for CSS imported via JS, relevant if base styles are ever distributed that way rather than as a plain `.css` file. Correct configuration: the array form, `"sideEffects": ["./dist/element.js"]` (or whichever file(s) call `customElements.define`), leaving `core`, `schema`, and the pure rendering helpers genuinely tree-shakeable. Worth verifying with an actual bundle-analyzer pass (Phase 7, §10), not assumed from the package.json alone.
 
+**Budget, in numbers.** General guidance for optimal web performance puts an initial JavaScript bundle under 250 KB uncompressed, 50–100 KB compressed — but that is a budget for a whole page, and this component is a guest on someone else's. Its own target: **25 KB compressed or less** for the initial import (element shell, Lit, and the renderer chunk together), excluding payload data, asserted by a size check in CI rather than observed informally. These limits are client-side limits specifically: server-side code (`generator`, `server`, Zod validation) carries no comparable ceiling, which is exactly why Zod stays out of the element bundle (§2, Document 2 §2) while remaining the right tool on the server.
+
 ---
 
 ## 7. Data-flow modes
@@ -230,7 +247,7 @@ Rendering logic is tested against the golden fixtures from Document 2 Phase 1: g
 
 Required non-happy-path fixtures: a feature with three parallel prefixed branches; a feature supported only behind a flag; a feature added, removed, and re-added; a support target absent from the payload versus present with `state: "unknown"` (covering at least one runtime, not only browsers); a 404 response; a malformed payload; a `source` reference to a missing element id; a `source` script containing invalid JSON; `query`, `.data`, and `source` all set at once, asserting the documented priority order (§4) is actually what runs.
 
-Accessibility: automated auditing (axe) via Playwright on every state — loading, loaded, error, expanded, narrow container, wide container. Automated tooling covers a subset of what matters; manual verification with a screen reader is a release gate, particularly for header association and cell-naming (§5). Keyboard-only traversal of the full table, including the scroll region and every disclosure, is a scripted test.
+Accessibility: automated auditing (axe) via Playwright on every state — loading, loaded, error, expanded, narrow container, wide container. Automated tooling covers a subset of what matters; manual verification with a screen reader is a release gate, particularly for header association and cell-naming (§5). The gate names its combinations rather than leaving "a screen reader" to interpretation: NVDA with Firefox and VoiceOver with Safari are required per release; JAWS with Chrome is best-effort. Keyboard-only traversal of the full table, including the scroll region and every disclosure, is a scripted test.
 
 Visual regression covers the support-state palette and container-query breakpoints. Contrast ratios are asserted in tests, not checked visually.
 
@@ -261,6 +278,8 @@ Visual regression covers the support-state palette and container-query breakpoin
 **Default support-target set — resolved: Chrome, Firefox, Safari, Node.js.** The API returns every browser and runtime BCD tracks, including Deno, Bun, Edge, Opera, and mobile variants; showing all of them by default would be noisy. Chrome, Firefox, and Safari are included because they map to the three independent rendering engines (Blink, Gecko, WebKit) — the actual signal a reader needs for "does this work everywhere" — not a popularity pick. Chromium-based browsers like Edge and Opera track Chrome's Blink closely enough that including them by default would mostly repeat the same answer.
 
 Node.js is included alongside them, not treated as an opt-in extra: a large share of what this table renders is JavaScript API compatibility (`javascript.builtins.*`, `api.*`), and "does this run in Node" is a first-class question for that data, not a specialist one. Deno and Bun stay out of the default — a real but smaller audience — added via `browsers` (§4) without imposing the extra column on everyone else.
+
+The default set is additionally filtered by the payload: a defaulted target with no entry anywhere in the response's support data is dropped rather than rendered as a permanently empty column, so Node.js appears exactly where BCD has something to say about it — JavaScript and API data, not `css.*`. An explicitly set `browsers` attribute is exempt from this filtering and renders exactly what it lists, including a "no data" column if the author asks for one (§4).
 
 **"Flag means unsupported" convention — resolved: no.** Document 1 §6 leaves `behindFlag` orthogonal to `state` and defers the display decision to the consumer; the component now makes that call. Flag-gated support displays as its own distinct state rather than collapsing into unsupported, since collapsing it discards information a reader may specifically want (a technical writer covering an experimental feature, for instance, needs to know it exists behind a flag, not just that it's a flat "no"). A consumer wanting MDN's stricter convention can still compute `state === "supported" && !behindFlag` themselves (Document 1 §6); the component's own default does not make that choice for them.
 

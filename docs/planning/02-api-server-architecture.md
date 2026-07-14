@@ -27,6 +27,8 @@ The cost of this approach is that freshness is bounded by generation cadence rat
 
 **Tooling, standardized across the monorepo.** Vite for building and bundling (the demo site's dev server, and each package's library build via `vite build --mode lib`), pnpm as the package manager (workspaces are the natural fit for the five-package layout below, and its content-addressed store keeps `node_modules` size sane across packages sharing dependencies like Zod and Vitest). Linting, formatting, and AI-tooling configuration are not hand-assembled per package; they are composed once via [Calavera](https://calavera.schalkneethling.com/) and applied at the repository root, so every package inherits the same recipe rather than accumulating its own drifted config over time. This is a monorepo-wide decision, not a per-package one, and it is made here rather than left to whoever sets up each package first.
 
+The repository as currently scaffolded — a stock Vite+ starter using npm workspaces — is a temporary starting point and does not supersede this section: when implementation starts, layout and tooling follow this document, and the scaffold's Vite+-specific configuration is replaced rather than accumulated around.
+
 ```
 bcd-embed/
 ├── packages/
@@ -40,7 +42,7 @@ bcd-embed/
 └── ...
 ```
 
-**`schema`** — Zod schemas (Zod v4), authored once as the canonical source of truth for the Document 1 contract. TypeScript types are inferred directly from them via `z.infer`, with no separate codegen step and no risk of the types drifting from the schemas they describe. JSON Schema is derived from the same Zod schemas via Zod v4's built-in `z.toJSONSchema()` export, and is what gets published for non-TypeScript consumers who need to validate against the contract without depending on this package's JS. Depended on by both `core` and `element`. Zero runtime dependencies beyond Zod itself.
+**`schema`** — Zod schemas (Zod v4), authored once as the canonical source of truth for the Document 1 contract. TypeScript types are inferred directly from them via `z.infer`, with no separate codegen step and no risk of the types drifting from the schemas they describe. JSON Schema is derived from the same Zod schemas via Zod v4's built-in `z.toJSONSchema()` export, and is what gets published for non-TypeScript consumers who need to validate against the contract without depending on this package's JS. Depended on by both `core` and `element`, but differently. `core`, `generator`, and `server` run at build time or on the server, where Zod's size (on the order of 10 KB+ gzipped) is irrelevant and the alternative — maintaining schemas, TypeScript types, and validators as three hand-synchronized artifacts — costs far more than the library ever will. The `element` imports types only (`import type`, fully erased at compile time): Zod is roughly twice the size of Lit, the component's one accepted runtime dependency (Document 3 §2), and runtime schema validation in the browser does not earn that cost — the component treats a malformed payload as an error state (Document 3 §9), not a schema-validation report. Zero runtime dependencies beyond Zod itself.
 
 **`core`** — the transformations: flattening the identifier tree, grouping parallel support branches, resolving version values, joining support-target releases (Document 1 §5.1 — browsers and runtimes alike), computing summary precedence. Pure, framework-free, isomorphic. Kept separate from `generator` so it is usable at build time by a consumer generating their own artifacts from the BCD npm package without running the hosted service.
 
@@ -49,6 +51,8 @@ bcd-embed/
 **`server`** — a thin edge adapter: route parsing, key validation, error bodies, cache headers, CORS. Minimal in the static deployment; does more in a self-hosted dynamic deployment.
 
 **Licensing.** MIT. Checked against the project's actual dependencies: Lit is BSD-3-Clause, Zod (the `schema` package's sole dependency) is MIT, and `@mdn/browser-compat-data` itself is CC0 — none of these impose copyleft, so MIT is compatible throughout the stack. MDN's Fred code is MPL-2.0, file-level copyleft, and is not to be copied. The normalization logic is reimplemented from the published BCD schema, which is permitted since the schema and the described behavior are not the copyrighted artifact — the source files are. This should be a stated rule in `CONTRIBUTING.md`; incidental MPL contamination of `core` would impose copyleft on every downstream consumer, which MIT alone cannot undo.
+
+**Releases.** Package publishing follows the `npm-publishing-best-practices` and `npm-trusted-publishing-github-workflow` skills from [Calavera](https://github.com/schalkneethling/create-project-calavera/tree/main/src/ai/skills): npm trusted publishing via a GitHub Actions workflow using OIDC — no long-lived npm tokens in CI — with provenance attestation. The packages version and release together (Document 0 §4).
 
 ---
 
@@ -76,12 +80,14 @@ Raw artifacts are a different case: validated against BCD's own published JSON S
 
 **Publish atomically.** Write the new snapshot to its immutable path, verify it, then repoint the `current` alias. A partially-written `current` must be impossible. This ordering is what makes a failed generation degrade to staleness rather than a broken endpoint.
 
+Snapshot identifiers encode the BCD version and the generator version (`bcd-7.1.3-gen-1.2.0`, Document 1 §7), because the output is a function of both: a `core` or `generator` fix regenerates from the same BCD release and must land at a new path, not overwrite an immutable one. As a guard against anything else varying the output without a version bump, the publish step refuses to write to a snapshot path that already exists with different content — an identical re-run is idempotent, a differing one fails the build.
+
 ### Artifact tree
 
 ```
 /v1/meta.json
 /v1/current/                    → alias to the newest snapshot
-/v1/bcd-7.1.3/
+/v1/bcd-7.1.3-gen-1.2.0/
     ├── features/
     │   ├── css.properties.display.json
     │   ├── api.AbortController.json
@@ -120,6 +126,8 @@ The 90-day figure is a starting recommendation, not a hard constraint — it can
 
 R2 has no egress fees, which matters directly given the cost model is bandwidth and success means being embedded on many third-party sites. A traffic spike on a metered host is a bill; on R2 it is not. The Worker validates keys, maps key to object, sets cache and CORS headers, and constructs JSON error bodies. Cloudflare's cache absorbs most requests, so the Worker itself runs rarely, and rate limiting is available at the edge with no added infrastructure.
 
+On a miss — the mapped object does not exist — the Worker distinguishes the two 404 cases using the snapshot's own index shards (Document 1 §4.3), which exist regardless: fetch the shard for the key's top-level namespace and check whether the key is absent from it (`feature_not_found`) or is a dot-boundary prefix of entries in it (`namespace_not_queryable`); a top-level segment that is not a shard at all resolves against the shard list in `meta.json`. This costs one extra R2 read on misses only, and the 404 it produces is itself cacheable (Document 1 §9), so each unique bad key does this work once. No dedicated manifest artifact is needed.
+
 This is the only hosted target for the project's own deployment. `server` is still written against a minimal adapter interface, not because another host is under consideration for us, but because self-hosting (§7) needs to remain viable on whatever infrastructure a self-hoster already runs — plain nginx serving the static tree, another CDN, or a different edge platform entirely. That is their choice to make, not a decision this document needs to make on their behalf.
 
 ---
@@ -131,6 +139,8 @@ This mechanism is what makes the table a live view rather than a static copy, so
 Dependabot watches `@mdn/browser-compat-data` and opens a pull request on a new release — the project's source lives on GitHub, and Dependabot's native integration is a better fit here than a third-party bot, given nothing in this pipeline needs Renovate's cross-platform support, custom scheduling, or grouping. CI runs the generator against the new version and diffs the generated *output* against the current snapshot — not the input. A BCD release producing no change in the emitted contract needs no action; a release changing an unexpectedly large number of features signals a likely upstream problem and should block rather than deploy.
 
 Pipeline gates: schema validation of the input, schema validation of every output artifact, and a sanity check on the magnitude and shape of the output diff. On green: generation, atomic publish to a new immutable snapshot, alias flip. A scheduled job runs the same pipeline as a backstop in case a release is missed.
+
+Two operational specifics are decided here rather than discovered later. First, the Dependabot bump PR auto-merges when every gate is green: freshness must not depend on a maintainer being available to click merge, or "live data" quietly degrades into "data as fresh as the maintainer's week." Second, a blocked gate is a notification, not a log line. Sentry is the error-tracking and alerting mechanism throughout — the generation pipeline reports failures and blocked gates to it, and the Worker reports runtime errors. The pipeline silently stopping while the service keeps serving aging data is precisely the failure this project exists to prevent, so "it stopped and nobody noticed" has to be impossible by construction, not merely unlikely by habit.
 
 The output diff is also a reusable artifact in its own right — a machine-readable record of what changed in browser and runtime support over a given period. Out of scope here; noted as a candidate for later.
 
@@ -176,7 +186,7 @@ Vitest throughout. Test-driven development. The default assumption for every pie
 
 **Pipeline behavior under failure, not just under success.** Every gate described in §5 needs a test that actually forces the gate to fire: a BCD input that fails schema validation (does the build actually stop, or does it warn and continue?); a generation that produces one non-conformant output artifact (does one bad file fail the whole build, as §3 requires, or only log a warning?); an output diff that exceeds the magnitude threshold (does it block, and is the block visible to a human rather than silently retried?); a publish that is interrupted mid-write (does the atomic-publish ordering in §3 actually prevent a half-written `current`, under a simulated crash, not just in the logic on paper?).
 
-**Every documented error response, exercised deliberately.** Document 1 §8 defines five error codes. Each needs a test that provokes that specific code and asserts the exact shape of the response, not just the HTTP status: `invalid_key` from a genuinely malformed key (including path-traversal attempts, §6); `feature_not_found` from a well-formed key with no data; `snapshot_not_found` for both a snapshot that never existed and one that has aged out of the retention window (§3) — these are different code paths and both need coverage; `rate_limited` under actual rate-limit pressure in a deployed environment, not only unit-tested in isolation; `generation_in_progress`, which only applies to self-hosted dynamic deployments and is easy to leave untested precisely because the primary deployment never exercises it.
+**Every documented error response, exercised deliberately.** Document 1 §8 defines six error codes. Each needs a test that provokes that specific code and asserts the exact shape of the response, not just the HTTP status: `invalid_key` from a genuinely malformed key (including path-traversal attempts, §6); `feature_not_found` from a well-formed key with no data; `namespace_not_queryable` from both a bare top-level namespace (`css`) and a mid-tree organizational node (`css.properties`), exercising the Worker's index-shard resolution path that distinguishes it from `feature_not_found` (§4); `snapshot_not_found` for both a snapshot that never existed and one that has aged out of the retention window (§3) — these are different code paths and both need coverage; `rate_limited` under actual rate-limit pressure in a deployed environment, not only unit-tested in isolation; `generation_in_progress`, which only applies to self-hosted dynamic deployments and is easy to leave untested precisely because the primary deployment never exercises it.
 
 **Schema conformance at volume, not on a sample.** Property-based tests asserting every emitted normalized artifact parses successfully against the `schema` Zod definitions (§3), and every raw artifact validates against BCD's own published JSON Schema via the same Ajv validators used in generation — both run against the full BCD tree, all ~30,000 artifacts of each kind, rather than a representative subset. A sample can pass while a real, rare shape elsewhere in the tree fails; at this volume, running the full tree is not expensive enough to justify sampling instead.
 
