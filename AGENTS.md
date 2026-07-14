@@ -1,16 +1,37 @@
-<!--VITE PLUS START-->
+# Repository guidance
 
-# Using Vite+, the Unified Toolchain for the Web
+This project is a pnpm monorepo. Its architecture and implementation sequence
+are documented in `docs/planning/`.
 
-This project is using Vite+, a unified toolchain built on top of Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task. Vite+ wraps runtime management, package management, and frontend tooling in a single global CLI called `vp`. Vite+ is distinct from Vite, and it invokes Vite through `vp dev` and `vp build`. Run `vp help` to print a list of commands and `vp <command> --help` for information about a specific command.
+## Getting started
 
-Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.dev/guide/.
+- Run `pnpm install` after pulling changes and before starting work.
+- Use the package manager version declared in the root `package.json`.
+- Run `pnpm check` before handing work back. It formats-checks, lints,
+  type-checks, tests, and builds all implemented workspaces.
+- Use `pnpm dev` for the documentation application.
 
-## Review Checklist
+## Tooling ownership
 
-- [ ] Run `vp install` after pulling remote changes and before getting started.
-- [ ] Run `vp check` and `vp test` to format, lint, type check and test changes.
-- [ ] Check if there are `vite.config.ts` tasks or `package.json` scripts necessary for validation, run via `vp run <script>`.
-- [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
+Calavera owns `.editorconfig`, `oxlint.json`, `.stylelintrc.json`, and the root
+`tsconfig.json`. Its recipe is `calavera.config.json`, and its ownership state
+is `.calavera/state.json`.
 
-<!--VITE PLUS END-->
+When changing shared linting, formatting, or TypeScript policy:
+
+1. Update the Calavera recipe rather than hand-editing managed files.
+2. Run `pnpm dlx create-project-calavera apply --dry-run` and inspect the result.
+3. Apply the recipe only after the dry run is understood.
+4. Run `pnpm check`.
+
+Workspace-specific TypeScript files may extend the managed root configuration.
+
+## Architecture guardrails
+
+- Treat `@bcd-embed/schema` and its fixtures as the first product dependency.
+- Do not add empty future workspaces. Add `core`, `generator`, `server`, and
+  `element` when their implementation phases begin.
+- Reimplement normalization from the published BCD schema. Do not copy code
+  from MDN Fred, which is MPL-2.0 licensed.
+- Keep transformation logic out of the component; the API answers what the
+  support is, and consumers decide how it is shown.

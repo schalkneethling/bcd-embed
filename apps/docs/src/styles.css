@@ -1,0 +1,16 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  box-sizing: border-box;
+  max-inline-size: 48rem;
+  margin-inline: auto;
+  padding-block: 4rem;
+  padding-inline: 1.5rem;
+}

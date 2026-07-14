@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Keep installs identical between local development and CI. pnpm otherwise
+# changes this experimental default in CI, making the workspace appear stale.
+enableGlobalVirtualStore: false
+
+engineStrict: true
+strictPeerDependencies: true
+allowBuilds: {}
