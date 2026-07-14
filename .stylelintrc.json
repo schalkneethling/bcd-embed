@@ -1,0 +1,8 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "ignoreFiles": ["coverage/**", "dist/**", "dist-web/**", "node_modules/**"],
+  "plugins": ["stylelint-plugin-use-baseline"],
+  "rules": {
+    "plugin/use-baseline": true
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "integrations": [
+    "editorconfig",
+    "typescript",
+    "oxlint",
+    "oxlint-eslint",
+    "oxlint-typescript",
+    "oxlint-unicorn",
+    "oxlint-oxc",
+    "oxfmt",
+    "stylelint",
+    "stylelint-standard",
+    "stylelint-baseline"
+  ],
+  "files": [".editorconfig", "oxlint.json", ".stylelintrc.json", "tsconfig.json"],
+  "managedFiles": [
+    {
+      "path": ".editorconfig",
+      "hash": "3a15156"
+    },
+    {
+      "path": "oxlint.json",
+      "hash": "ca64e07"
+    },
+    {
+      "path": ".stylelintrc.json",
+      "hash": "373d349"
+    },
+    {
+      "path": "tsconfig.json",
+      "hash": "1719dcc"
+    }
+  ],
+  "aiArtifacts": [],
+  "profile": "modern"
+}
