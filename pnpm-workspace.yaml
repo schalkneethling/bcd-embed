@@ -6,4 +6,6 @@ packages:
 # changes this experimental default in CI, making the workspace appear stale.
 enableGlobalVirtualStore: false
 
-onlyBuiltDependencies: []
+engineStrict: true
+strictPeerDependencies: true
+allowBuilds: {}

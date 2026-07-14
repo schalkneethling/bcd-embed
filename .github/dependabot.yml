@@ -1,7 +1,10 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/"
+    directories:
+      - "/"
+      - "/apps/docs"
+      - "/packages/schema"
     schedule:
       interval: "daily"
     cooldown:
