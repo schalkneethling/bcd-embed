@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bcd-embed.dev/schemas/v1/api-error-response.schema.json",
+  "title": "API error response",
+  "$comment": "Relational invariants documented by the v1 contract are additionally enforced by the canonical Zod schemas.",
+  "type": "object",
+  "properties": {
+    "error": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_key",
+                "feature_not_found",
+                "namespace_not_queryable",
+                "snapshot_not_found"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "rate_limited",
+                "generation_in_progress"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "query": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "query"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "additionalProperties": false
+}

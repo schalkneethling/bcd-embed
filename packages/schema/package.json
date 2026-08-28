@@ -12,17 +12,27 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./json-schema/feature-response": "./dist/json-schema/feature-response.schema.json",
+    "./json-schema/browsers-response": "./dist/json-schema/browsers-response.schema.json",
+    "./json-schema/index-response": "./dist/json-schema/index-response.schema.json",
+    "./json-schema/meta-response": "./dist/json-schema/meta-response.schema.json",
+    "./json-schema/api-error-response": "./dist/json-schema/api-error-response.schema.json",
     "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vite build --mode lib && tsc --project tsconfig.build.json",
-    "test": "vitest run",
+    "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/copy-json-schemas.mjs && node scripts/package-smoke-test.mjs",
+    "generate:json-schema": "node scripts/generate-json-schemas.mjs",
+    "test": "node scripts/generate-json-schemas.mjs --check && vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   }
 }
