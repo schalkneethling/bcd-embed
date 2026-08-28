@@ -294,6 +294,11 @@ describe("published JSON Schemas", () => {
       value: { ...cases[3].value, namespaces: [] },
     },
     {
+      name: "meta-response",
+      zodSchema: metaResponseSchema,
+      value: { ...cases[3].value, namespaces: ["api", "api"] },
+    },
+    {
       name: "api-error-response",
       zodSchema: apiErrorResponseSchema,
       value: {

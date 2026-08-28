@@ -459,7 +459,7 @@ export const metaResponseSchema = z
     generated: generatedTimestampSchema,
     current: snapshotIdentifierSchema,
     snapshots: z.array(snapshotSchema).min(1),
-    namespaces: z.array(namespaceSchema).min(1),
+    namespaces: z.array(namespaceSchema).min(1).meta({ uniqueItems: true }),
   })
   .superRefine((metadata, context) => {
     const snapshotIds = metadata.snapshots.map((snapshot) => snapshot.id);

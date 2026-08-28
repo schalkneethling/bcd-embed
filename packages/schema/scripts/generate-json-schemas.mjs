@@ -29,7 +29,9 @@ const definitions = [
 const expectedFiles = definitions.map(([name]) => `${name}.schema.json`).sort();
 
 if (check) {
-  const actualFiles = (await readdir(outputDirectory)).sort();
+  const actualFiles = (await readdir(outputDirectory))
+    .filter((file) => file.endsWith(".schema.json"))
+    .sort();
   if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
     throw new Error(
       `Generated schema file set differs: expected ${expectedFiles.join(", ")}; found ${actualFiles.join(", ")}.`,
