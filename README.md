@@ -25,7 +25,7 @@ their implementation phases begin.
 Requirements:
 
 - Node.js 22.18 or newer
-- pnpm 11.13.0, managed through Corepack
+- pnpm 11.24.0, managed through Corepack
 
 Install dependencies and run the complete repository check:
 
