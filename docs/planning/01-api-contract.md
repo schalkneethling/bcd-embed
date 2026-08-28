@@ -74,6 +74,34 @@ GET /v1/{snapshot}/browsers.json
 
 Full metadata for every support target — browser or runtime: display names, release lists, release dates, statuses, preview names. Referenced support targets are also embedded in each feature response (§5), so most consumers do not need this endpoint directly. It exists for consumers building their own column sets or timelines.
 
+The response shape is exact; release order is the order published by BCD and is
+therefore significant:
+
+```jsonc
+{
+  "contract": "1.0.0",
+  "generated": "2026-08-28T12:00:00Z",
+  "source": {
+    "package": "@mdn/browser-compat-data",
+    "version": "8.0.13"
+  },
+  "browsers": {
+    "chrome": {
+      "name": "Chrome",
+      "type": "desktop", // desktop | mobile | xr | server
+      "previewName": "Canary", // null when the target has no preview name
+      "releases": [
+        {
+          "version": "140",
+          "releaseDate": "2025-09-02", // null when BCD has no date
+          "status": "current" // retired | current | beta | nightly | esr | planned
+        }
+      ]
+    }
+  }
+}
+```
+
 ### 4.3 Index
 
 ```
@@ -85,6 +113,23 @@ The enumerable list of every valid key. Without this, a consumer cannot distingu
 
 The full index is large (roughly 15,000 entries) and is also published sharded by top-level BCD namespace (`css`, `api`, `html`, and so on) so a consumer can load only what it needs. The shard list is derived from the data at generation time, never hardcoded — BCD's top-level namespaces have changed before and may change again — and each generation's list is enumerated in `meta.json` (§4.4).
 
+Both index forms use the same shape. `namespace` is `null` for the full index and
+the shard name for a namespaced index. `keys` is non-empty and retains BCD
+document order.
+
+```jsonc
+{
+  "contract": "1.0.0",
+  "generated": "2026-08-28T12:00:00Z",
+  "source": {
+    "package": "@mdn/browser-compat-data",
+    "version": "8.0.13"
+  },
+  "namespace": "css",
+  "keys": ["css.at-rules.container", "css.properties.display"]
+}
+```
+
 ### 4.4 Metadata
 
 ```
@@ -92,6 +137,33 @@ GET /v1/meta.json
 ```
 
 Contract version, available snapshots, the current alias target, generation timestamp, and the list of top-level namespace shards in the current generation (§4.3). Used by a consumer to identify what it is talking to and by a cache to decide whether to revalidate.
+
+```jsonc
+{
+  "contract": "1.0.0",
+  "generated": "2026-08-28T12:00:00Z",
+  "current": "bcd-8.0.13-gen-0.1.0",
+  "snapshots": [
+    {
+      "id": "bcd-8.0.13-gen-0.1.0",
+      "source": {
+        "package": "@mdn/browser-compat-data",
+        "version": "8.0.13"
+      },
+      "generatorVersion": "0.1.0",
+      "generated": "2026-08-28T12:00:00Z",
+      "expires": "2026-11-26"
+    }
+  ],
+  "namespaces": ["api", "css", "html", "javascript"]
+}
+```
+
+`snapshots` and `namespaces` are non-empty and contain unique identifiers.
+`current` must identify one of the enumerated snapshots. Snapshot identifiers
+use the documented `bcd-{version}-gen-{version}` form. `expires` is the
+storage-retention date, not a promise that intermediary caches have stopped
+serving the immutable resource (§7).
 
 ### 4.5 Raw feature data
 
@@ -113,7 +185,7 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
   "generated": "2026-07-11T02:14:07Z",
   "source": {
     "package": "@mdn/browser-compat-data",
-    "version": "7.1.3"
+    "version": "8.0.13"
   },
   "query": "css.properties.display",
 
@@ -191,15 +263,24 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 
 **`features` is a flat array, not a tree.** BCD nests sub-features arbitrarily deep; the service flattens once and carries a `depth` integer so a consumer can restore hierarchy for indentation or grouping. Order is stable and matches BCD's document order; a parent always precedes its children.
 
-**`browsers` is scoped to the response, and covers more than browsers.** The field name follows BCD's own terminology, but its entries include both browsers and JavaScript runtimes (`nodejs`, `deno`, `bun`); the `type` field (`desktop`, `mobile`, `server`) distinguishes them and lets a consumer group them into columns. **This is the canonical definition of "support target"** — the inclusive term used throughout this document for any entry in this field, browser or runtime. Only support targets referenced by this feature's support data are included, and every one of them is: the service does not filter runtimes out or curate the set. Deciding which subset to display is entirely the consumer's responsibility.
+**`browsers` is scoped to the response, and covers more than browsers.** The field name follows BCD's own terminology, but its entries include browsers, XR browsers, and JavaScript runtimes (`nodejs`, `deno`, `bun`); the `type` field (`desktop`, `mobile`, `xr`, `server`) distinguishes them and lets a consumer group them into columns. **This is the canonical definition of "support target"** — the inclusive term used throughout this document for any entry in this field, browser or runtime. Only support targets referenced by this feature's support data are included, and every one of them is: the service does not filter runtimes out or curate the set. Deciding which subset to display is entirely the consumer's responsibility.
 
 **`support` is keyed by support target identifier; a given target may be absent.** Absence means BCD has no entry at all for that browser or runtime, which is distinct from a present entry with `state: "unknown"` (BCD explicitly records unknown support). Consumers must handle both.
 
-**`branches` holds the pre-grouped parallel-implementation structure.** At most one branch is marked `canonical` (no prefix, no alternative name) and it sorts first when present. Remaining branches sort deterministically by `(alternativeName, prefix)`, independent of BCD's internal ordering. Within a branch, `statements` are ordered most-recent-first, with "recent" defined precisely rather than left to intuition: a statement whose `versionAdded` resolves to a release sorts by that release's position in the support target's release order (release order, not string or numeric version comparison), newest first; a statement with `isPreview: true` sorts before all released statements; a statement whose recency cannot be resolved (`versionAdded` of `null` or `false`) sorts last. Ties preserve BCD source order.
+**`branches` holds the pre-grouped parallel-implementation structure.** At most one branch is marked `canonical` (no prefix, no alternative name) and it sorts first when present. A non-canonical branch has either a prefix or an alternative name, never both, and every statement's implementation identity exactly matches its enclosing branch. Remaining branches sort deterministically by `(alternativeName, prefix)`, independent of BCD's internal ordering. Within a branch, `statements` are ordered most-recent-first, with "recent" defined precisely rather than left to intuition: a statement whose `versionAdded` resolves to a release sorts by that release's position in the support target's release order (release order, not string or numeric version comparison), newest first; a statement with `isPreview: true` sorts before all released statements; a statement whose recency cannot be resolved (`versionAdded` of `null` or `false`) sorts last. Ties preserve BCD source order.
 
 **`versionAddedIsApproximate`** captures BCD's `≤` notation as a boolean rather than embedding a sigil in a version string. MDN displays these as exact versions; the contract preserves the distinction and leaves the choice to the consumer.
 
+The normalized `versionAdded` value never contains the raw `≤` sigil, and
+`versionAddedIsApproximate: true` is valid only alongside a version string.
+
 **`flags` is always an array**, empty rather than absent, so a consumer testing "behind a flag" does not have to distinguish `undefined` from `[]`.
+
+Each flag has the exact normalized shape
+`{ "type": "preference" | "runtime_flag", "name": string, "valueToSet": string | null }`.
+The camel-cased `valueToSet` follows the rest of the normalized contract rather
+than exposing BCD's source-field naming; `null` preserves an omitted source
+`value_to_set` without adding a missing-versus-present distinction.
 
 **`tags` passes through BCD's `tags` verbatim**, always an array, empty rather than absent. BCD requires every tag to be namespaced, and the only namespace it currently defines is `web-features:*`, which maps a BCD key to its `web-features` feature group. The contract does not interpret these values — no Baseline status is computed or implied, consistent with §3 — it simply declines to discard a mapping BCD itself publishes. If a bridge to `web-features` vocabulary is ever wanted, it already exists in the data, on BCD's own terms.
 
@@ -240,7 +321,7 @@ Two independent axes.
 
 **Contract version** (`v1` in the path) describes the shape of the JSON. It changes only on a breaking change to the response format. Additive fields ship within `v1`; the `contract` field in the body carries a full semantic version so a consumer can detect additions.
 
-**Snapshot** identifies one generation of the data. `current` is a moving alias to the most recent generation and is the component's default. Every generation is also published under an immutable path whose identifier encodes both inputs that determine the output — the BCD version and the generator version, e.g. `bcd-7.1.3-gen-1.2.0` — so a consumer needing short-to-medium-term build stability can pin to it. The BCD version alone would not be a sufficient identifier: a fix to the transformation logic regenerates from the same BCD release, and must land as a new immutable snapshot rather than silently replacing an existing one (Document 2 §3). Retention is bounded, not indefinite (Document 2 §3, default 90 days): pinning is for keeping a build or a staged rollout stable across a release cycle, not for indefinite historical reference. A pinned snapshot older than the retention window returns `snapshot_not_found` (§8); this project does not serve as a historical archive of past BCD data (Document 0 §3).
+**Snapshot** identifies one generation of the data. `current` is a moving alias to the most recent generation and is the component's default. Every generation is also published under an immutable path whose identifier encodes both inputs that determine the output — the BCD version and the generator version, e.g. `bcd-8.0.13-gen-1.2.0` — so a consumer needing short-to-medium-term build stability can pin to it. The BCD version alone would not be a sufficient identifier: a fix to the transformation logic regenerates from the same BCD release, and must land as a new immutable snapshot rather than silently replacing an existing one (Document 2 §3). Retention is bounded, not indefinite (Document 2 §3, default 90 days): pinning is for keeping a build or a staged rollout stable across a release cycle, not for indefinite historical reference. A pinned snapshot older than the retention window returns `snapshot_not_found` (§8); this project does not serve as a historical archive of past BCD data (Document 0 §3).
 
 **Relationship between the two:** each contract version is pinned to a BCD major version. A breaking schema change in BCD itself is unlikely at this point — BCD has enough downstream consumers that such a change would be disruptive well beyond this project — but the policy exists as a safeguard regardless: if it happens, `v1` continues to be generated from the last compatible BCD major (frozen, and marked as such in `meta.json`), and `v2` is introduced for the new BCD major. `v1` is never silently reshaped. Deprecation of a contract version is announced in `meta.json` with a sunset date in advance.
 
@@ -261,6 +342,12 @@ Errors are JSON, never HTML, and carry a machine-readable `code`.
   }
 }
 ```
+
+Every error body has exactly `code`, `message`, and `query`. `query` is a
+non-empty string when the error is tied to a requested key or snapshot and
+`null` when there is no meaningful request identifier (for example, a
+self-hosted generation failure). Keeping the field present avoids a third
+missing-versus-null state for consumers.
 
 | HTTP | `code` | Meaning |
 | --- | --- | --- |
