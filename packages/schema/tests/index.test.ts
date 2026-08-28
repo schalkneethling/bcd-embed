@@ -310,7 +310,74 @@ describe("strict validation", () => {
         branches: [canonicalBranch],
       }).success,
     ).toBe(false);
+
+    const competingPrefixedBranch = {
+      canonical: false as const,
+      prefix: "-webkit-",
+      alternativeName: null,
+      statements: [
+        {
+          ...statement,
+          versionAdded: "22",
+          partialImplementation: true,
+          prefix: "-webkit-",
+        },
+      ],
+    };
+    const competingCanonicalBranch = {
+      ...canonicalBranch,
+      statements: [{ ...statement, versionAdded: "46" }],
+    };
+    expect(
+      supportTargetSupportSchema.safeParse({
+        summary: {
+          ...summary,
+          state: "partial",
+          versionAdded: "22",
+          partialImplementation: true,
+          prefix: "-webkit-",
+        },
+        branches: [competingPrefixedBranch, competingCanonicalBranch],
+      }).success,
+    ).toBe(false);
+    expect(
+      supportTargetSupportSchema.safeParse({
+        summary: { ...summary, versionAdded: "46" },
+        branches: [competingPrefixedBranch, competingCanonicalBranch],
+      }).success,
+    ).toBe(true);
   });
+
+  it.each([
+    "invalid_key",
+    "feature_not_found",
+    "namespace_not_queryable",
+    "snapshot_not_found",
+  ] as const)("requires an identifier for the %s error", (code) => {
+    const error = { error: { code, message: "Request failed.", query: "api.Example" } };
+    expect(apiErrorResponseSchema.safeParse(error).success).toBe(true);
+    expect(
+      apiErrorResponseSchema.safeParse({ ...error, error: { ...error.error, query: "" } }).success,
+    ).toBe(false);
+    expect(
+      apiErrorResponseSchema.safeParse({ ...error, error: { ...error.error, query: null } })
+        .success,
+    ).toBe(false);
+  });
+
+  it.each(["rate_limited", "generation_in_progress"] as const)(
+    "forbids an identifier for the %s error",
+    (code) => {
+      const error = { error: { code, message: "Request failed.", query: null } };
+      expect(apiErrorResponseSchema.safeParse(error).success).toBe(true);
+      expect(
+        apiErrorResponseSchema.safeParse({
+          ...error,
+          error: { ...error.error, query: "api.Example" },
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("requires normalized version and implementation identities", () => {
     expect(

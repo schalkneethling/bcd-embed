@@ -158,6 +158,32 @@ export const supportSummarySchema = z
   });
 export type SupportSummary = z.infer<typeof supportSummarySchema>;
 
+const supportStatementSelectionRank = (statement: SupportStatement): number => {
+  const isActive = typeof statement.versionAdded === "string" && statement.versionRemoved === null;
+  const hasImplementationIdentity = statement.prefix !== null || statement.alternativeName !== null;
+  const isFullySupported = isActive && !statement.isPreview && !statement.partialImplementation;
+
+  if (isFullySupported && !hasImplementationIdentity && statement.flags.length === 0) {
+    return statement.notes.length === 0 ? 0 : 1;
+  }
+  if (isActive && hasImplementationIdentity) return 2;
+  if (isActive && statement.partialImplementation) return 3;
+  if (isActive && statement.flags.length > 0) return 4;
+  return 5;
+};
+
+const summaryProjectsStatement = (summary: SupportSummary, statement: SupportStatement): boolean =>
+  statement.versionAdded === summary.versionAdded &&
+  statement.versionRemoved === summary.versionRemoved &&
+  statement.releaseDate === summary.releaseDate &&
+  statement.removalDate === summary.removalDate &&
+  statement.partialImplementation === summary.partialImplementation &&
+  statement.prefix === summary.prefix &&
+  statement.alternativeName === summary.alternativeName &&
+  statement.isPreview === summary.isPreview &&
+  statement.flags.length > 0 === summary.behindFlag &&
+  statement.notes.length > 0 === summary.hasNotes;
+
 export const supportTargetSupportSchema = z
   .strictObject({
     summary: supportSummarySchema,
@@ -175,38 +201,30 @@ export const supportTargetSupportSchema = z
       });
     }
 
-    const projectedStatement = support.branches
+    const selectedStatement = support.branches
       .flatMap((branch) => branch.statements)
-      .find(
-        (statement) =>
-          statement.versionAdded === support.summary.versionAdded &&
-          statement.versionRemoved === support.summary.versionRemoved &&
-          statement.releaseDate === support.summary.releaseDate &&
-          statement.removalDate === support.summary.removalDate &&
-          statement.partialImplementation === support.summary.partialImplementation &&
-          statement.prefix === support.summary.prefix &&
-          statement.alternativeName === support.summary.alternativeName &&
-          statement.isPreview === support.summary.isPreview &&
-          statement.flags.length > 0 === support.summary.behindFlag &&
-          statement.notes.length > 0 === support.summary.hasNotes,
+      .reduce((selected, candidate) =>
+        supportStatementSelectionRank(candidate) < supportStatementSelectionRank(selected)
+          ? candidate
+          : selected,
       );
-    if (projectedStatement === undefined) {
+    if (!summaryProjectsStatement(support.summary, selectedStatement)) {
       context.addIssue({
         code: "custom",
         path: ["summary"],
-        message: "Summary fields must project one statement from the branches.",
+        message: "Summary fields must project the highest-precedence branch statement.",
       });
       return;
     }
 
     const expectedState: SupportState =
-      projectedStatement.versionAdded === false || projectedStatement.versionRemoved !== null
+      selectedStatement.versionAdded === false || selectedStatement.versionRemoved !== null
         ? "unsupported"
-        : projectedStatement.versionAdded === null
+        : selectedStatement.versionAdded === null
           ? "unknown"
-          : projectedStatement.isPreview
+          : selectedStatement.isPreview
             ? "preview"
-            : projectedStatement.partialImplementation
+            : selectedStatement.partialImplementation
               ? "partial"
               : "supported";
     if (support.summary.state !== expectedState) {
@@ -381,10 +399,22 @@ export const apiErrorCodeSchema = z.enum([
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
 
 export const apiErrorResponseSchema = z.strictObject({
-  error: z.strictObject({
-    code: apiErrorCodeSchema,
-    message: z.string().min(1),
-    query: z.string().min(1).nullable(),
-  }),
+  error: z.discriminatedUnion("code", [
+    z.strictObject({
+      code: z.literal([
+        "invalid_key",
+        "feature_not_found",
+        "namespace_not_queryable",
+        "snapshot_not_found",
+      ]),
+      message: z.string().min(1),
+      query: z.string().min(1),
+    }),
+    z.strictObject({
+      code: z.literal(["rate_limited", "generation_in_progress"]),
+      message: z.string().min(1),
+      query: z.null(),
+    }),
+  ]),
 });
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
