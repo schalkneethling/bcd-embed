@@ -39,6 +39,12 @@ validates the portable structural contract; relational invariants that JSON
 Schema cannot express, such as summary projection and response-wide target
 coverage, are documented in the schema `$comment` and enforced by Zod.
 
+The `@bcd-embed/schema/fixtures/v1` subpath publishes the adversarial normalized
+golden response, its named-case catalog, and exact source fragments extracted
+from `@mdn/browser-compat-data@8.0.13`. Run
+`pnpm --filter @bcd-embed/schema generate:fixtures` after intentionally changing
+the pinned source corpus; tests reject stale extracted data.
+
 ## Development
 
 Requirements:
