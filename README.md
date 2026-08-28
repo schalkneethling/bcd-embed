@@ -20,6 +20,25 @@ implemented workspaces are:
 The `core`, `generator`, `server`, and `element` packages will be added when
 their implementation phases begin.
 
+## Contract package
+
+`@bcd-embed/schema` exports the canonical Zod schemas and inferred TypeScript
+types from its package root. Standalone JSON Schema Draft 2020-12 documents are
+published at these subpaths:
+
+- `@bcd-embed/schema/json-schema/feature-response`
+- `@bcd-embed/schema/json-schema/browsers-response`
+- `@bcd-embed/schema/json-schema/index-response`
+- `@bcd-embed/schema/json-schema/meta-response`
+- `@bcd-embed/schema/json-schema/api-error-response`
+
+Regenerate the committed documents with
+`pnpm --filter @bcd-embed/schema generate:json-schema`. Package tests fail when
+the committed documents differ from the canonical Zod definitions. JSON Schema
+validates the portable structural contract; relational invariants that JSON
+Schema cannot express, such as summary projection and response-wide target
+coverage, are documented in the schema `$comment` and enforced by Zod.
+
 ## Development
 
 Requirements:

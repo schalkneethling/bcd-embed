@@ -1,0 +1,2481 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bcd-embed.dev/schemas/v1/feature-response.schema.json",
+  "title": "Feature response",
+  "$comment": "Relational invariants documented by the v1 contract are additionally enforced by the canonical Zod schemas.",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "generated": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "package": {
+          "type": "string",
+          "const": "@mdn/browser-compat-data"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "package",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "browsers": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "desktop",
+              "mobile",
+              "xr",
+              "server"
+            ]
+          },
+          "previewName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "previewName"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "features": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mdnUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "specUrls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "experimental": {
+                "type": "boolean"
+              },
+              "standardTrack": {
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "experimental",
+              "standardTrack",
+              "deprecated"
+            ],
+            "additionalProperties": false
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+:.+$"
+            }
+          },
+          "support": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unsupported"
+                            },
+                            "versionAdded": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "versionRemoved": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unsupported"
+                            },
+                            "versionAdded": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "pattern": "^[^≤]+$"
+                                },
+                                {
+                                  "type": "boolean",
+                                  "const": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "versionRemoved": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unknown"
+                            },
+                            "versionAdded": {
+                              "type": "null"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "preview"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "partial"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "supported"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unsupported"
+                            },
+                            "versionAdded": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "versionRemoved": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unsupported"
+                            },
+                            "versionAdded": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "pattern": "^[^≤]+$"
+                                },
+                                {
+                                  "type": "boolean",
+                                  "const": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "versionRemoved": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unknown"
+                            },
+                            "versionAdded": {
+                              "type": "null"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "preview"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "partial"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "supported"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "alternativeName": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unsupported"
+                            },
+                            "versionAdded": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "versionRemoved": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unsupported"
+                            },
+                            "versionAdded": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "pattern": "^[^≤]+$"
+                                },
+                                {
+                                  "type": "boolean",
+                                  "const": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "versionRemoved": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "unknown"
+                            },
+                            "versionAdded": {
+                              "type": "null"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean"
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "preview"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean"
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "partial"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "releaseDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removalDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "behindFlag": {
+                              "type": "boolean"
+                            },
+                            "hasNotes": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "type": "string",
+                              "const": "supported"
+                            },
+                            "versionAdded": {
+                              "type": "string",
+                              "minLength": 1,
+                              "pattern": "^[^≤]+$"
+                            },
+                            "versionRemoved": {
+                              "type": "null"
+                            },
+                            "partialImplementation": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "isPreview": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "prefix": {
+                              "type": "null"
+                            },
+                            "alternativeName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "releaseDate",
+                            "removalDate",
+                            "behindFlag",
+                            "hasNotes",
+                            "state",
+                            "versionAdded",
+                            "versionRemoved",
+                            "partialImplementation",
+                            "isPreview",
+                            "prefix",
+                            "alternativeName"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "branches": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "canonical": {
+                            "type": "boolean",
+                            "const": true
+                          },
+                          "prefix": {
+                            "type": "null"
+                          },
+                          "alternativeName": {
+                            "type": "null"
+                          },
+                          "statements": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "versionRemoved": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "releaseDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "removalDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "isPreview": {
+                                      "type": "boolean"
+                                    },
+                                    "partialImplementation": {
+                                      "type": "boolean"
+                                    },
+                                    "flags": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "enum": [
+                                              "preference",
+                                              "runtime_flag"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "valueToSet": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "name",
+                                          "valueToSet"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "implUrls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uri"
+                                      }
+                                    },
+                                    "versionAdded": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "^[^≤]+$"
+                                    },
+                                    "versionAddedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "prefix": {
+                                      "type": "null"
+                                    },
+                                    "alternativeName": {
+                                      "type": "null"
+                                    }
+                                  },
+                                  "required": [
+                                    "versionRemoved",
+                                    "releaseDate",
+                                    "removalDate",
+                                    "isPreview",
+                                    "partialImplementation",
+                                    "flags",
+                                    "notes",
+                                    "implUrls",
+                                    "versionAdded",
+                                    "versionAddedIsApproximate",
+                                    "prefix",
+                                    "alternativeName"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "versionRemoved": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "releaseDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "removalDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "isPreview": {
+                                      "type": "boolean"
+                                    },
+                                    "partialImplementation": {
+                                      "type": "boolean"
+                                    },
+                                    "flags": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "enum": [
+                                              "preference",
+                                              "runtime_flag"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "valueToSet": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "name",
+                                          "valueToSet"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "implUrls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uri"
+                                      }
+                                    },
+                                    "versionAdded": {
+                                      "anyOf": [
+                                        {
+                                          "type": "boolean",
+                                          "const": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionAddedIsApproximate": {
+                                      "type": "boolean",
+                                      "const": false
+                                    },
+                                    "prefix": {
+                                      "type": "null"
+                                    },
+                                    "alternativeName": {
+                                      "type": "null"
+                                    }
+                                  },
+                                  "required": [
+                                    "versionRemoved",
+                                    "releaseDate",
+                                    "removalDate",
+                                    "isPreview",
+                                    "partialImplementation",
+                                    "flags",
+                                    "notes",
+                                    "implUrls",
+                                    "versionAdded",
+                                    "versionAddedIsApproximate",
+                                    "prefix",
+                                    "alternativeName"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "canonical",
+                          "prefix",
+                          "alternativeName",
+                          "statements"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "canonical": {
+                            "type": "boolean",
+                            "const": false
+                          },
+                          "prefix": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "alternativeName": {
+                            "type": "null"
+                          },
+                          "statements": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "versionRemoved": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "releaseDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "removalDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "isPreview": {
+                                      "type": "boolean"
+                                    },
+                                    "partialImplementation": {
+                                      "type": "boolean"
+                                    },
+                                    "flags": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "enum": [
+                                              "preference",
+                                              "runtime_flag"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "valueToSet": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "name",
+                                          "valueToSet"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "implUrls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uri"
+                                      }
+                                    },
+                                    "versionAdded": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "^[^≤]+$"
+                                    },
+                                    "versionAddedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "prefix": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "alternativeName": {
+                                      "type": "null"
+                                    }
+                                  },
+                                  "required": [
+                                    "versionRemoved",
+                                    "releaseDate",
+                                    "removalDate",
+                                    "isPreview",
+                                    "partialImplementation",
+                                    "flags",
+                                    "notes",
+                                    "implUrls",
+                                    "versionAdded",
+                                    "versionAddedIsApproximate",
+                                    "prefix",
+                                    "alternativeName"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "versionRemoved": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "releaseDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "removalDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "isPreview": {
+                                      "type": "boolean"
+                                    },
+                                    "partialImplementation": {
+                                      "type": "boolean"
+                                    },
+                                    "flags": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "enum": [
+                                              "preference",
+                                              "runtime_flag"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "valueToSet": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "name",
+                                          "valueToSet"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "implUrls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uri"
+                                      }
+                                    },
+                                    "versionAdded": {
+                                      "anyOf": [
+                                        {
+                                          "type": "boolean",
+                                          "const": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionAddedIsApproximate": {
+                                      "type": "boolean",
+                                      "const": false
+                                    },
+                                    "prefix": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "alternativeName": {
+                                      "type": "null"
+                                    }
+                                  },
+                                  "required": [
+                                    "versionRemoved",
+                                    "releaseDate",
+                                    "removalDate",
+                                    "isPreview",
+                                    "partialImplementation",
+                                    "flags",
+                                    "notes",
+                                    "implUrls",
+                                    "versionAdded",
+                                    "versionAddedIsApproximate",
+                                    "prefix",
+                                    "alternativeName"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "canonical",
+                          "prefix",
+                          "alternativeName",
+                          "statements"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "canonical": {
+                            "type": "boolean",
+                            "const": false
+                          },
+                          "prefix": {
+                            "type": "null"
+                          },
+                          "alternativeName": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "statements": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "versionRemoved": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "releaseDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "removalDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "isPreview": {
+                                      "type": "boolean"
+                                    },
+                                    "partialImplementation": {
+                                      "type": "boolean"
+                                    },
+                                    "flags": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "enum": [
+                                              "preference",
+                                              "runtime_flag"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "valueToSet": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "name",
+                                          "valueToSet"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "implUrls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uri"
+                                      }
+                                    },
+                                    "versionAdded": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "^[^≤]+$"
+                                    },
+                                    "versionAddedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "prefix": {
+                                      "type": "null"
+                                    },
+                                    "alternativeName": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "versionRemoved",
+                                    "releaseDate",
+                                    "removalDate",
+                                    "isPreview",
+                                    "partialImplementation",
+                                    "flags",
+                                    "notes",
+                                    "implUrls",
+                                    "versionAdded",
+                                    "versionAddedIsApproximate",
+                                    "prefix",
+                                    "alternativeName"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "versionRemoved": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "releaseDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "removalDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "format": "date",
+                                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "isPreview": {
+                                      "type": "boolean"
+                                    },
+                                    "partialImplementation": {
+                                      "type": "boolean"
+                                    },
+                                    "flags": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "enum": [
+                                              "preference",
+                                              "runtime_flag"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "valueToSet": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "name",
+                                          "valueToSet"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "notes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "implUrls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "format": "uri"
+                                      }
+                                    },
+                                    "versionAdded": {
+                                      "anyOf": [
+                                        {
+                                          "type": "boolean",
+                                          "const": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionAddedIsApproximate": {
+                                      "type": "boolean",
+                                      "const": false
+                                    },
+                                    "prefix": {
+                                      "type": "null"
+                                    },
+                                    "alternativeName": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "versionRemoved",
+                                    "releaseDate",
+                                    "removalDate",
+                                    "isPreview",
+                                    "partialImplementation",
+                                    "flags",
+                                    "notes",
+                                    "implUrls",
+                                    "versionAdded",
+                                    "versionAddedIsApproximate",
+                                    "prefix",
+                                    "alternativeName"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "canonical",
+                          "prefix",
+                          "alternativeName",
+                          "statements"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "summary",
+                "branches"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "depth",
+          "description",
+          "mdnUrl",
+          "specUrls",
+          "status",
+          "tags",
+          "support"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "contract",
+    "generated",
+    "source",
+    "query",
+    "browsers",
+    "features"
+  ],
+  "additionalProperties": false
+}

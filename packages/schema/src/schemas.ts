@@ -55,60 +55,98 @@ export const supportFlagSchema = z.strictObject({
 });
 export type SupportFlag = z.infer<typeof supportFlagSchema>;
 
-export const supportStatementSchema = z
-  .strictObject({
-    versionAdded: versionValueSchema,
-    versionAddedIsApproximate: z.boolean(),
-    versionRemoved: z.string().min(1).nullable(),
-    releaseDate: releaseDateSchema.nullable(),
-    removalDate: releaseDateSchema.nullable(),
-    isPreview: z.boolean(),
-    partialImplementation: z.boolean(),
-    prefix: z.string().min(1).nullable(),
-    alternativeName: z.string().min(1).nullable(),
-    flags: z.array(supportFlagSchema),
-    notes: z.array(z.string().min(1)),
-    implUrls: z.array(z.url()),
-  })
-  .superRefine((statement, context) => {
-    if (statement.versionAddedIsApproximate && typeof statement.versionAdded !== "string") {
-      context.addIssue({
-        code: "custom",
-        path: ["versionAddedIsApproximate"],
-        message: "Approximate support requires a normalized version string.",
-      });
-    }
-    if (statement.prefix !== null && statement.alternativeName !== null) {
-      context.addIssue({
-        code: "custom",
-        path: ["alternativeName"],
-        message: "A statement cannot have both a prefix and alternative name.",
-      });
-    }
-  });
-export type SupportStatement = z.infer<typeof supportStatementSchema>;
+const supportStatementCommon = {
+  versionRemoved: z.string().min(1).nullable(),
+  releaseDate: releaseDateSchema.nullable(),
+  removalDate: releaseDateSchema.nullable(),
+  isPreview: z.boolean(),
+  partialImplementation: z.boolean(),
+  flags: z.array(supportFlagSchema),
+  notes: z.array(z.string().min(1)),
+  implUrls: z.array(z.url()),
+};
 
-const branchStatementsSchema = z.array(supportStatementSchema).min(1);
+const knownVersionStatement = {
+  versionAdded: normalizedVersionSchema,
+  versionAddedIsApproximate: z.boolean(),
+};
+
+const unknownVersionStatement = {
+  versionAdded: z.union([z.literal(false), z.null()]),
+  versionAddedIsApproximate: z.literal(false),
+};
+
+const canonicalSupportStatementSchema = z.union([
+  z.strictObject({
+    ...supportStatementCommon,
+    ...knownVersionStatement,
+    prefix: z.null(),
+    alternativeName: z.null(),
+  }),
+  z.strictObject({
+    ...supportStatementCommon,
+    ...unknownVersionStatement,
+    prefix: z.null(),
+    alternativeName: z.null(),
+  }),
+]);
+
+const prefixedSupportStatementSchema = z.union([
+  z.strictObject({
+    ...supportStatementCommon,
+    ...knownVersionStatement,
+    prefix: z.string().min(1),
+    alternativeName: z.null(),
+  }),
+  z.strictObject({
+    ...supportStatementCommon,
+    ...unknownVersionStatement,
+    prefix: z.string().min(1),
+    alternativeName: z.null(),
+  }),
+]);
+
+const alternativeNameSupportStatementSchema = z.union([
+  z.strictObject({
+    ...supportStatementCommon,
+    ...knownVersionStatement,
+    prefix: z.null(),
+    alternativeName: z.string().min(1),
+  }),
+  z.strictObject({
+    ...supportStatementCommon,
+    ...unknownVersionStatement,
+    prefix: z.null(),
+    alternativeName: z.string().min(1),
+  }),
+]);
+
+export const supportStatementSchema = z.union([
+  canonicalSupportStatementSchema,
+  prefixedSupportStatementSchema,
+  alternativeNameSupportStatementSchema,
+]);
+export type SupportStatement = z.infer<typeof supportStatementSchema>;
 
 const canonicalSupportBranchSchema = z.strictObject({
   canonical: z.literal(true),
   prefix: z.null(),
   alternativeName: z.null(),
-  statements: branchStatementsSchema,
+  statements: z.array(canonicalSupportStatementSchema).min(1),
 });
 
 const prefixedSupportBranchSchema = z.strictObject({
   canonical: z.literal(false),
   prefix: z.string().min(1),
   alternativeName: z.null(),
-  statements: branchStatementsSchema,
+  statements: z.array(prefixedSupportStatementSchema).min(1),
 });
 
 const alternativeNameSupportBranchSchema = z.strictObject({
   canonical: z.literal(false),
   prefix: z.null(),
   alternativeName: z.string().min(1),
-  statements: branchStatementsSchema,
+  statements: z.array(alternativeNameSupportStatementSchema).min(1),
 });
 
 export const supportBranchSchema = z
@@ -133,29 +171,88 @@ export const supportBranchSchema = z
   });
 export type SupportBranch = z.infer<typeof supportBranchSchema>;
 
-export const supportSummarySchema = z
-  .strictObject({
-    state: supportStateSchema,
-    versionAdded: versionValueSchema,
-    versionRemoved: z.string().min(1).nullable(),
-    releaseDate: releaseDateSchema.nullable(),
-    removalDate: releaseDateSchema.nullable(),
-    partialImplementation: z.boolean(),
-    behindFlag: z.boolean(),
-    prefix: z.string().min(1).nullable(),
-    alternativeName: z.string().min(1).nullable(),
-    isPreview: z.boolean(),
-    hasNotes: z.boolean(),
-  })
-  .superRefine((summary, context) => {
-    if (summary.prefix !== null && summary.alternativeName !== null) {
-      context.addIssue({
-        code: "custom",
-        path: ["alternativeName"],
-        message: "A summary cannot have both a prefix and alternative name.",
-      });
-    }
-  });
+const supportSummaryCommon = {
+  releaseDate: releaseDateSchema.nullable(),
+  removalDate: releaseDateSchema.nullable(),
+  behindFlag: z.boolean(),
+  hasNotes: z.boolean(),
+};
+
+const summarySchemasForIdentity = <
+  Prefix extends z.ZodType<string | null>,
+  AlternativeName extends z.ZodType<string | null>,
+>(
+  prefix: Prefix,
+  alternativeName: AlternativeName,
+) =>
+  z.union([
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("unsupported"),
+      versionAdded: z.literal(false),
+      versionRemoved: z.string().min(1).nullable(),
+      partialImplementation: z.boolean(),
+      isPreview: z.boolean(),
+      prefix,
+      alternativeName,
+    }),
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("unsupported"),
+      versionAdded: versionValueSchema,
+      versionRemoved: z.string().min(1),
+      partialImplementation: z.boolean(),
+      isPreview: z.boolean(),
+      prefix,
+      alternativeName,
+    }),
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("unknown"),
+      versionAdded: z.null(),
+      versionRemoved: z.null(),
+      partialImplementation: z.boolean(),
+      isPreview: z.boolean(),
+      prefix,
+      alternativeName,
+    }),
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("preview"),
+      versionAdded: normalizedVersionSchema,
+      versionRemoved: z.null(),
+      partialImplementation: z.boolean(),
+      isPreview: z.literal(true),
+      prefix,
+      alternativeName,
+    }),
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("partial"),
+      versionAdded: normalizedVersionSchema,
+      versionRemoved: z.null(),
+      partialImplementation: z.literal(true),
+      isPreview: z.literal(false),
+      prefix,
+      alternativeName,
+    }),
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("supported"),
+      versionAdded: normalizedVersionSchema,
+      versionRemoved: z.null(),
+      partialImplementation: z.literal(false),
+      isPreview: z.literal(false),
+      prefix,
+      alternativeName,
+    }),
+  ]);
+
+export const supportSummarySchema = z.union([
+  summarySchemasForIdentity(z.null(), z.null()),
+  summarySchemasForIdentity(z.string().min(1), z.null()),
+  summarySchemasForIdentity(z.null(), z.string().min(1)),
+]);
 export type SupportSummary = z.infer<typeof supportSummarySchema>;
 
 const supportStatementSelectionRank = (statement: SupportStatement): number => {
@@ -201,13 +298,15 @@ export const supportTargetSupportSchema = z
       });
     }
 
-    const selectedStatement = support.branches
-      .flatMap((branch) => branch.statements)
-      .reduce((selected, candidate) =>
-        supportStatementSelectionRank(candidate) < supportStatementSelectionRank(selected)
-          ? candidate
-          : selected,
-      );
+    const statements: SupportStatement[] = [];
+    for (const branch of support.branches) {
+      statements.push(...(branch.statements as SupportStatement[]));
+    }
+    const selectedStatement = statements.reduce((selected, candidate) =>
+      supportStatementSelectionRank(candidate) < supportStatementSelectionRank(selected)
+        ? candidate
+        : selected,
+    );
     if (!summaryProjectsStatement(support.summary, selectedStatement)) {
       context.addIssue({
         code: "custom",
@@ -360,7 +459,7 @@ export const metaResponseSchema = z
     generated: generatedTimestampSchema,
     current: snapshotIdentifierSchema,
     snapshots: z.array(snapshotSchema).min(1),
-    namespaces: z.array(namespaceSchema).min(1),
+    namespaces: z.array(namespaceSchema).min(1).meta({ uniqueItems: true }),
   })
   .superRefine((metadata, context) => {
     const snapshotIds = metadata.snapshots.map((snapshot) => snapshot.id);
