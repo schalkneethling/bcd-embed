@@ -58,8 +58,12 @@ try {
     smokeTest,
     `import { createRequire } from "node:module";
 import { featureResponseSchema } from "@bcd-embed/schema";
+import { bcdSourceFixtures, v1FixtureCases, v1NormalizedFixture } from "@bcd-embed/schema/fixtures/v1";
 const require = createRequire(import.meta.url);
 if (typeof featureResponseSchema.parse !== "function") throw new Error("Missing Zod export");
+if (v1NormalizedFixture.features.length < 10) throw new Error("Missing normalized fixtures");
+if (v1FixtureCases.branching !== "css.properties.width.fit-content") throw new Error("Missing fixture catalog");
+if (!bcdSourceFixtures.subtrees["javascript.builtins.Array"]) throw new Error("Missing BCD source subtree");
 for (const name of ${JSON.stringify(schemaNames)}) {
   const jsonSchema = require(\`@bcd-embed/schema/json-schema/\${name}\`);
   if (jsonSchema.$schema !== "https://json-schema.org/draft/2020-12/schema") throw new Error(\`Invalid JSON Schema draft for \${name}\`);
@@ -80,9 +84,12 @@ for (const name of ${JSON.stringify(schemaNames)}) {
   await writeFile(
     typeSmokeTest,
     `import { featureResponseSchema, type FeatureResponse } from "@bcd-embed/schema";
+import { v1NormalizedFixture } from "@bcd-embed/schema/fixtures/v1";
 declare const input: unknown;
 const parsed: FeatureResponse = featureResponseSchema.parse(input);
+const fixture: FeatureResponse = v1NormalizedFixture;
 void parsed;
+void fixture;
 `,
   );
   const typeScriptConfig = join(temporaryDirectory, "tsconfig.json");
@@ -120,6 +127,9 @@ void parsed;
     if (!manifest.exports[`./json-schema/${name}`]) {
       throw new Error(`Packed manifest is missing the ${name} JSON Schema export.`);
     }
+  }
+  if (!manifest.exports["./fixtures/v1"]) {
+    throw new Error("Packed manifest is missing the v1 fixture export.");
   }
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
