@@ -8,7 +8,7 @@ export type ContractVersion = z.infer<typeof contractVersionSchema>;
 
 export const generatedTimestampSchema = z.iso.datetime();
 export const releaseDateSchema = z.iso.date();
-export const featureKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+export const featureKeySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._$@-]*$/);
 export const supportTargetIdentifierSchema = z.string().regex(/^[a-z0-9][a-z0-9_]*$/);
 export const namespaceSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 
@@ -56,7 +56,10 @@ export const supportFlagSchema = z.strictObject({
 export type SupportFlag = z.infer<typeof supportFlagSchema>;
 
 const supportStatementCommon = {
-  versionRemoved: z.string().min(1).nullable(),
+  versionRemoved: normalizedVersionSchema.nullable(),
+  versionRemovedIsApproximate: z.boolean(),
+  versionLast: normalizedVersionSchema.nullable(),
+  versionLastIsApproximate: z.boolean(),
   releaseDate: releaseDateSchema.nullable(),
   removalDate: releaseDateSchema.nullable(),
   isPreview: z.boolean(),
@@ -121,11 +124,33 @@ const alternativeNameSupportStatementSchema = z.union([
   }),
 ]);
 
-export const supportStatementSchema = z.union([
+const supportStatementUnionSchema = z.union([
   canonicalSupportStatementSchema,
   prefixedSupportStatementSchema,
   alternativeNameSupportStatementSchema,
 ]);
+const invalidApproximationFields = (statement: {
+  versionRemoved: string | null;
+  versionRemovedIsApproximate: boolean;
+  versionLast: string | null;
+  versionLastIsApproximate: boolean;
+}) =>
+  [
+    ["versionRemoved", statement.versionRemoved, statement.versionRemovedIsApproximate],
+    ["versionLast", statement.versionLast, statement.versionLastIsApproximate],
+  ].filter(([, value, approximate]) => value === null && approximate === true);
+
+export const supportStatementSchema = supportStatementUnionSchema.superRefine(
+  (statement, context) => {
+    for (const [field] of invalidApproximationFields(statement)) {
+      context.addIssue({
+        code: "custom",
+        path: [`${field}IsApproximate`],
+        message: "An absent version cannot be approximate.",
+      });
+    }
+  },
+);
 export type SupportStatement = z.infer<typeof supportStatementSchema>;
 
 const canonicalSupportBranchSchema = z.strictObject({
@@ -157,6 +182,13 @@ export const supportBranchSchema = z
   ])
   .superRefine((branch, context) => {
     branch.statements.forEach((statement, index) => {
+      for (const [field] of invalidApproximationFields(statement)) {
+        context.addIssue({
+          code: "custom",
+          path: ["statements", index, `${field}IsApproximate`],
+          message: "An absent version cannot be approximate.",
+        });
+      }
       if (
         statement.prefix !== branch.prefix ||
         statement.alternativeName !== branch.alternativeName
@@ -174,6 +206,7 @@ export type SupportBranch = z.infer<typeof supportBranchSchema>;
 const supportSummaryCommon = {
   releaseDate: releaseDateSchema.nullable(),
   removalDate: releaseDateSchema.nullable(),
+  versionRemovedIsApproximate: z.boolean(),
   behindFlag: z.boolean(),
   hasNotes: z.boolean(),
 };
@@ -272,6 +305,7 @@ const supportStatementSelectionRank = (statement: SupportStatement): number => {
 const summaryProjectsStatement = (summary: SupportSummary, statement: SupportStatement): boolean =>
   statement.versionAdded === summary.versionAdded &&
   statement.versionRemoved === summary.versionRemoved &&
+  statement.versionRemovedIsApproximate === summary.versionRemovedIsApproximate &&
   statement.releaseDate === summary.releaseDate &&
   statement.removalDate === summary.removalDate &&
   statement.partialImplementation === summary.partialImplementation &&
@@ -287,6 +321,13 @@ export const supportTargetSupportSchema = z
     branches: z.array(supportBranchSchema).min(1),
   })
   .superRefine((support, context) => {
+    if (support.summary.versionRemoved === null && support.summary.versionRemovedIsApproximate) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary", "versionRemovedIsApproximate"],
+        message: "An absent version cannot be approximate.",
+      });
+    }
     const identities = support.branches.map((branch) =>
       JSON.stringify([branch.prefix, branch.alternativeName]),
     );
@@ -357,7 +398,7 @@ export const featureSchema = z.strictObject({
   description: z.string().min(1).nullable(),
   mdnUrl: z.url().nullable(),
   specUrls: z.array(z.url()),
-  status: featureStatusSchema,
+  status: featureStatusSchema.nullable(),
   tags: z.array(z.string().regex(/^[a-z0-9-]+:.+$/)),
   support: z.record(supportTargetIdentifierSchema, supportTargetSupportSchema),
 });

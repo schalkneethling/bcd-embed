@@ -34,7 +34,7 @@
     },
     "query": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._$@-]*$"
     },
     "browsers": {
       "type": "object",
@@ -86,7 +86,7 @@
         "properties": {
           "key": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._$@-]*$"
           },
           "name": {
             "type": "string",
@@ -127,24 +127,31 @@
             }
           },
           "status": {
-            "type": "object",
-            "properties": {
-              "experimental": {
-                "type": "boolean"
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "experimental": {
+                    "type": "boolean"
+                  },
+                  "standardTrack": {
+                    "type": "boolean"
+                  },
+                  "deprecated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "experimental",
+                  "standardTrack",
+                  "deprecated"
+                ],
+                "additionalProperties": false
               },
-              "standardTrack": {
-                "type": "boolean"
-              },
-              "deprecated": {
-                "type": "boolean"
+              {
+                "type": "null"
               }
-            },
-            "required": [
-              "experimental",
-              "standardTrack",
-              "deprecated"
-            ],
-            "additionalProperties": false
+            ]
           },
           "tags": {
             "type": "array",
@@ -193,6 +200,9 @@
                                 }
                               ]
                             },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
+                            },
                             "behindFlag": {
                               "type": "boolean"
                             },
@@ -234,6 +244,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -272,6 +283,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -319,6 +333,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -357,6 +372,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -390,6 +408,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -428,6 +447,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -464,6 +486,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -502,6 +525,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -539,6 +565,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -578,6 +605,9 @@
                                 }
                               ]
                             },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
+                            },
                             "behindFlag": {
                               "type": "boolean"
                             },
@@ -614,6 +644,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -657,6 +688,9 @@
                                 }
                               ]
                             },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
+                            },
                             "behindFlag": {
                               "type": "boolean"
                             },
@@ -699,6 +733,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -737,6 +772,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -785,6 +823,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -823,6 +862,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -857,6 +899,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -895,6 +938,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -932,6 +978,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -970,6 +1017,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -1008,6 +1058,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1047,6 +1098,9 @@
                                 }
                               ]
                             },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
+                            },
                             "behindFlag": {
                               "type": "boolean"
                             },
@@ -1084,6 +1138,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1127,6 +1182,9 @@
                                 }
                               ]
                             },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
+                            },
                             "behindFlag": {
                               "type": "boolean"
                             },
@@ -1169,6 +1227,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1207,6 +1266,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -1255,6 +1317,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1293,6 +1356,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -1327,6 +1393,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1365,6 +1432,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -1402,6 +1472,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1440,6 +1511,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
                             },
                             "behindFlag": {
                               "type": "boolean"
@@ -1478,6 +1552,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1517,6 +1592,9 @@
                                 }
                               ]
                             },
+                            "versionRemovedIsApproximate": {
+                              "type": "boolean"
+                            },
                             "behindFlag": {
                               "type": "boolean"
                             },
@@ -1554,6 +1632,7 @@
                           "required": [
                             "releaseDate",
                             "removalDate",
+                            "versionRemovedIsApproximate",
                             "behindFlag",
                             "hasNotes",
                             "state",
@@ -1600,12 +1679,31 @@
                                       "anyOf": [
                                         {
                                           "type": "string",
-                                          "minLength": 1
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
                                         },
                                         {
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "versionRemovedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "versionLast": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionLastIsApproximate": {
+                                      "type": "boolean"
                                     },
                                     "releaseDate": {
                                       "anyOf": [
@@ -1704,6 +1802,9 @@
                                   },
                                   "required": [
                                     "versionRemoved",
+                                    "versionRemovedIsApproximate",
+                                    "versionLast",
+                                    "versionLastIsApproximate",
                                     "releaseDate",
                                     "removalDate",
                                     "isPreview",
@@ -1725,12 +1826,31 @@
                                       "anyOf": [
                                         {
                                           "type": "string",
-                                          "minLength": 1
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
                                         },
                                         {
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "versionRemovedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "versionLast": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionLastIsApproximate": {
+                                      "type": "boolean"
                                     },
                                     "releaseDate": {
                                       "anyOf": [
@@ -1836,6 +1956,9 @@
                                   },
                                   "required": [
                                     "versionRemoved",
+                                    "versionRemovedIsApproximate",
+                                    "versionLast",
+                                    "versionLastIsApproximate",
                                     "releaseDate",
                                     "removalDate",
                                     "isPreview",
@@ -1888,12 +2011,31 @@
                                       "anyOf": [
                                         {
                                           "type": "string",
-                                          "minLength": 1
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
                                         },
                                         {
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "versionRemovedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "versionLast": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionLastIsApproximate": {
+                                      "type": "boolean"
                                     },
                                     "releaseDate": {
                                       "anyOf": [
@@ -1993,6 +2135,9 @@
                                   },
                                   "required": [
                                     "versionRemoved",
+                                    "versionRemovedIsApproximate",
+                                    "versionLast",
+                                    "versionLastIsApproximate",
                                     "releaseDate",
                                     "removalDate",
                                     "isPreview",
@@ -2014,12 +2159,31 @@
                                       "anyOf": [
                                         {
                                           "type": "string",
-                                          "minLength": 1
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
                                         },
                                         {
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "versionRemovedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "versionLast": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionLastIsApproximate": {
+                                      "type": "boolean"
                                     },
                                     "releaseDate": {
                                       "anyOf": [
@@ -2126,6 +2290,9 @@
                                   },
                                   "required": [
                                     "versionRemoved",
+                                    "versionRemovedIsApproximate",
+                                    "versionLast",
+                                    "versionLastIsApproximate",
                                     "releaseDate",
                                     "removalDate",
                                     "isPreview",
@@ -2178,12 +2345,31 @@
                                       "anyOf": [
                                         {
                                           "type": "string",
-                                          "minLength": 1
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
                                         },
                                         {
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "versionRemovedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "versionLast": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionLastIsApproximate": {
+                                      "type": "boolean"
                                     },
                                     "releaseDate": {
                                       "anyOf": [
@@ -2283,6 +2469,9 @@
                                   },
                                   "required": [
                                     "versionRemoved",
+                                    "versionRemovedIsApproximate",
+                                    "versionLast",
+                                    "versionLastIsApproximate",
                                     "releaseDate",
                                     "removalDate",
                                     "isPreview",
@@ -2304,12 +2493,31 @@
                                       "anyOf": [
                                         {
                                           "type": "string",
-                                          "minLength": 1
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
                                         },
                                         {
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "versionRemovedIsApproximate": {
+                                      "type": "boolean"
+                                    },
+                                    "versionLast": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "pattern": "^[^≤]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "versionLastIsApproximate": {
+                                      "type": "boolean"
                                     },
                                     "releaseDate": {
                                       "anyOf": [
@@ -2416,6 +2624,9 @@
                                   },
                                   "required": [
                                     "versionRemoved",
+                                    "versionRemovedIsApproximate",
+                                    "versionLast",
+                                    "versionLastIsApproximate",
                                     "releaseDate",
                                     "removalDate",
                                     "isPreview",
