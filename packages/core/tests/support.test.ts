@@ -5,9 +5,9 @@ import type {
   SimpleSupportStatement,
   SupportStatement as BcdSupportStatement,
 } from "@mdn/browser-compat-data/types";
-import { supportTargetSupportSchema } from "@bcd-embed/schema";
 import { describe, expect, it } from "vitest";
 
+import { supportTargetSupportSchema } from "../../schema/src/index.js";
 import { normalizeTargetSupport } from "../src/support.js";
 
 const compatAt = (path: string): CompatStatement => {
@@ -116,9 +116,11 @@ describe("normalizeTargetSupport", () => {
       supportAt("html.elements.object.codebase", "chrome"),
       browser("chrome"),
     );
-    const approximateRemoval = normalized.branches
-      .flatMap(({ statements }) => statements)
-      .find(({ versionRemoved }) => versionRemoved === "62");
+    let approximateRemoval;
+    for (const branch of normalized.branches) {
+      approximateRemoval = branch.statements.find(({ versionRemoved }) => versionRemoved === "62");
+      if (approximateRemoval !== undefined) break;
+    }
 
     expect(approximateRemoval).toMatchObject({
       versionLast: "62",
