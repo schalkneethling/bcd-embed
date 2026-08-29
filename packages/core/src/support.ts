@@ -11,7 +11,7 @@ import type {
   SupportTargetSupport,
 } from "@bcd-embed/schema";
 
-import { normalizeVersion } from "./index.js";
+import { normalizeVersion } from "./version.js";
 
 type RawSimpleSupportStatement = Omit<SimpleSupportStatement, "version_added"> & {
   version_added: string | false | null;

@@ -43,7 +43,6 @@ importers:
       '@bcd-embed/schema':
         specifier: workspace:*
         version: link:../schema
-    devDependencies:
       '@mdn/browser-compat-data':
         specifier: 8.0.13
         version: 8.0.13

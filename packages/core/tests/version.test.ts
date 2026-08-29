@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeVersion } from "../src/index.js";
+import { normalizeVersion } from "../src/version.js";
 
 describe("normalizeVersion", () => {
   it.each([

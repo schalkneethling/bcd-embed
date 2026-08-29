@@ -9,16 +9,17 @@ foundation. The design and sequencing decisions live in
 
 ## Repository layout
 
-The planned monorepo keeps the contract, normalization pipeline, static artifact
-generator, edge adapter, and web component versioned together. The first
-implemented workspaces are:
+The monorepo keeps the contract, normalization pipeline, static artifact
+generator, edge adapter, and web component versioned together. The implemented
+workspaces are:
 
-- `packages/schema` — `@bcd-embed/schema`, the future canonical Zod schemas,
-  inferred TypeScript types, and derived JSON Schema.
+- `packages/schema` — `@bcd-embed/schema`, the canonical Zod schemas, inferred
+  TypeScript types, and derived JSON Schema.
+- `packages/core` — `@bcd-embed/core`, the pure BCD subtree normalizer.
 - `apps/docs` — the documentation, examples, and playground application.
 
-The `core`, `generator`, `server`, and `element` packages will be added when
-their implementation phases begin.
+The `generator`, `server`, and `element` packages will be added when their
+implementation phases begin.
 
 ## Contract package
 
@@ -44,6 +45,15 @@ golden response, its named-case catalog, and exact source fragments extracted
 from `@mdn/browser-compat-data@8.0.13`. Run
 `pnpm --filter @bcd-embed/schema generate:fixtures` after intentionally changing
 the pinned source corpus; tests reject stale extracted data.
+
+## Core package
+
+`@bcd-embed/core` exports `normalizeFeatureSubtree`, the framework-free,
+side-effect-free transform from one addressable BCD subtree plus BCD browser
+metadata to normalized `features` and the exact referenced support-target
+metadata. It performs no I/O and does not add timestamps, source identity, or a
+response envelope; those remain generator responsibilities. Normalization
+failures throw `BcdNormalizationError` with the failing BCD key.
 
 ## Development
 
