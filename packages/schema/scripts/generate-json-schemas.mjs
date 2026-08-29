@@ -27,11 +27,18 @@ const definitions = [
 ];
 
 const expectedFiles = definitions.map(([name]) => `${name}.schema.json`).sort();
-
-if (check) {
-  const actualFiles = (await readdir(outputDirectory))
+let actualFiles = [];
+try {
+  actualFiles = (await readdir(outputDirectory))
     .filter((file) => file.endsWith(".schema.json"))
     .sort();
+} catch (error) {
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+    throw error;
+  }
+}
+
+if (check) {
   if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
     throw new Error(
       `Generated schema file set differs: expected ${expectedFiles.join(", ")}; found ${actualFiles.join(", ")}.`,
@@ -39,7 +46,6 @@ if (check) {
   }
 } else {
   await mkdir(outputDirectory, { recursive: true });
-  const actualFiles = await readdir(outputDirectory);
   await Promise.all(
     actualFiles
       .filter((file) => file.endsWith(".schema.json") && !expectedFiles.includes(file))
