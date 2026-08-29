@@ -18,14 +18,12 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build --mode lib && tsc --project tsconfig.build.json",
+    "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/package-smoke-test.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bcd-embed/schema": "workspace:*"
-  },
-  "devDependencies": {
+    "@bcd-embed/schema": "workspace:*",
     "@mdn/browser-compat-data": "8.0.13"
   }
 }
