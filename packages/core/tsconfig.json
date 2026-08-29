@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@bcd-embed/schema": ["../schema/src/index.ts"]
+    }
+  },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
