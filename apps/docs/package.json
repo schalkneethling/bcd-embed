@@ -8,5 +8,11 @@
     "dev": "vite",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bcd-embed/schema": "workspace:*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "zod": "^4.4.3"
   }
 }

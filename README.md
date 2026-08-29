@@ -63,7 +63,7 @@ pnpm check
 Useful commands:
 
 ```sh
-pnpm dev              # Run the documentation app
+pnpm dev              # Run the contract playground
 pnpm fixtures:report  # Summarize the v1 golden fixture corpus
 pnpm format           # Format the repository
 pnpm lint             # Run JavaScript/TypeScript and CSS linting
