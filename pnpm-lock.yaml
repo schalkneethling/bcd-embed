@@ -19,13 +19,13 @@ importers:
         version: 1.75.0
       stylelint:
         specifier: ^17.14.1
-        version: 17.14.1(typescript@7.0.2)
+        version: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
       stylelint-config-standard:
         specifier: ^40.0.0
-        version: 40.0.0(stylelint@17.14.1(typescript@7.0.2))
+        version: 40.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2))
       stylelint-plugin-use-baseline:
         specifier: ^1.4.6
-        version: 1.4.6(stylelint@17.14.1(typescript@7.0.2))
+        version: 1.4.6(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2))
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -37,6 +37,16 @@ importers:
         version: 4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1))
 
   apps/docs: {}
+
+  packages/core:
+    dependencies:
+      '@bcd-embed/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@mdn/browser-compat-data':
+        specifier: 8.0.13
+        version: 8.0.13
 
   packages/schema:
     dependencies:
@@ -2223,24 +2233,24 @@ snapshots:
     dependencies:
       ansi-regex: 6.3.0
 
-  stylelint-config-recommended@18.0.0(stylelint@17.14.1(typescript@7.0.2)):
+  stylelint-config-recommended@18.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:
-      stylelint: 17.14.1(typescript@7.0.2)
+      stylelint: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
 
-  stylelint-config-standard@40.0.0(stylelint@17.14.1(typescript@7.0.2)):
+  stylelint-config-standard@40.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:
-      stylelint: 17.14.1(typescript@7.0.2)
-      stylelint-config-recommended: 18.0.0(stylelint@17.14.1(typescript@7.0.2))
+      stylelint: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
+      stylelint-config-recommended: 18.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2))
 
-  stylelint-plugin-use-baseline@1.4.6(stylelint@17.14.1(typescript@7.0.2)):
+  stylelint-plugin-use-baseline@1.4.6(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:
       css-tree: 3.2.1
       is-plain-object: 5.1.0
       postcss: 8.5.26
       postcss-value-parser: 4.2.0
-      stylelint: 17.14.1(typescript@7.0.2)
+      stylelint: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
 
-  stylelint@17.14.1(typescript@7.0.2):
+  stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2):
     dependencies:
       '@csstools/css-calc': 3.3.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-parser-algorithms': 4.0.0(@csstools/css-tokenizer@4.0.0)
