@@ -30,6 +30,8 @@
     "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/copy-json-schemas.mjs && node scripts/package-smoke-test.mjs",
     "generate:fixtures": "node scripts/generate-source-fixtures.mjs",
     "generate:json-schema": "node scripts/generate-json-schemas.mjs",
+    "fixtures:report": "node --import tsx scripts/report-fixtures.mjs",
+    "schema:validate": "node scripts/validate-contract.mjs",
     "test": "node scripts/generate-source-fixtures.mjs --check && node scripts/generate-json-schemas.mjs --check && vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -39,6 +41,7 @@
   "devDependencies": {
     "@mdn/browser-compat-data": "8.0.13",
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "ajv-formats": "3.0.1",
+    "tsx": "4.23.12"
   }
 }
