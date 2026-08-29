@@ -48,7 +48,11 @@ Features are addressed by BCD dotted keys, as published in the BCD schema and us
 
 `v1` supports BCD keys only. `web-features` identifiers are not accepted, and Baseline status is out of scope entirely — not merely deferred as an additive field. The two vocabularies differ in granularity and governance, and bridging them is a separate problem this contract does not take on. Baseline data is only reconsidered if and when it becomes part of BCD itself.
 
-A key must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. Anything else is rejected before reaching storage. Keys are case-sensitive.
+A key must match `^[A-Za-z0-9][A-Za-z0-9._$@-]*$`. The `$` and `@`
+characters are required by published BCD keys such as
+`webextensions.api.devtools.inspectedWindow.eval.$0` and
+`javascript.builtins.Array.@@iterator`. Anything else is rejected before
+reaching storage. Keys are case-sensitive.
 
 ---
 
@@ -211,6 +215,7 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
         "standardTrack": true,
         "deprecated": false
       },
+      // null when BCD omits the complete status block
       "tags": ["web-features:display"], // BCD's tags, passed through verbatim; [] when BCD has none
 
       "support": {
@@ -219,6 +224,7 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
             "state": "supported",
             "versionAdded": "1",
             "versionRemoved": null,
+            "versionRemovedIsApproximate": false,
             "releaseDate": "2008-12-11",
             "removalDate": null,
             "partialImplementation": false,
@@ -238,6 +244,9 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
                   "versionAdded": "1",
                   "versionAddedIsApproximate": false,
                   "versionRemoved": null,
+                  "versionRemovedIsApproximate": false,
+                  "versionLast": null,
+                  "versionLastIsApproximate": false,
                   "releaseDate": "2008-12-11",
                   "removalDate": null,
                   "isPreview": false,
@@ -273,6 +282,16 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 
 The normalized `versionAdded` value never contains the raw `≤` sigil, and
 `versionAddedIsApproximate: true` is valid only alongside a version string.
+
+The same lossless representation applies to removal and last-supported
+versions through `versionRemovedIsApproximate` and
+`versionLastIsApproximate`. `versionLast` preserves BCD's distinct
+`version_last` boundary instead of discarding it. Each absent source field is
+represented by `null` with its approximation flag set to `false`.
+
+**`status` is nullable.** BCD omits the complete status block for some
+features. `null` preserves that absence; the normalizer does not invent values
+for `experimental`, `standardTrack`, or `deprecated`.
 
 **`flags` is always an array**, empty rather than absent, so a consumer testing "behind a flag" does not have to distinguish `undefined` from `[]`.
 
