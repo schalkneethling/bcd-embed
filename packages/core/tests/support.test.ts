@@ -111,6 +111,68 @@ describe("normalizeTargetSupport", () => {
     });
   });
 
+  it("preserves real approximate last and removal boundaries before joining dates", () => {
+    const normalized = normalizeTargetSupport(
+      supportAt("html.elements.object.codebase", "chrome"),
+      browser("chrome"),
+    );
+    const approximateRemoval = normalized.branches
+      .flatMap(({ statements }) => statements)
+      .find(({ versionRemoved }) => versionRemoved === "62");
+
+    expect(approximateRemoval).toMatchObject({
+      versionLast: "62",
+      versionLastIsApproximate: true,
+      versionRemoved: "62",
+      versionRemovedIsApproximate: true,
+      removalDate: "2017-10-17",
+    });
+  });
+
+  it("orders statements by published release order with stable unresolved ties", () => {
+    const releases = {
+      "9": { status: "retired" as const },
+      "10": { status: "retired" as const },
+      "9.5": { status: "retired" as const },
+    };
+    const target = { ...browser("chrome"), releases };
+    const statements = [
+      { version_added: "unlisted-a" },
+      { version_added: false },
+      { version_added: "9" },
+      { version_added: "10" },
+      { version_added: "9.5" },
+    ] as unknown as BcdSupportStatement;
+
+    expect(
+      normalizeTargetSupport(statements, target).branches[0]!.statements.map(
+        ({ versionAdded }) => versionAdded,
+      ),
+    ).toEqual(["9.5", "10", "9", "unlisted-a", false]);
+  });
+
+  it("recognizes real notes-only and active-partial statements", () => {
+    const notesOnly = normalizeTargetSupport(
+      supportAt("api.Animation.pending", "firefox"),
+      browser("firefox"),
+    );
+    expect(notesOnly.summary).toMatchObject({
+      state: "supported",
+      versionAdded: "59",
+      hasNotes: true,
+    });
+
+    const activePartial = normalizeTargetSupport(
+      supportAt("api.AudioParam.cancelScheduledValues", "firefox"),
+      browser("firefox"),
+    );
+    expect(activePartial.summary).toMatchObject({
+      state: "partial",
+      versionAdded: "25",
+      partialImplementation: true,
+    });
+  });
+
   it("selects summaries using every documented precedence rank", () => {
     const raw = (
       statements: Array<Partial<SimpleSupportStatement> & { version_added: string | false | null }>,
