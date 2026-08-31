@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@types/node':
-        specifier: ^26.0.0
-        version: 26.1.1
+        specifier: ^26.4.0
+        version: 26.4.0
       oxfmt:
         specifier: 0.60.0
         version: 0.60.0
@@ -19,22 +19,22 @@ importers:
         version: 1.75.0
       stylelint:
         specifier: ^17.14.1
-        version: 17.14.1(typescript@7.0.2)
+        version: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
       stylelint-config-standard:
         specifier: ^40.0.0
-        version: 40.0.0(stylelint@17.14.1(typescript@7.0.2))
+        version: 40.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2))
       stylelint-plugin-use-baseline:
         specifier: ^1.4.6
-        version: 1.4.6(stylelint@17.14.1(typescript@7.0.2))
+        version: 1.4.6(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2))
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vite:
         specifier: ^8.1.5
-        version: 8.1.5(@types/node@26.1.1)
+        version: 8.1.5(@types/node@26.4.0)
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1))
+        version: 4.1.10(@types/node@26.4.0)(vite@8.1.5(@types/node@26.4.0))
 
   apps/docs: {}
 
@@ -520,8 +520,8 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
-  '@types/node@26.1.1':
-    resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
+  '@types/node@26.4.0':
+    resolution: {integrity: sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -1657,7 +1657,7 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
-  '@types/node@26.1.1':
+  '@types/node@26.4.0':
     dependencies:
       undici-types: 8.3.0
 
@@ -1730,13 +1730,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.10(vite@8.1.5(@types/node@26.1.1))':
+  '@vitest/mocker@4.1.10(vite@8.1.5(@types/node@26.4.0))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.1.5(@types/node@26.1.1)
+      vite: 8.1.5(@types/node@26.4.0)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -2223,24 +2223,24 @@ snapshots:
     dependencies:
       ansi-regex: 6.3.0
 
-  stylelint-config-recommended@18.0.0(stylelint@17.14.1(typescript@7.0.2)):
+  stylelint-config-recommended@18.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:
-      stylelint: 17.14.1(typescript@7.0.2)
+      stylelint: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
 
-  stylelint-config-standard@40.0.0(stylelint@17.14.1(typescript@7.0.2)):
+  stylelint-config-standard@40.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:
-      stylelint: 17.14.1(typescript@7.0.2)
-      stylelint-config-recommended: 18.0.0(stylelint@17.14.1(typescript@7.0.2))
+      stylelint: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
+      stylelint-config-recommended: 18.0.0(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2))
 
-  stylelint-plugin-use-baseline@1.4.6(stylelint@17.14.1(typescript@7.0.2)):
+  stylelint-plugin-use-baseline@1.4.6(stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:
       css-tree: 3.2.1
       is-plain-object: 5.1.0
       postcss: 8.5.26
       postcss-value-parser: 4.2.0
-      stylelint: 17.14.1(typescript@7.0.2)
+      stylelint: 17.14.1(supports-color@10.2.2)(typescript@7.0.2)
 
-  stylelint@17.14.1(typescript@7.0.2):
+  stylelint@17.14.1(supports-color@10.2.2)(typescript@7.0.2):
     dependencies:
       '@csstools/css-calc': 3.3.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-parser-algorithms': 4.0.0(@csstools/css-tokenizer@4.0.0)
@@ -2347,7 +2347,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite@8.1.5(@types/node@26.1.1):
+  vite@8.1.5(@types/node@26.4.0):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.5
@@ -2355,13 +2355,13 @@ snapshots:
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.4.0
       fsevents: 2.3.3
 
-  vitest@4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1)):
+  vitest@4.1.10(@types/node@26.4.0)(vite@8.1.5(@types/node@26.4.0)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.1.5(@types/node@26.1.1))
+      '@vitest/mocker': 4.1.10(vite@8.1.5(@types/node@26.4.0))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -2378,10 +2378,10 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.5(@types/node@26.1.1)
+      vite: 8.1.5(@types/node@26.4.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.4.0
     transitivePeerDependencies:
       - msw
 
