@@ -158,18 +158,22 @@ const renderInspector = (value: unknown) => {
   updateDetails();
 };
 
+const renderInputError = (message: string) => {
+  parseError.textContent = message;
+  overallResult.className = "overall-result panel invalid";
+  overallResult.textContent = "Fix the input before validating the contract.";
+  zodResult.replaceChildren();
+  jsonSchemaResult.replaceChildren();
+  inspector.hidden = true;
+};
+
 function runValidation() {
   parseError.textContent = "";
   let value: unknown;
   try {
     value = JSON.parse(jsonInput.value);
   } catch (error) {
-    parseError.textContent = `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`;
-    overallResult.className = "overall-result panel invalid";
-    overallResult.textContent = "Fix the JSON syntax before validating the contract.";
-    zodResult.replaceChildren();
-    jsonSchemaResult.replaceChildren();
-    inspector.hidden = true;
+    renderInputError(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
 
@@ -196,8 +200,14 @@ kindSelect.addEventListener("change", setSample);
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
-  jsonInput.value = await file.text();
-  runValidation();
+  try {
+    jsonInput.value = await file.text();
+    runValidation();
+  } catch (error) {
+    renderInputError(
+      `Unable to read ${file.name}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 });
 
 setSample();
