@@ -150,7 +150,7 @@ The output diff is also a reusable artifact in its own right — a machine-reada
 
 Document 1 §10 establishes that the abuse surface is small. In implementation terms:
 
-**Key validation is the primary control.** The key from the URL is validated against `^[A-Za-z0-9][A-Za-z0-9._-]*$` and length-bounded before being used to construct an object path — no `..`, no slashes, no encoded traversal. This is the single highest-value test in the repository and should be fuzzed, not only unit-tested.
+**Key validation is the primary control.** The key from the URL is validated against `^[A-Za-z0-9][A-Za-z0-9._$@-]*$` and length-bounded before being used to construct an object path — no `..`, no slashes, no encoded traversal. The `$` and `@` characters are required by published BCD keys; neither introduces a path separator. This is the single highest-value test in the repository and should be fuzzed, not only unit-tested.
 
 **Cross-origin access is intentionally unrestricted.** `access-control-allow-origin: *` is correct: the data is CC0 and identical for every caller, and restricting origins would prevent the component from working at all.
 

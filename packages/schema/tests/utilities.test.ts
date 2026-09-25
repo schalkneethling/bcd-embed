@@ -13,20 +13,47 @@ import { createFixtureReport, formatFixtureReport } from "../scripts/lib/fixture
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const validateScript = join(packageRoot, "scripts/validate-contract.mjs");
 const reportScript = join(packageRoot, "scripts/report-fixtures.mjs");
+const cliTestTimeout = 30_000;
+const childProcessTimeout = 25_000;
 
 const runNode = (arguments_: string[], input?: string) =>
-  new Promise<{ status: number | null; stderr: string; stdout: string }>((resolvePromise) => {
-    const child = spawn(process.execPath, arguments_, {
-      cwd: packageRoot,
-      stdio: "pipe",
-    });
-    let stderr = "";
-    let stdout = "";
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
-    child.on("close", (status) => resolvePromise({ status, stderr, stdout }));
-    child.stdin.end(input);
-  });
+  new Promise<{ status: number | null; stderr: string; stdout: string }>(
+    (resolvePromise, reject) => {
+      const child = spawn(process.execPath, arguments_, {
+        cwd: packageRoot,
+        stdio: "pipe",
+      });
+      let stderr = "";
+      let stdout = "";
+      let settled = false;
+      const finish = (result: { status: number | null; stderr: string; stdout: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolvePromise(result);
+      };
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const timeout = setTimeout(() => {
+        child.kill();
+        fail(
+          new Error(
+            `Timed out after ${childProcessTimeout}ms: ${process.execPath} ${arguments_.join(" ")}`,
+          ),
+        );
+      }, childProcessTimeout);
+
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+      child.once("error", fail);
+      child.once("close", (status) => finish({ status, stderr, stdout }));
+      child.stdin.end(input);
+    },
+  );
 
 describe("contract validator utility", () => {
   it("accepts the golden feature fixture in both validators", () => {
@@ -49,50 +76,62 @@ describe("contract validator utility", () => {
     ).toBe(true);
   });
 
-  it("documents its terminal interface", async () => {
-    const result = await runNode([validateScript, "--help"]);
+  it(
+    "documents its terminal interface",
+    async () => {
+      const result = await runNode([validateScript, "--help"]);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("Usage: pnpm schema:validate");
-    expect(result.stderr).toBe("");
-  });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Usage: pnpm schema:validate");
+      expect(result.stderr).toBe("");
+    },
+    cliTestTimeout,
+  );
 
-  it("validates a file and standard input through the terminal interface", async () => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), "bcd-embed-contract-"));
-    const fixturePath = join(temporaryDirectory, "feature-response.json");
-    writeFileSync(fixturePath, JSON.stringify(v1NormalizedFixture));
+  it(
+    "validates a file and standard input through the terminal interface",
+    async () => {
+      const temporaryDirectory = mkdtempSync(join(tmpdir(), "bcd-embed-contract-"));
+      const fixturePath = join(temporaryDirectory, "feature-response.json");
+      writeFileSync(fixturePath, JSON.stringify(v1NormalizedFixture));
 
-    try {
-      const fromFile = await runNode([validateScript, "--kind", "feature-response", fixturePath]);
-      const fromStdin = await runNode(
+      try {
+        const fromFile = await runNode([validateScript, "--kind", "feature-response", fixturePath]);
+        const fromStdin = await runNode(
+          [validateScript, "--kind", "feature-response", "-"],
+          JSON.stringify(v1NormalizedFixture),
+        );
+
+        for (const result of [fromFile, fromStdin]) {
+          expect(result.status).toBe(0);
+          expect(result.stdout).toContain("PASS Zod");
+          expect(result.stdout).toContain("PASS JSON Schema");
+          expect(result.stderr).toBe("");
+        }
+      } finally {
+        rmSync(temporaryDirectory, { force: true, recursive: true });
+      }
+    },
+    cliTestTimeout * 2,
+  );
+
+  it(
+    "returns a failure status for a rejected contract",
+    async () => {
+      const malformed = structuredClone(v1NormalizedFixture);
+      malformed.features = [];
+
+      const result = await runNode(
         [validateScript, "--kind", "feature-response", "-"],
-        JSON.stringify(v1NormalizedFixture),
+        JSON.stringify(malformed),
       );
 
-      for (const result of [fromFile, fromStdin]) {
-        expect(result.status).toBe(0);
-        expect(result.stdout).toContain("PASS Zod");
-        expect(result.stdout).toContain("PASS JSON Schema");
-        expect(result.stderr).toBe("");
-      }
-    } finally {
-      rmSync(temporaryDirectory, { force: true, recursive: true });
-    }
-  });
-
-  it("returns a failure status for a rejected contract", async () => {
-    const malformed = structuredClone(v1NormalizedFixture);
-    malformed.features = [];
-
-    const result = await runNode(
-      [validateScript, "--kind", "feature-response", "-"],
-      JSON.stringify(malformed),
-    );
-
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("FAIL Zod");
-    expect(result.stdout).toContain("FAIL JSON Schema");
-  });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("FAIL Zod");
+      expect(result.stdout).toContain("FAIL JSON Schema");
+    },
+    cliTestTimeout,
+  );
 });
 
 describe("fixture report utility", () => {
@@ -116,15 +155,19 @@ describe("fixture report utility", () => {
     expect(formatFixtureReport(report)).toContain("Named cases");
   });
 
-  it("emits machine-readable JSON through the terminal interface", async () => {
-    const result = await runNode(["--import", "tsx", reportScript, "--json"]);
+  it(
+    "emits machine-readable JSON through the terminal interface",
+    async () => {
+      const result = await runNode(["--import", "tsx", reportScript, "--json"]);
 
-    expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual(
-      expect.objectContaining({
-        source: expect.objectContaining({ version: "8.0.13" }),
-      }),
-    );
-    expect(result.stderr).toBe("");
-  });
+      expect(result.status).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(
+        expect.objectContaining({
+          source: expect.objectContaining({ version: "8.0.13" }),
+        }),
+      );
+      expect(result.stderr).toBe("");
+    },
+    cliTestTimeout,
+  );
 });

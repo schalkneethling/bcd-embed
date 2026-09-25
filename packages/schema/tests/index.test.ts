@@ -4,12 +4,14 @@ import {
   CONTRACT_VERSION,
   apiErrorResponseSchema,
   browsersResponseSchema,
+  featureKeySchema,
   featureResponseSchema,
   indexResponseSchema,
   metaResponseSchema,
   supportBranchSchema,
   supportFlagSchema,
   supportStateSchema,
+  supportStatementSchema,
   supportTargetSupportSchema,
   supportTargetTypeSchema,
 } from "../src/index.js";
@@ -23,6 +25,9 @@ const statement = {
   versionAdded: "1",
   versionAddedIsApproximate: false,
   versionRemoved: null,
+  versionRemovedIsApproximate: false,
+  versionLast: null,
+  versionLastIsApproximate: false,
   releaseDate: "2008-12-11",
   removalDate: null,
   isPreview: false,
@@ -38,6 +43,7 @@ const summary = {
   state: "supported" as const,
   versionAdded: "1",
   versionRemoved: null,
+  versionRemovedIsApproximate: false,
   releaseDate: "2008-12-11",
   removalDate: null,
   partialImplementation: false,
@@ -98,6 +104,41 @@ describe("contract package", () => {
 
   it("parses a complete feature response", () => {
     expect(featureResponseSchema.parse(featureResponse)).toEqual(featureResponse);
+  });
+
+  it("accepts the complete BCD 8 feature-key vocabulary", () => {
+    expect(featureKeySchema.parse("javascript.builtins.Array.@@iterator")).toBe(
+      "javascript.builtins.Array.@@iterator",
+    );
+    expect(featureKeySchema.parse("webextensions.api.devtools.inspectedWindow.eval.$0")).toBe(
+      "webextensions.api.devtools.inspectedWindow.eval.$0",
+    );
+  });
+
+  it("preserves last-version and approximate-removal information", () => {
+    expect(
+      supportStatementSchema.parse({
+        ...statement,
+        versionRemoved: "62",
+        versionRemovedIsApproximate: true,
+        versionLast: "61",
+        versionLastIsApproximate: false,
+      }),
+    ).toMatchObject({
+      versionRemoved: "62",
+      versionRemovedIsApproximate: true,
+      versionLast: "61",
+      versionLastIsApproximate: false,
+    });
+  });
+
+  it("represents an omitted BCD status block without inventing booleans", () => {
+    expect(
+      featureResponseSchema.parse({
+        ...featureResponse,
+        features: [{ ...featureResponse.features[0], status: null }],
+      }).features[0]?.status,
+    ).toBeNull();
   });
 
   it("parses browser metadata, index, metadata, and errors", () => {
@@ -390,6 +431,20 @@ describe("strict validation", () => {
             ...statement,
             versionAdded: "≤4",
             prefix: "-webkit-",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      supportBranchSchema.safeParse({
+        canonical: true,
+        prefix: null,
+        alternativeName: null,
+        statements: [
+          {
+            ...statement,
+            versionRemovedIsApproximate: true,
+            versionLastIsApproximate: true,
           },
         ],
       }).success,
