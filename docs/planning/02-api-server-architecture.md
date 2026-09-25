@@ -46,6 +46,8 @@ bcd-embed/
 
 **`core`** — the transformations: flattening the identifier tree, grouping parallel support branches, resolving version values, joining support-target releases (Document 1 §5.1 — browsers and runtimes alike), computing summary precedence. Pure, framework-free, isomorphic. Kept separate from `generator` so it is usable at build time by a consumer generating their own artifacts from the BCD npm package without running the hosted service.
 
+For a support target with `S` support statements and maximum dotted-version length `V`, branch grouping and ordering take `O(S log S × V)` time and `O(S + V)` auxiliary space. Release lookup uses the support target's release map directly; it does not rebuild or scan the full `R`-release catalog for every feature. This keeps normalization output-sensitive to the statements actually present.
+
 **`generator`** — walks BCD, calls `core`, writes the static artifact tree. A Node CLI.
 
 **`server`** — a thin edge adapter: route parsing, key validation, error bodies, cache headers, CORS. Minimal in the static deployment; does more in a self-hosted dynamic deployment.
