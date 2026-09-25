@@ -20,6 +20,7 @@
   "scripts": {
     "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/package-smoke-test.mjs",
     "test": "vitest run",
+    "test:mutation": "node scripts/mutation-gate.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
