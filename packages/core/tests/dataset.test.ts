@@ -20,6 +20,7 @@ it("normalizes every feature in the pinned BCD dataset without losing support ta
       expect(normalized.features, key).toHaveLength(1);
       expect(featureSchema.safeParse(feature).success, key).toBe(true);
       expect(Object.keys(feature!.support), key).toEqual(Object.keys(node.__compat.support));
+      expect(Object.keys(normalized.browsers), key).toEqual(Object.keys(node.__compat.support));
       for (const target of Object.values(normalized.browsers)) {
         expect(supportTargetSchema.safeParse(target).success, key).toBe(true);
       }
