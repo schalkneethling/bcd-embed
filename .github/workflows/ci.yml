@@ -36,3 +36,6 @@ jobs:
 
       - name: Check repository
         run: pnpm check
+
+      - name: Check core mutation gate
+        run: pnpm --filter @bcd-embed/core test:mutation
