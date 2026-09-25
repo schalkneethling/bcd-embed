@@ -29,7 +29,8 @@ discover addressable roots in one traversal and avoid repeated global key search
 The dataset test visits all 20,359 compatibility records in BCD 8.0.13 and checks
 each normalized record against the canonical schema, preserving every target.
 Each record is normalized once so this test does not repeatedly process overlapping
-subtrees. Dedicated subtree and golden tests cover composition and exact values.
+subtrees. Dedicated subtree tests cover composition. This sweep checks conformance,
+not semantic correctness; exact behavior also needs independent golden comparisons.
 
 Malformed-input tests cover empty/null support, invalid or missing version values,
 and non-addressable subtrees. Errors retain the failing feature key and cause.
