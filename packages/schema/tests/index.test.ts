@@ -387,6 +387,29 @@ describe("strict validation", () => {
         branches: [competingPrefixedBranch, competingCanonicalBranch],
       }).success,
     ).toBe(true);
+
+    const partialCanonicalBranch = {
+      ...canonicalBranch,
+      statements: [{ ...statement, versionAdded: "46", partialImplementation: true }],
+    };
+    expect(
+      supportTargetSupportSchema.safeParse({
+        summary: {
+          ...summary,
+          state: "partial",
+          versionAdded: "22",
+          partialImplementation: true,
+          prefix: "-webkit-",
+        },
+        branches: [partialCanonicalBranch, competingPrefixedBranch],
+      }).success,
+    ).toBe(false);
+    expect(
+      supportTargetSupportSchema.safeParse({
+        summary: { ...summary, state: "partial", versionAdded: "46", partialImplementation: true },
+        branches: [partialCanonicalBranch, competingPrefixedBranch],
+      }).success,
+    ).toBe(true);
   });
 
   it.each([

@@ -291,15 +291,18 @@ export type SupportSummary = z.infer<typeof supportSummarySchema>;
 const supportStatementSelectionRank = (statement: SupportStatement): number => {
   const isActive = typeof statement.versionAdded === "string" && statement.versionRemoved === null;
   const hasImplementationIdentity = statement.prefix !== null || statement.alternativeName !== null;
-  const isFullySupported = isActive && !statement.isPreview && !statement.partialImplementation;
+  const isStable = isActive && !statement.isPreview;
+  const isFullySupported =
+    isStable && !statement.partialImplementation && statement.flags.length === 0;
 
-  if (isFullySupported && !hasImplementationIdentity && statement.flags.length === 0) {
+  if (isFullySupported && !hasImplementationIdentity) {
     return statement.notes.length === 0 ? 0 : 1;
   }
-  if (isActive && hasImplementationIdentity) return 2;
-  if (isActive && statement.partialImplementation) return 3;
-  if (isActive && statement.flags.length > 0) return 4;
-  return 5;
+  if (isFullySupported && hasImplementationIdentity) return 2;
+  if (isStable && statement.partialImplementation) return 3;
+  if (isStable && statement.flags.length > 0) return 4;
+  if (isActive) return 5;
+  return 6;
 };
 
 const summaryProjectsStatement = (summary: SupportSummary, statement: SupportStatement): boolean =>

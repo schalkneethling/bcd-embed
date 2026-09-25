@@ -73,14 +73,48 @@ const identityKey = (statement: SupportStatement) =>
 
 const codeUnitCompare = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
-const statementRecency = (
-  statement: SupportStatement,
-  releaseOrder: ReadonlyMap<string, number>,
-) => {
-  if (statement.isPreview) return Number.POSITIVE_INFINITY;
-  return typeof statement.versionAdded === "string"
-    ? (releaseOrder.get(statement.versionAdded) ?? Number.NEGATIVE_INFINITY)
-    : Number.NEGATIVE_INFINITY;
+const dottedVersionPattern = /^\d+(?:\.\d+)*$/;
+
+/** Compare BCD's currently published dotted-decimal release identifiers without integer overflow. */
+const compareDottedVersions = (left: string, right: string): number => {
+  const leftParts = left.split(".");
+  const rightParts = right.split(".");
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index++) {
+    const leftPart = (leftParts[index] ?? "0").replace(/^0+(?=\d)/, "");
+    const rightPart = (rightParts[index] ?? "0").replace(/^0+(?=\d)/, "");
+    if (leftPart.length !== rightPart.length) return leftPart.length - rightPart.length;
+    const difference = codeUnitCompare(leftPart, rightPart);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+};
+
+const statementRecency = (statement: SupportStatement, browser: BrowserStatement): number => {
+  if (statement.isPreview) return 2;
+  return typeof statement.versionAdded === "string" &&
+    dottedVersionPattern.test(statement.versionAdded) &&
+    Object.hasOwn(browser.releases, statement.versionAdded)
+    ? 1
+    : 0;
+};
+
+const compareStatementsByRecency = (
+  left: SupportStatement,
+  right: SupportStatement,
+  browser: BrowserStatement,
+): number => {
+  const leftCategory = statementRecency(left, browser);
+  const rightCategory = statementRecency(right, browser);
+  const categoryDifference = rightCategory - leftCategory;
+  if (categoryDifference !== 0) return categoryDifference;
+  if (
+    leftCategory === 1 &&
+    typeof left.versionAdded === "string" &&
+    typeof right.versionAdded === "string"
+  ) {
+    return compareDottedVersions(right.versionAdded, left.versionAdded);
+  }
+  return 0;
 };
 
 const groupBranches = (
@@ -95,19 +129,13 @@ const groupBranches = (
     else group.push(statement);
   }
 
-  const releaseOrder = new Map(
-    Object.keys(browser.releases).map((version, index) => [version, index] as const),
-  );
   const branches = [...groups.values()].map((group) => {
     const { prefix, alternativeName } = group[0]!;
     return {
       canonical: prefix === null && alternativeName === null,
       prefix,
       alternativeName,
-      statements: group.toSorted(
-        (left, right) =>
-          statementRecency(right, releaseOrder) - statementRecency(left, releaseOrder),
-      ),
+      statements: group.toSorted((left, right) => compareStatementsByRecency(left, right, browser)),
     } as SupportBranch;
   });
 
@@ -123,15 +151,17 @@ const groupBranches = (
 const selectionRank = (statement: SupportStatement) => {
   const active = typeof statement.versionAdded === "string" && statement.versionRemoved === null;
   const identified = statement.prefix !== null || statement.alternativeName !== null;
-  const full = active && !statement.isPreview && !statement.partialImplementation;
+  const stable = active && !statement.isPreview;
+  const full = stable && !statement.partialImplementation && statement.flags.length === 0;
 
-  if (full && !identified && statement.flags.length === 0) {
+  if (full && !identified) {
     return statement.notes.length === 0 ? 0 : 1;
   }
-  if (active && identified) return 2;
-  if (active && statement.partialImplementation) return 3;
-  if (active && statement.flags.length > 0) return 4;
-  return 5;
+  if (full && identified) return 2;
+  if (stable && statement.partialImplementation) return 3;
+  if (stable && statement.flags.length > 0) return 4;
+  if (active) return 5;
+  return 6;
 };
 
 const supportState = (statement: SupportStatement): SupportState =>

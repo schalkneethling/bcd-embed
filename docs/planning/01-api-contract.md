@@ -78,8 +78,9 @@ GET /v1/{snapshot}/browsers.json
 
 Full metadata for every support target — browser or runtime: display names, release lists, release dates, statuses, preview names. Referenced support targets are also embedded in each feature response (§5), so most consumers do not need this endpoint directly. It exists for consumers building their own column sets or timelines.
 
-The response shape is exact; release order is the order published by BCD and is
-therefore significant:
+The response shape is exact. The release list preserves BCD's published order
+for provenance; consumers must not infer chronological or numeric version order
+from that list (see the separate statement-ordering rule in §5.1):
 
 ```jsonc
 {
@@ -276,7 +277,7 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 
 **`support` is keyed by support target identifier; a given target may be absent.** Absence means BCD has no entry at all for that browser or runtime, which is distinct from a present entry with `state: "unknown"` (BCD explicitly records unknown support). Consumers must handle both.
 
-**`branches` holds the pre-grouped parallel-implementation structure.** At most one branch is marked `canonical` (no prefix, no alternative name) and it sorts first when present. A non-canonical branch has either a prefix or an alternative name, never both, and every statement's implementation identity exactly matches its enclosing branch. Remaining branches sort deterministically by `(alternativeName, prefix)`, independent of BCD's internal ordering. Within a branch, `statements` are ordered most-recent-first, with "recent" defined precisely rather than left to intuition: a statement whose `versionAdded` resolves to a release sorts by that release's position in the support target's release order (release order, not string or numeric version comparison), newest first; a statement with `isPreview: true` sorts before all released statements; a statement whose recency cannot be resolved (`versionAdded` of `null` or `false`) sorts last. Ties preserve BCD source order.
+**`branches` holds the pre-grouped parallel-implementation structure.** At most one branch is marked `canonical` (no prefix, no alternative name) and it sorts first when present. A non-canonical branch has either a prefix or an alternative name, never both, and every statement's implementation identity exactly matches its enclosing branch. Remaining branches sort deterministically by `(alternativeName, prefix)`, independent of BCD's internal ordering. Within a branch, `statements` are ordered most-recent-first: a statement with `isPreview: true` sorts before released statements; released statements sort by comparing the numeric components of their dotted release versions (so `1.39` sorts before `1.8`, and version-line order is preserved even when an older line has a later patch release date); statements with an unresolved `versionAdded` sort last. BCD's release map is not a reliable sort order. A future release identifier that is not dotted-decimal joins the unresolved tier, retaining BCD source order within that tier rather than guessing a comparison. Ties preserve BCD source order.
 
 **`versionAddedIsApproximate`** captures BCD's `≤` notation as a boolean rather than embedding a sigil in a version string. MDN displays these as exact versions; the contract preserves the distinction and leaves the choice to the consumer.
 
@@ -325,12 +326,13 @@ The evaluation order resolves every overlap deterministically: a statement that 
 
 1. Fully supported, no limitation.
 2. Fully supported, notes only.
-3. Supported under a prefix or alternative name.
-4. Partial implementation.
-5. Supported only behind a flag.
-6. Removed or otherwise inactive.
+3. Fully supported under a prefix or alternative name, with no flag or partial implementation.
+4. Stable partial implementation, including prefixed or flagged partial support.
+5. Stable support only behind a flag, including prefixed flagged support.
+6. Preview-only support.
+7. Removed, explicitly unsupported, or unknown support.
 
-This mirrors MDN's own precedence and is advisory only. `branches` remains authoritative.
+After fully supported cases, stable partial support outranks stable flag-only support, which outranks preview-only support; removed or unknown support ranks last. Partial takes precedence over flags when both modifiers occur on one stable statement, and preview takes precedence over either modifier on a preview-only statement. Within a rank, canonical branches sort first, then the documented branch and statement order breaks ties. This is advisory only; `branches` remains authoritative.
 
 ---
 

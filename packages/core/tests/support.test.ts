@@ -131,7 +131,7 @@ describe("normalizeTargetSupport", () => {
     });
   });
 
-  it("orders statements by published release order with stable unresolved ties", () => {
+  it("orders dotted releases numerically rather than by release-map insertion order", () => {
     const releases = {
       "9": { status: "retired" as const },
       "10": { status: "retired" as const },
@@ -150,7 +150,61 @@ describe("normalizeTargetSupport", () => {
       normalizeTargetSupport(statements, target).branches[0]!.statements.map(
         ({ versionAdded }) => versionAdded,
       ),
-    ).toEqual(["9.5", "10", "9", "unlisted-a", false]);
+    ).toEqual(["10", "9.5", "9", "unlisted-a", false]);
+  });
+
+  it("keeps active Deno 1.39 ahead of older 1.8 despite BCD's lexicographic release map", () => {
+    const normalized = normalizeTargetSupport(supportAt("api.GPU", "deno"), browser("deno"));
+
+    expect(normalized.branches[0]!.statements.map(({ versionAdded }) => versionAdded)).toEqual([
+      "1.39",
+      "1.8",
+    ]);
+    expect(normalized.summary).toMatchObject({ versionAdded: "1.39", behindFlag: true });
+  });
+
+  it("compares large version segments without numeric precision loss", () => {
+    const target = {
+      ...browser("chrome"),
+      releases: {
+        "1.9007199254740992": { status: "retired" as const },
+        "1.9007199254740993": { status: "retired" as const },
+      },
+    };
+    const statements = [
+      { version_added: "1.9007199254740992" },
+      { version_added: "1.9007199254740993" },
+    ] as unknown as BcdSupportStatement;
+
+    expect(
+      normalizeTargetSupport(statements, target).branches[0]!.statements.map(
+        ({ versionAdded }) => versionAdded,
+      ),
+    ).toEqual(["1.9007199254740993", "1.9007199254740992"]);
+  });
+
+  it("keeps future non-dotted releases in the stable unresolved tier", () => {
+    const target = {
+      ...browser("chrome"),
+      releases: {
+        "2": { status: "retired" as const },
+        "future-a": { status: "retired" as const },
+        "1": { status: "retired" as const },
+        "future-b": { status: "retired" as const },
+      },
+    };
+    const statements = [
+      { version_added: "future-a" },
+      { version_added: "1" },
+      { version_added: "future-b" },
+      { version_added: "2" },
+    ] as unknown as BcdSupportStatement;
+
+    expect(
+      normalizeTargetSupport(statements, target).branches[0]!.statements.map(
+        ({ versionAdded }) => versionAdded,
+      ),
+    ).toEqual(["2", "1", "future-a", "future-b"]);
   });
 
   it("recognizes real notes-only and active-partial statements", () => {
@@ -233,6 +287,39 @@ describe("normalizeTargetSupport", () => {
     expect(
       normalizeTargetSupport({ version_added: false }, browser("nodejs")).summary,
     ).toMatchObject({ state: "unsupported", versionAdded: false });
+  });
+
+  it("prefers canonical partial support to older prefixed partial support", () => {
+    const normalized = normalizeTargetSupport(
+      supportAt("api.Document.exitFullscreen", "safari_ios"),
+      browser("safari_ios"),
+    );
+
+    expect(normalized.summary).toMatchObject({
+      state: "partial",
+      versionAdded: "16.4",
+      prefix: null,
+    });
+  });
+
+  it("does not select preview-only or flagged aliases over stable partial support", () => {
+    const target = browser("chrome");
+    const statements = [
+      { version_added: "46", partial_implementation: true },
+      { version_added: "preview", prefix: "webkit" },
+      {
+        version_added: "45",
+        alternative_name: "oldName",
+        flags: [{ type: "preference", name: "experimental" }],
+      },
+    ] as unknown as BcdSupportStatement;
+
+    expect(normalizeTargetSupport(statements, target).summary).toMatchObject({
+      state: "partial",
+      versionAdded: "46",
+      prefix: null,
+      alternativeName: null,
+    });
   });
 
   it("produces the canonical contracted target shape", () => {
