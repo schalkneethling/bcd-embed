@@ -8,4 +8,5 @@ enableGlobalVirtualStore: false
 
 engineStrict: true
 strictPeerDependencies: true
-allowBuilds: {}
+allowBuilds:
+  esbuild: true

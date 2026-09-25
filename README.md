@@ -63,13 +63,26 @@ pnpm check
 Useful commands:
 
 ```sh
-pnpm dev          # Run the documentation app
-pnpm format       # Format the repository
-pnpm lint         # Run JavaScript/TypeScript and CSS linting
-pnpm typecheck    # Type-check every implemented workspace
-pnpm test         # Run the test suite
-pnpm build        # Build every implemented workspace
+pnpm dev              # Run the documentation app
+pnpm fixtures:report  # Summarize the v1 golden fixture corpus
+pnpm format           # Format the repository
+pnpm lint             # Run JavaScript/TypeScript and CSS linting
+pnpm typecheck        # Type-check every implemented workspace
+pnpm test             # Run the test suite
+pnpm build            # Build every implemented workspace
 ```
+
+Validate a normalized response from a file with both the canonical Zod schema
+and the corresponding published JSON Schema:
+
+```sh
+pnpm schema:validate --kind feature-response response.json
+```
+
+The accepted kinds are `feature-response`, `browsers-response`,
+`index-response`, `meta-response`, and `api-error-response`. Use `-` or omit the
+file to read JSON from standard input. The fixture report also supports
+`--json` for machine-readable output.
 
 ## Tooling
 
