@@ -14,6 +14,12 @@ occur once; positional arguments and `--option=value` are rejected.
 `--generated` follows the contract's ISO 8601 UTC timestamp schema and
 `--expires` its ISO 8601 date schema. Explicit time makes reruns reproducible.
 
+The output filesystem must be case-sensitive. Published BCD keys include
+distinct addressable keys that differ only by case (for example, `api.Crypto`
+and `api.crypto`), and the contract maps each key directly to its filename.
+Typical Linux filesystems meet this requirement; default macOS APFS volumes are
+often case-insensitive, so use Linux or a case-sensitive APFS volume there.
+
 It emits compact JSON plus a trailing newline under `v1/meta.json` and
 `v1/<snapshot>/{browsers,index,features,raw}`. It is local generation only:
 no `v1/current` alias is created or changed. Existing unrelated output is
