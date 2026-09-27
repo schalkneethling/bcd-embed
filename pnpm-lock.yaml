@@ -60,6 +60,24 @@ importers:
         specifier: 8.1.3
         version: 8.1.3
 
+  packages/generator:
+    dependencies:
+      '@bcd-embed/core':
+        specifier: workspace:*
+        version: link:../core
+      '@bcd-embed/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@mdn/browser-compat-data':
+        specifier: 8.0.13
+        version: 8.0.13
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: 3.0.1
+        version: 3.0.1(ajv@8.20.0)
+
   packages/schema:
     dependencies:
       zod:

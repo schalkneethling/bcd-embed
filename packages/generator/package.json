@@ -1,0 +1,32 @@
+{
+  "name": "@bcd-embed/generator",
+  "version": "0.0.0",
+  "description": "Validated, lazy static artifacts from pinned MDN Browser Compatibility Data.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/package-smoke-test.mjs",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bcd-embed/core": "workspace:*",
+    "@bcd-embed/schema": "workspace:*",
+    "@mdn/browser-compat-data": "8.0.13",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}
