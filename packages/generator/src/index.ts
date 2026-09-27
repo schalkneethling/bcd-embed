@@ -12,3 +12,14 @@ export {
   type GeneratedSnapshot,
   type GeneratedArtifact,
 } from "./generate.js";
+export {
+  emitGeneratedSnapshot,
+  type EmissionResult,
+  type EmitGeneratedSnapshotOptions,
+} from "./emit.js";
+export {
+  parseGenerateCommand,
+  usage as cliUsage,
+  type GenerateCommand,
+  type GenerateCommandParseResult,
+} from "./cli.js";

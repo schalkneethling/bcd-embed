@@ -2,7 +2,11 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   build: {
-    lib: { entry: "src/index.ts", fileName: () => "index.js", formats: ["es"] },
+    lib: {
+      entry: { index: "src/index.ts", bin: "src/bin.ts" },
+      fileName: (_format, entryName) => `${entryName}.js`,
+      formats: ["es"],
+    },
     rolldownOptions: {
       external: [
         "@bcd-embed/core",
@@ -11,7 +15,9 @@ export default defineConfig({
         "ajv",
         "ajv-formats",
         "node:crypto",
+        "node:fs/promises",
         "node:module",
+        "node:path",
       ],
     },
   },
