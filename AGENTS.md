@@ -33,5 +33,9 @@ Workspace-specific TypeScript files may extend the managed root configuration.
   `element` when their implementation phases begin.
 - Reimplement normalization from the published BCD schema. Do not copy code
   from MDN Fred, which is MPL-2.0 licensed.
+- Treat time and space complexity as design constraints because BCD is a very
+  large dataset. Evaluate and document the Big O behavior of hot-path
+  transformations, avoid repeated full-dataset scans and accidental quadratic
+  work, and validate performance against realistically sized data.
 - Keep transformation logic out of the component; the API answers what the
   support is, and consumers decide how it is shown.
