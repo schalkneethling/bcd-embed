@@ -42,6 +42,6 @@
     "@mdn/browser-compat-data": "8.0.13",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "tsx": "4.23.12"
+    "tsx": "4.23.15"
   }
 }
