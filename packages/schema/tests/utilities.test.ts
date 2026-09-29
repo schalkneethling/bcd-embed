@@ -142,7 +142,7 @@ describe("fixture report utility", () => {
       source: bcdSourceFixtures,
     });
 
-    expect(report.source.version).toBe("8.0.13");
+    expect(report.source.version).toBe("8.1.3");
     expect(report.namedCases.some(({ name }) => name === "branching")).toBe(true);
     expect(report.subtrees).toEqual([
       expect.objectContaining({
@@ -163,7 +163,7 @@ describe("fixture report utility", () => {
       expect(result.status).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual(
         expect.objectContaining({
-          source: expect.objectContaining({ version: "8.0.13" }),
+          source: expect.objectContaining({ version: "8.1.3" }),
         }),
       );
       expect(result.stderr).toBe("");

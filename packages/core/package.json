@@ -25,6 +25,6 @@
   },
   "dependencies": {
     "@bcd-embed/schema": "workspace:*",
-    "@mdn/browser-compat-data": "8.0.13"
+    "@mdn/browser-compat-data": "8.1.3"
   }
 }

@@ -17,8 +17,8 @@ const fragmentPaths = [
   "api.Attr.localName",
 ];
 
-if (bcd.__meta.version !== "8.0.13") {
-  throw new Error(`Expected BCD 8.0.13, received ${bcd.__meta.version}.`);
+if (bcd.__meta.version !== "8.1.3") {
+  throw new Error(`Expected BCD 8.1.3, received ${bcd.__meta.version}.`);
 }
 
 const atPath = (path) =>
@@ -54,7 +54,7 @@ const output = new URL("../src/fixtures/source-fragments.json", import.meta.url)
 if (check) {
   const committed = await readFile(output, "utf8");
   if (committed !== contents) {
-    throw new Error("source-fragments.json is not up to date with BCD 8.0.13.");
+    throw new Error("source-fragments.json is not up to date with BCD 8.1.3.");
   }
 } else {
   await writeFile(output, contents);

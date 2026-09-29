@@ -94,8 +94,8 @@ describe("normalizeTargetSupport", () => {
     expect(flagged.branches[0]!.statements[0]!.flags).toEqual([
       {
         type: "preference",
-        name: "enable-experimental-web-platform-features",
-        valueToSet: "enabled",
+        name: "#enable-experimental-web-platform-features",
+        valueToSet: "Enabled",
       },
     ]);
 
@@ -133,9 +133,9 @@ describe("normalizeTargetSupport", () => {
 
   it("orders dotted releases numerically rather than by release-map insertion order", () => {
     const releases = {
-      "9": { status: "retired" as const },
-      "10": { status: "retired" as const },
-      "9.5": { status: "retired" as const },
+      "9": { index: 0, status: "retired" as const },
+      "10": { index: 2, status: "retired" as const },
+      "9.5": { index: 1, status: "retired" as const },
     };
     const target = { ...browser("chrome"), releases };
     const statements = [
@@ -167,8 +167,8 @@ describe("normalizeTargetSupport", () => {
     const target = {
       ...browser("chrome"),
       releases: {
-        "1.9007199254740992": { status: "retired" as const },
-        "1.9007199254740993": { status: "retired" as const },
+        "1.9007199254740992": { index: 0, status: "retired" as const },
+        "1.9007199254740993": { index: 1, status: "retired" as const },
       },
     };
     const statements = [
@@ -187,10 +187,10 @@ describe("normalizeTargetSupport", () => {
     const target = {
       ...browser("chrome"),
       releases: {
-        "2": { status: "retired" as const },
-        "future-a": { status: "retired" as const },
-        "1": { status: "retired" as const },
-        "future-b": { status: "retired" as const },
+        "2": { index: 1, status: "retired" as const },
+        "future-a": { index: 2, status: "retired" as const },
+        "1": { index: 0, status: "retired" as const },
+        "future-b": { index: 3, status: "retired" as const },
       },
     };
     const statements = [
