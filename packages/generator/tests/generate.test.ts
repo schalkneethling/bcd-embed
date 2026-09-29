@@ -20,7 +20,7 @@ const fixture = () => ({
       .filter((key) => key !== "__meta" && key !== "browsers")
       .map((key) => [key, {}]),
   ),
-  __meta: { version: "8.0.13", timestamp: generated },
+  __meta: { version: "8.1.3", timestamp: generated },
   browsers: {
     chrome: {
       name: "Chrome",
@@ -28,8 +28,8 @@ const fixture = () => ({
       accepts_flags: true,
       accepts_webextensions: true,
       releases: {
-        "1": { status: "retired", release_date: "2008-12-11" },
-        "2": { status: "current" },
+        "1": { index: 0, status: "retired", release_date: "2008-12-11" },
+        "2": { index: 1, status: "current" },
       },
     },
   },
@@ -45,7 +45,7 @@ describe("generation foundation", () => {
     const before = JSON.stringify(data);
     const result = generateSnapshot({ ...options, data });
     const artifacts = [...result.artifacts];
-    expect(result.snapshot.id).toBe(`bcd-8.0.13-gen-${GENERATOR_VERSION}`);
+    expect(result.snapshot.id).toBe(`bcd-8.1.3-gen-${GENERATOR_VERSION}`);
     expect(result.namespaces).toEqual(["api"]);
     expect(artifacts.map(({ kind }) => kind)).toEqual([
       "feature",
@@ -147,9 +147,17 @@ describe("published BCD input schema", () => {
     expect(() => validateBcdInput(bcd)).not.toThrow();
   });
 
+  it("requires the release index introduced by the pinned public schema", () => {
+    const data = fixture();
+    Reflect.deleteProperty(data.browsers.chrome.releases["1"], "index");
+    expect(() => validateBcdInput(data)).toThrow("index");
+    data.browsers.chrome.releases["1"].index = -1;
+    expect(() => validateBcdInput(data)).toThrow("index");
+  });
+
   it("rejects mismatched versions even when the structural schema passes", () => {
     const data = fixture();
-    data.__meta.version = "8.0.14";
+    data.__meta.version = "8.0.13";
     expect(() => validateBcdInput(data)).toThrow("Expected pinned BCD");
   });
 

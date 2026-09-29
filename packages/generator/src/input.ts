@@ -4,9 +4,9 @@ import addFormats from "ajv-formats";
 import type { CompatData, Identifier } from "@mdn/browser-compat-data/types";
 import publicSchema from "./upstream/public.schema.json" with { type: "json" };
 
-export const BCD_VERSION = "8.0.13" as const;
+export const BCD_VERSION = "8.1.3" as const;
 export const BCD_SCHEMA_SHA256 =
-  "073720627a01805c003aa5c198127512c8aa303466a35327effc99d94ebb5a2a" as const;
+  "0a94f39473d919fd6caa54ef4055879a4442810ffded72081707130fef7b81b7" as const;
 
 export class BcdInputError extends Error {
   constructor(message: string, options?: ErrorOptions) {
