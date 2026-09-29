@@ -43,8 +43,9 @@ shards, and references to source subtrees. For every emitted normalized
 response, the gate parses the canonical schema and walks only that response's
 source subtree to assert exact key and depth coverage. It recomputes normalization
 of that same subtree using `@bcd-embed/core` and compares each emitted feature's
-complete support object, including values, to the recomputed result. This catches
-schema-valid support-value corruption as well as missing or extra targets.
+complete normalized content to the recomputed result, parsed through the same
+response schema as the generator. This catches schema-valid corruption of
+metadata or support values as well as missing or extra targets.
 Every raw response is validated with an independently compiled Ajv validator against the vendored
 published BCD public identifier schema, then compared to its source subtree
 without normalizing it. Browsers, full and sharded indexes, and metadata are

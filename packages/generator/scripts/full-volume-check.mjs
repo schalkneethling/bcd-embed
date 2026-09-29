@@ -315,10 +315,13 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
       if (sourceNode === undefined)
         fail(`Feature artifact '${relativePath}' has no addressable source node.`);
       const expectedFeatures = expectedFeatureKeys(featureInfo.key, sourceNode);
-      const expectedNormalizedFeatures = normalizeFeatureSubtree({
-        key: featureInfo.key,
-        subtree: sourceNode,
-        browsers: bcd.browsers,
+      const expectedNormalizedFeatures = featureResponseSchema.parse({
+        ...response,
+        ...normalizeFeatureSubtree({
+          key: featureInfo.key,
+          subtree: sourceNode,
+          browsers: bcd.browsers,
+        }),
       }).features;
       if (response.features.length !== expectedFeatures.length) {
         fail(
@@ -338,9 +341,9 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
           expected?.supportTargets ?? [],
           `${relativePath}#${expected?.key} support targets`,
         );
-        if (!isDeepStrictEqual(actual?.support, expectedNormalizedFeatures[index]?.support)) {
+        if (!isDeepStrictEqual(actual, expectedNormalizedFeatures[index])) {
           fail(
-            `Feature artifact '${relativePath}' has incorrect normalized support values for '${expected?.key}'.`,
+            `Feature artifact '${relativePath}' has incorrect normalized content for '${expected?.key}'.`,
           );
         }
       }
