@@ -17,6 +17,7 @@ import {
   indexResponseSchema,
   metaResponseSchema,
 } from "@bcd-embed/schema";
+import { normalizeFeatureSubtree } from "@bcd-embed/core";
 import publicSchema from "../src/upstream/public.schema.json" with { type: "json" };
 
 const GENERATED = "2026-09-27T12:00:00Z";
@@ -314,6 +315,11 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
       if (sourceNode === undefined)
         fail(`Feature artifact '${relativePath}' has no addressable source node.`);
       const expectedFeatures = expectedFeatureKeys(featureInfo.key, sourceNode);
+      const expectedNormalizedFeatures = normalizeFeatureSubtree({
+        key: featureInfo.key,
+        subtree: sourceNode,
+        browsers: bcd.browsers,
+      }).features;
       if (response.features.length !== expectedFeatures.length) {
         fail(
           `Feature artifact '${relativePath}' contains ${response.features.length} entries; expected ${expectedFeatures.length} addressable source descendants.`,
@@ -332,6 +338,11 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
           expected?.supportTargets ?? [],
           `${relativePath}#${expected?.key} support targets`,
         );
+        if (!isDeepStrictEqual(actual?.support, expectedNormalizedFeatures[index]?.support)) {
+          fail(
+            `Feature artifact '${relativePath}' has incorrect normalized support values for '${expected?.key}'.`,
+          );
+        }
       }
       const referencedTargets = [
         ...new Set(expectedFeatures.flatMap(({ supportTargets }) => supportTargets)),
