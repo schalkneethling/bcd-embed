@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "Validated, lazy static artifacts from pinned MDN Browser Compatibility Data.",
   "license": "MIT",
+  "bin": {
+    "bcd-embed-generate": "./dist/bin.js"
+  },
   "files": [
     "dist"
   ],

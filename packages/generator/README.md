@@ -1,7 +1,32 @@
 # @bcd-embed/generator
 
-Node-only generation foundation. No filesystem writes, CLI, deployment, or
-`current` alias changes at this stage.
+Node-only generation and local artifact-emission package. It does not deploy
+or create a `current` alias.
+
+## Local artifact emission
+
+```sh
+bcd-embed-generate --out ./artifacts --generated 2026-09-27T12:00:00Z --expires 2026-12-26
+```
+
+The CLI grammar is defined by `src/cli.ts`: all three options are required and
+occur once; positional arguments and `--option=value` are rejected.
+`--generated` follows the contract's ISO 8601 UTC timestamp schema and
+`--expires` its ISO 8601 date schema. Explicit time makes reruns reproducible.
+
+It emits compact JSON plus a trailing newline under `v1/meta.json` and
+`v1/<snapshot>/{browsers,index,features,raw}`. It is local generation only:
+no `v1/current` alias is created or changed. Existing unrelated output is
+preserved; byte-identical snapshot and metadata reruns are no-ops, while a
+difference fails safely. Files are staged first and an exclusive local lock
+prevents concurrent commits. An abrupt process kill can leave a staging
+directory or lock; remove either only after confirming no emission is active.
+If final metadata rename fails after snapshot rename, an unreferenced snapshot
+may remain, but no alias is changed.
+
+`emitGeneratedSnapshot` consumes a validated `generateSnapshot` result. It
+checks artifact paths, envelopes, and path-to-payload identity, but does not
+deep-parse every payload again; generation already performs those validations.
 
 `generateSnapshot({ generated, expires, data? })` returns snapshot metadata,
 namespace names, and a single-use lazy `Iterable<GeneratedArtifact>`. The default
