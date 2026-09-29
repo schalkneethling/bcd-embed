@@ -35,6 +35,7 @@ ajv.addSchema(publicSchema, "bcd-public");
 const validateAggregate = ajv.compile<CompatData>({ $ref: "bcd-public" });
 const validateIdentifier = ajv.compile<Identifier>({ $ref: "bcd-public#/definitions/identifier" });
 
+/** Validate the full input against the pinned public BCD schema and exact version. */
 export function validateBcdInput(value: unknown): asserts value is CompatData {
   if (!validateAggregate(value)) {
     throw new BcdInputError(
@@ -48,6 +49,7 @@ export function validateBcdInput(value: unknown): asserts value is CompatData {
   }
 }
 
+/** Validate a raw feature subtree against the upstream identifier schema. */
 export function validateRawArtifact(value: unknown): asserts value is Identifier {
   if (!validateIdentifier(value)) {
     throw new BcdInputError(
