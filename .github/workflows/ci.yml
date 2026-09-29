@@ -37,5 +37,8 @@ jobs:
       - name: Check repository
         run: pnpm check
 
+      - name: Validate generated artifacts at full BCD volume
+        run: node --expose-gc packages/generator/scripts/full-volume-check.mjs
+
       - name: Check core mutation gate
         run: pnpm --filter @bcd-embed/core test:mutation
