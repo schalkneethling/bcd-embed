@@ -26,7 +26,7 @@ discover addressable roots in one traversal and avoid repeated global key search
 
 ## Validation
 
-The dataset test visits all 20,359 compatibility records in BCD 8.0.13 and checks
+The dataset test visits all 20,647 compatibility records in BCD 8.1.3 and checks
 each normalized record against the canonical schema, preserving every target.
 Each record is normalized once so this test does not repeatedly process overlapping
 subtrees. Dedicated subtree tests cover composition. This sweep checks conformance,

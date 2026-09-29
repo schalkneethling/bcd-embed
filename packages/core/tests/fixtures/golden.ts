@@ -116,10 +116,10 @@ export const goldenBrowsers = {
     accepts_flags: true,
     accepts_webextensions: true,
     releases: {
-      "1": { release_date: "2020-01-01", status: "retired" },
-      "2": { release_date: "2021-01-01", status: "retired" },
-      "3": { release_date: "2022-01-01", status: "current" },
-      "4": { release_date: "2023-01-01", status: "current" },
+      "1": { index: 0, release_date: "2020-01-01", status: "retired" },
+      "2": { index: 1, release_date: "2021-01-01", status: "retired" },
+      "3": { index: 2, release_date: "2022-01-01", status: "current" },
+      "4": { index: 3, release_date: "2023-01-01", status: "current" },
     },
   },
   nodejs: {
@@ -129,8 +129,8 @@ export const goldenBrowsers = {
     accepts_flags: true,
     accepts_webextensions: false,
     releases: {
-      "1": { release_date: "2021-02-01", status: "retired" },
-      "2": { release_date: "2022-02-01", status: "current" },
+      "1": { index: 0, release_date: "2021-02-01", status: "retired" },
+      "2": { index: 1, release_date: "2022-02-01", status: "current" },
     },
   },
 } satisfies Pick<Browsers, "chrome" | "nodejs">;

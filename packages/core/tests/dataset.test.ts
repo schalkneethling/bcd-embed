@@ -36,5 +36,5 @@ it("normalizes every feature in the pinned BCD dataset without losing support ta
       visit(namespace, tree as Identifier);
     }
   }
-  expect(count).toBe(20_359);
+  expect(count).toBe(20_647);
 }, 30_000);

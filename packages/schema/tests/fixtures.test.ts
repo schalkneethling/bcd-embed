@@ -41,11 +41,11 @@ const countCompatBlocks = (value: unknown): number => {
 };
 
 describe("published v1 fixtures", () => {
-  it("matches every source fragment and subtree to installed BCD 8.0.13", () => {
-    expect(installedBcd.__meta.version).toBe("8.0.13");
+  it("matches every source fragment and subtree to installed BCD 8.1.3", () => {
+    expect(installedBcd.__meta.version).toBe("8.1.3");
     expect(bcdSourceFixtures.source).toEqual({
       package: "@mdn/browser-compat-data",
-      version: "8.0.13",
+      version: "8.1.3",
     });
 
     for (const [path, fragment] of Object.entries(bcdSourceFixtures.fragments)) {
