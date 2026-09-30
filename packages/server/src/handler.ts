@@ -29,7 +29,7 @@ export type ReadDecision =
 export interface ArtifactHandlerOptions {
   store: ArtifactStore;
   beforeRead?: (request: Request) => ReadDecision | Promise<ReadDecision>;
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown) => void | Promise<void>;
 }
 
 export const MAX_KEY_LENGTH = 512;
@@ -360,7 +360,9 @@ export function createArtifactHandler(
       if (error instanceof RequestError) return contractError(request, error.code, error.query);
       // Reporting failures must not replace the safe transport failure response.
       try {
-        options.onError?.(error);
+        void Promise.resolve(options.onError?.(error)).catch(() => {
+          // Isolate async reporting failures without delaying the HTTP response.
+        });
       } catch {
         /* Reporter isolation. */
       }

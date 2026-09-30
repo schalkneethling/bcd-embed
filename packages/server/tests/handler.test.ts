@@ -383,6 +383,36 @@ describe("HTTP transport", () => {
     expect((await handler(request("/v1/meta.json"))).status).toBe(500);
   });
 
+  it("isolates a rejecting asynchronous reporter", async () => {
+    const onError = vi.fn(async () => {
+      throw new Error("asynchronous reporter failure");
+    });
+    const handler = createArtifactHandler({
+      store: {
+        get: async () => {
+          throw new Error("backend");
+        },
+      },
+      onError,
+    });
+    expect((await handler(request("/v1/meta.json"))).status).toBe(500);
+    expect(onError).toHaveBeenCalledOnce();
+    // Give the runtime an event-loop turn to detect any unhandled rejection.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
+
+  it("does not await a pending asynchronous reporter", async () => {
+    const handler = createArtifactHandler({
+      store: {
+        get: async () => {
+          throw new Error("backend");
+        },
+      },
+      onError: () => new Promise<void>(() => {}),
+    });
+    expect((await handler(request("/v1/meta.json"))).status).toBe(500);
+  });
+
   it("bounds unknown-size metadata while streaming and cancels overflow", async () => {
     const cancel = vi.fn();
     const handler = createArtifactHandler({

@@ -23,6 +23,8 @@ snapshot's namespace list as a map of historical namespaces.
 (nonnegative integer seconds), or `{ code: "generation_in_progress" }`.
 Generation is an explicit dynamic-host hook, not a substitute for backend
 failure. `onError(error)` can report backend failures without leaking details.
+It supports synchronous or asynchronous reporters; their failures are isolated,
+and pending reporting never delays the HTTP error response.
 
 ## Transport policy
 
