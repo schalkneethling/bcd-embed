@@ -10,10 +10,20 @@ const serverHandles = [];
 
 const startFixtureServer = async (
   host = "127.0.0.1",
-  { indexKeys = [key], sameCompressedEtag = false, errorCacheControl = "max-age=3600" } = {},
+  {
+    indexKeys = [key],
+    sameCompressedEtag = false,
+    errorCacheControl = "max-age=3600",
+    oversizedMetadata = false,
+  } = {},
 ) => {
   const requestTargets = [];
   let compressedRequests = 0;
+  let resolveOversizedResponseClosed;
+  const oversizedResponseClosed = new Promise((resolve) => {
+    resolveOversizedResponseClosed = resolve;
+  });
+  let oversizedResponseWasClientClosed = false;
   const server = createServer((request, response) => {
     const requestPath = request.url ?? "/";
     requestTargets.push(requestPath);
@@ -28,6 +38,22 @@ const startFixtureServer = async (
         "access-control-expose-headers": "etag, retry-after",
       });
       response.end();
+      return;
+    }
+
+    if (requestPath === "/v1/meta.json" && oversizedMetadata) {
+      const oversizedBody = Buffer.alloc(8 * 1024 * 1024 + 1, 0x20);
+      response.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": String(oversizedBody.length),
+      });
+      const watchdog = setTimeout(() => response.end(), 5_000);
+      response.once("close", () => {
+        clearTimeout(watchdog);
+        oversizedResponseWasClientClosed = !response.writableEnded;
+        resolveOversizedResponseClosed(oversizedResponseWasClientClosed);
+      });
+      response.write(oversizedBody);
       return;
     }
 
@@ -146,6 +172,12 @@ const startFixtureServer = async (
     get compressedRequests() {
       return compressedRequests;
     },
+    get oversizedResponseClosed() {
+      return oversizedResponseClosed;
+    },
+    get oversizedResponseWasClientClosed() {
+      return oversizedResponseWasClientClosed;
+    },
   };
 };
 
@@ -258,6 +290,17 @@ describe("verify-endpoint CLI grammar", () => {
     expect(report.note).toContain("Cloudflare edge compression");
     expect(fixture.requestTargets).toContain("/v1/current/features/api.%ZZ.json");
     expect(fixture.requestTargets).toContain("/v1/current/features/api.%2e%2e%2fsecret.json");
+  });
+
+  it("rejects and closes an oversized response without starting further probes", async () => {
+    const fixture = await startFixtureServer("127.0.0.1", { oversizedMetadata: true });
+
+    await expect(verifyEndpoint({ baseUrl: fixture.baseUrl, allowRemote: false })).rejects.toThrow(
+      /GET \/v1\/meta\.json exceeded the 8388608-byte response limit/,
+    );
+    await expect(fixture.oversizedResponseClosed).resolves.toBe(true);
+    expect(fixture.oversizedResponseWasClientClosed).toBe(true);
+    expect(fixture.requestTargets).toEqual(["/v1/meta.json"]);
   });
 
   it("allows an explicit loopback identity-only check and skips both compressed requests", async () => {

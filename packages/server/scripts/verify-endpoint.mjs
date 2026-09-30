@@ -217,13 +217,15 @@ const requestRaw = (baseUrl, requestPath, { method = "GET", headers = {}, timeou
       const chunks = [];
       let bytes = 0;
       response.on("data", (chunk) => {
+        if (settled) return;
         bytes += chunk.length;
         if (bytes > MAX_RESPONSE_BYTES) {
-          request.destroy(
-            new Error(
-              `${method} ${requestPath} exceeded the ${MAX_RESPONSE_BYTES}-byte response limit.`,
-            ),
+          const error = new Error(
+            `${method} ${requestPath} exceeded the ${MAX_RESPONSE_BYTES}-byte response limit.`,
           );
+          finish(error);
+          response.destroy(error);
+          request.destroy(error);
           return;
         }
         chunks.push(chunk);
