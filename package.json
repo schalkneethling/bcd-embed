@@ -20,7 +20,7 @@
     "quality": "pnpm lint && pnpm format:check && pnpm typecheck"
   },
   "devDependencies": {
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.3",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
     "stylelint": "^17.14.1",
