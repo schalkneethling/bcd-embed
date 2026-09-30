@@ -34,6 +34,9 @@ const generated = generateSnapshot({
 const snapshotId = generated.snapshot.id;
 const url = (path: string): string => `https://api.example.test/${path}`;
 const featurePath = `v1/${snapshotId}/features/javascript.builtins.Array.json`;
+const verifierPath = fileURLToPath(
+  new URL("../../../packages/server/scripts/verify-endpoint.mjs", import.meta.url),
+);
 
 const createRuntime = (): Miniflare =>
   new Miniflare(
@@ -129,6 +132,22 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
     expect(conditional.headers.get("etag")).toBe(etag);
     expect(await conditional.text()).toBe("");
   });
+
+  it("passes the endpoint verifier CLI against the seeded local R2 Worker", async () => {
+    const ready = await runtime.ready;
+    const { stdout, stderr } = await execFile(
+      process.execPath,
+      [verifierPath, "--base-url", ready.origin, "--local-identity-only"],
+      { timeout: 125_000 },
+    );
+    const report = JSON.parse(stdout);
+    expect(stderr).toBe("");
+    expect(report.remote).toBe(false);
+    expect(report.probes).toBe(19);
+    expect(report.compression).toBe("skipped (--local-identity-only)");
+    expect(report.checks).toContain("compressed probes skipped (--local-identity-only)");
+    expect(report.note).toContain("intentionally skip compressed representations");
+  }, 135_000);
 
   it("distinguishes malformed, missing, organizational, and missing-snapshot errors", async () => {
     const cases = [
