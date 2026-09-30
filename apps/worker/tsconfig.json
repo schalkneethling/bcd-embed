@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "node"],
+    "paths": {
+      "@bcd-embed/server": ["../../packages/server/src/index.ts"],
+      "@bcd-embed/core": ["../../packages/core/src/index.ts"],
+      "@bcd-embed/schema": ["../../packages/schema/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/cache.test.ts", "worker-configuration.d.ts"]
+}

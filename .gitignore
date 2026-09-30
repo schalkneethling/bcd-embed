@@ -12,6 +12,8 @@ node_modules
 dist
 dist-ssr
 *.local
+.wrangler/
+*.cpuprofile
 
 # Editor directories and files
 .vscode/*
