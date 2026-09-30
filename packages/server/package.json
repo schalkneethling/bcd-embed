@@ -1,0 +1,28 @@
+{
+  "name": "@bcd-embed/server",
+  "version": "0.0.0",
+  "description": "Portable read-only HTTP adapter for BCD compatibility artifacts.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/package-smoke-test.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bcd-embed/schema": "workspace:*"
+  }
+}
