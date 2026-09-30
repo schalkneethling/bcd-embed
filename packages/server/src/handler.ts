@@ -7,6 +7,7 @@ import {
   snapshotIdentifierSchema,
   type ApiErrorCode,
 } from "@bcd-embed/schema";
+import { negotiateEncoding, representationPath, type ContentEncoding } from "./encoding.js";
 
 /** Storage paths are relative to the artifact root, never URL paths. */
 export interface ArtifactStore {
@@ -28,6 +29,11 @@ export type ReadDecision =
 
 export interface ArtifactHandlerOptions {
   store: ArtifactStore;
+  /** Only small, generated error JSON is encoded at request time; never stored artifacts. */
+  encodeJson?: (
+    bytes: Uint8Array,
+    encoding: Exclude<ContentEncoding, "identity">,
+  ) => Uint8Array | Promise<Uint8Array>;
   beforeRead?: (request: Request) => ReadDecision | Promise<ReadDecision>;
   onError?: (error: unknown) => void | Promise<void>;
 }
@@ -150,6 +156,7 @@ function headers(etag: string, cache: string): Headers {
     "access-control-allow-origin": "*",
     "access-control-expose-headers": "etag, retry-after",
     "x-content-type-options": "nosniff",
+    vary: "Accept-Encoding",
     etag,
   });
 }
@@ -159,15 +166,27 @@ async function digest(body: Uint8Array<ArrayBuffer>): Promise<string> {
   return `"${Array.from(hash, (byte) => byte.toString(16).padStart(2, "0")).join("")}"`;
 }
 
-async function jsonResponse(
+async function makeJsonResponse(
   request: Request,
   status: number,
   body: unknown,
   cache: string,
   extra?: Record<string, string>,
+  encodeJson?: ArtifactHandlerOptions["encodeJson"],
 ): Promise<Response> {
-  const bytes = new TextEncoder().encode(JSON.stringify(body));
+  const encoding = negotiateEncoding(
+    request.headers.get("accept-encoding"),
+    encodeJson === undefined ? ["identity"] : undefined,
+  );
+  if (encoding === null) return notAcceptable();
+  let bytes = new TextEncoder().encode(JSON.stringify(body));
+  if (encoding !== "identity") {
+    if (encodeJson === undefined)
+      throw new Error("A bounded JSON encoder is required for compressed responses.");
+    bytes = new Uint8Array(await encodeJson(bytes, encoding));
+  }
   const responseHeaders = headers(await digest(bytes), cache);
+  if (encoding !== "identity") responseHeaders.set("content-encoding", encoding);
   for (const [name, value] of Object.entries(extra ?? {})) responseHeaders.set(name, value);
   responseHeaders.set("content-length", String(bytes.length));
   return new Response(request.method === "HEAD" ? null : bytes, {
@@ -176,11 +195,12 @@ async function jsonResponse(
   });
 }
 
-function contractError(
+function makeContractError(
   request: Request,
   code: ApiErrorCode,
   query: string | null,
   retryAfter?: number,
+  encodeJson?: ArtifactHandlerOptions["encodeJson"],
 ): Promise<Response> {
   const messages: Record<ApiErrorCode, string> = {
     invalid_key: "The requested key is invalid.",
@@ -199,12 +219,13 @@ function contractError(
           ? 503
           : 404;
   const body = apiErrorResponseSchema.parse({ error: { code, message: messages[code], query } });
-  return jsonResponse(
+  return makeJsonResponse(
     request,
     status,
     body,
     status >= 429 ? "no-store" : ERROR_CACHE,
     retryAfter === undefined ? undefined : { "retry-after": String(retryAfter) },
+    encodeJson,
   );
 }
 
@@ -222,9 +243,11 @@ async function serveArtifact(
   request: Request,
   artifact: Artifact,
   cache: string,
+  encoding: ContentEncoding,
 ): Promise<Response> {
   await assertArtifact(artifact);
   const responseHeaders = headers(artifact.etag, cache);
+  if (encoding !== "identity") responseHeaders.set("content-encoding", encoding);
   if (artifact.size !== undefined) responseHeaders.set("content-length", String(artifact.size));
   const notModified = matchesIfNoneMatch(request.headers.get("if-none-match"), artifact.etag);
   if (request.method === "HEAD" || notModified) {
@@ -234,7 +257,7 @@ async function serveArtifact(
   return new Response(artifact.body, { status: 200, headers: responseHeaders });
 }
 
-async function boundedJson(artifact: Artifact, limit: number): Promise<unknown> {
+async function boundedBytes(artifact: Artifact, limit: number): Promise<Uint8Array<ArrayBuffer>> {
   await assertArtifact(artifact);
   if (artifact.size !== undefined && artifact.size > limit) {
     await artifact.body.cancel();
@@ -264,13 +287,67 @@ async function boundedJson(artifact: Artifact, limit: number): Promise<unknown> 
     bytes.set(chunk, cursor);
     cursor += chunk.length;
   }
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+  return bytes;
 }
+
+const parseJson = (bytes: Uint8Array): unknown =>
+  JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+const boundedJson = async (artifact: Artifact, limit: number): Promise<unknown> =>
+  parseJson(await boundedBytes(artifact, limit));
+
+async function emptyFailure(status: 406 | 500): Promise<Response> {
+  const responseHeaders = headers(await digest(new Uint8Array()), "no-store");
+  responseHeaders.set("content-length", "0");
+  return new Response(null, { status, headers: responseHeaders });
+}
+const notAcceptable = () => emptyFailure(406);
 
 /** No BCD dependency or normalization: successful payloads pass through unchanged. */
 export function createArtifactHandler(
   options: ArtifactHandlerOptions,
 ): (request: Request) => Promise<Response> {
+  const report = (error: unknown): void => {
+    try {
+      void Promise.resolve(options.onError?.(error)).catch(() => {
+        /* Async reporter isolation. */
+      });
+    } catch {
+      /* Sync reporter isolation. */
+    }
+  };
+  const encoderFailure = (request: Request, error: unknown) => {
+    report(error);
+    if (negotiateEncoding(request.headers.get("accept-encoding"), ["identity"]) === null)
+      return emptyFailure(500);
+    return makeJsonResponse(
+      new Request(request.url, {
+        method: request.method,
+        headers: { "accept-encoding": "identity" },
+      }),
+      500,
+      { error: { message: "Artifact service unavailable." } },
+      "no-store",
+    );
+  };
+  const jsonResponse = (
+    request: Request,
+    status: number,
+    body: unknown,
+    cache: string,
+    extra?: Record<string, string>,
+  ) =>
+    makeJsonResponse(request, status, body, cache, extra, options.encodeJson).catch(
+      (error: unknown) => encoderFailure(request, error),
+    );
+  const contractError = (
+    request: Request,
+    code: ApiErrorCode,
+    query: string | null,
+    retryAfter?: number,
+  ) =>
+    makeContractError(request, code, query, retryAfter, options.encodeJson).catch(
+      (error: unknown) => encoderFailure(request, error),
+    );
   return async (request) => {
     try {
       const route = parseRoute(request.url);
@@ -292,6 +369,8 @@ export function createArtifactHandler(
           { allow: METHODS },
         );
       }
+      const encoding = negotiateEncoding(request.headers.get("accept-encoding"));
+      if (encoding === null) return notAcceptable();
       const decision = await options.beforeRead?.(request);
       if (decision?.code === "rate_limited") {
         if (!Number.isSafeInteger(decision.retryAfter) || decision.retryAfter < 0)
@@ -302,21 +381,38 @@ export function createArtifactHandler(
         return contractError(request, decision.code, null);
       const metaArtifact = await options.store.get("v1/meta.json");
       if (metaArtifact === null) throw new Error("Artifact metadata missing.");
-      if (route.type === "meta") return await serveArtifact(request, metaArtifact, CURRENT_CACHE);
-      const metadata = metaResponseSchema.parse(
-        await boundedJson(metaArtifact, MAX_METADATA_BYTES),
-      );
+      if (route.type === "meta" && encoding === "identity")
+        return await serveArtifact(request, metaArtifact, CURRENT_CACHE, encoding);
+      const metaBytes = await boundedBytes(metaArtifact, MAX_METADATA_BYTES);
+      const metadata = metaResponseSchema.parse(parseJson(metaBytes));
+      if (route.type === "meta") {
+        const metaSha256 = (await digest(metaBytes)).slice(1, -1);
+        const representation = await options.store.get(
+          representationPath("v1/meta.json", encoding, metaSha256),
+        );
+        if (representation === null) throw new Error("Required metadata representation missing.");
+        return await serveArtifact(request, representation, CURRENT_CACHE, encoding);
+      }
       const selected = route.snapshot === "current" ? metadata.current : route.snapshot;
       const selectedSnapshot = metadata.snapshots.find((snapshot) => snapshot.id === selected);
       if (selectedSnapshot === undefined)
         return contractError(request, "snapshot_not_found", route.snapshot);
-      const artifact = await options.store.get(`v1/${selected}/${route.suffix}`);
+      const logicalPath = `v1/${selected}/${route.suffix}`;
+      const artifact = await options.store.get(representationPath(logicalPath, encoding));
       if (artifact !== null)
         return await serveArtifact(
           request,
           artifact,
           route.snapshot === "current" ? CURRENT_CACHE : PINNED_CACHE,
+          encoding,
         );
+      if (encoding !== "identity") {
+        const identity = await options.store.get(logicalPath);
+        if (identity !== null) {
+          await identity.body.cancel();
+          throw new Error("Required artifact representation missing.");
+        }
+      }
       if (route.key === null) {
         // A missing optional shard is a transport 404; other structural artifacts are corrupt.
         if (route.suffix.startsWith("index/")) {
@@ -358,14 +454,7 @@ export function createArtifactHandler(
       );
     } catch (error) {
       if (error instanceof RequestError) return contractError(request, error.code, error.query);
-      // Reporting failures must not replace the safe transport failure response.
-      try {
-        void Promise.resolve(options.onError?.(error)).catch(() => {
-          // Isolate async reporting failures without delaying the HTTP response.
-        });
-      } catch {
-        /* Reporter isolation. */
-      }
+      report(error);
       return jsonResponse(
         request,
         500,

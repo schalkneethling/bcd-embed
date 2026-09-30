@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { brotliCompressSync, brotliDecompressSync, gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import { apiErrorResponseSchema, type MetaResponse } from "@bcd-embed/schema";
 import {
   createArtifactHandler,
@@ -59,6 +61,139 @@ function setup(extra: Record<string, unknown> = {}) {
 
 const request = (path: string, init?: RequestInit) =>
   new Request(`https://example.test${path}`, init);
+
+describe("encoded representations", () => {
+  const encodeJson = (bytes: Uint8Array, coding: "br" | "gzip") =>
+    coding === "br" ? brotliCompressSync(bytes) : gzipSync(bytes);
+  it("keeps bodyless OPTIONS independent of unacceptable encodings", async () => {
+    const { handler, get } = setup();
+    const result = await handler(
+      request("/v1/meta.json", { method: "OPTIONS", headers: { "accept-encoding": "*;q=0" } }),
+    );
+    expect(result.status).toBe(204);
+    expect(await result.text()).toBe("");
+    expect(get).not.toHaveBeenCalled();
+  });
+  it("preserves portable errors as identity when no encoder exists and identity is allowed", async () => {
+    const { handler, get } = setup();
+    const result = await handler(
+      request("/v1/current/features/api%2fsecret.json", {
+        headers: { "accept-encoding": "br, gzip" },
+      }),
+    );
+    expect(result.status).toBe(400);
+    expect(result.headers.get("content-encoding")).toBeNull();
+    expect((await result.json()).error.code).toBe("invalid_key");
+    expect(get).not.toHaveBeenCalled();
+  });
+  it("returns bodyless 406 for an encoder-less error when identity is excluded", async () => {
+    const { handler, get } = setup();
+    const result = await handler(
+      request("/v1/current/features/api%2fsecret.json", {
+        headers: { "accept-encoding": "br, identity;q=0" },
+      }),
+    );
+    expect(result.status).toBe(406);
+    expect(await result.text()).toBe("");
+    expect(get).not.toHaveBeenCalled();
+  });
+  it("reports encoder rejection and respects excluded identity in the safe failure", async () => {
+    const { get } = setup();
+    const onError = vi.fn();
+    const failure = new Error("secret");
+    const handler = createArtifactHandler({
+      store: { get },
+      encodeJson: async () => {
+        throw failure;
+      },
+      onError,
+    });
+    const result = await handler(
+      request("/v1/current/features/api%2fsecret.json", {
+        headers: { "accept-encoding": "br, identity;q=0" },
+      }),
+    );
+    expect(result.status).toBe(500);
+    expect(result.headers.get("cache-control")).toBe("no-store");
+    expect(await result.text()).toBe("");
+    expect(onError).toHaveBeenCalledExactlyOnceWith(failure);
+    expect(get).not.toHaveBeenCalled();
+  });
+  it.each(["br", "gzip"])(
+    "selects immutable %s paths before matching representation validators",
+    async (encoding) => {
+      const path = `v1/${snapshot}/features/css.properties.display.json`;
+      const suffix = encoding === "br" ? ".br" : ".gz";
+      const { get } = setup({ [path + suffix]: { encoded: true } });
+      const handler = createArtifactHandler({ store: { get }, encodeJson });
+      const result = await handler(
+        request("/v1/current/features/css.properties.display.json", {
+          headers: { "accept-encoding": encoding, "if-none-match": 'W/"artifact"' },
+        }),
+      );
+      expect(result.status).toBe(304);
+      expect(result.headers.get("content-encoding")).toBe(encoding);
+      expect(result.headers.get("vary")).toBe("Accept-Encoding");
+      expect(get.mock.calls.map(([key]) => key)).toEqual(["v1/meta.json", path + suffix]);
+    },
+  );
+  it("addresses compressed metadata from the exact bounded identity bytes", async () => {
+    const bytes = JSON.stringify(metadata);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const get = vi.fn(async (path: string) =>
+      path === "v1/meta.json"
+        ? object(bytes)
+        : path === `v1/_meta/${hash}.json.br`
+          ? object("encoded", '"encoded"')
+          : null,
+    );
+    const result = await createArtifactHandler({ store: { get }, encodeJson })(
+      request("/v1/meta.json", { headers: { "accept-encoding": "br" } }),
+    );
+    expect(await result.text()).toBe("encoded");
+    expect(result.headers.get("etag")).toBe('"encoded"');
+  });
+  it("treats missing required compression as corruption, not feature absence", async () => {
+    const { get } = setup({ [`v1/${snapshot}/features/css.properties.display.json`]: {} });
+    const result = await createArtifactHandler({ store: { get }, encodeJson })(
+      request("/v1/current/features/css.properties.display.json", {
+        headers: { "accept-encoding": "br" },
+      }),
+    );
+    expect(result.status).toBe(500);
+    expect(result.headers.get("content-encoding")).toBe("br");
+    expect(
+      JSON.parse(brotliDecompressSync(Buffer.from(await result.arrayBuffer())).toString()),
+    ).toEqual({ error: { message: "Artifact service unavailable." } });
+  });
+  it("rejects unacceptable encodings without hooks or storage I/O", async () => {
+    const get = vi.fn();
+    const beforeRead = vi.fn();
+    const result = await createArtifactHandler({ store: { get }, beforeRead })(
+      request("/v1/meta.json", { headers: { "accept-encoding": "*;q=0" } }),
+    );
+    expect(result.status).toBe(406);
+    expect(await result.text()).toBe("");
+    expect(get).not.toHaveBeenCalled();
+    expect(beforeRead).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(
+    "isolates %s async encoder failures even for early invalid routes",
+    async (asyncFailure) => {
+      const get = vi.fn();
+      const encode = () => {
+        if (asyncFailure) return Promise.reject(new Error("secret"));
+        throw new Error("secret");
+      };
+      const result = await createArtifactHandler({ store: { get }, encodeJson: encode })(
+        request("/v1/current/features/api%2fsecret.json", { headers: { "accept-encoding": "br" } }),
+      );
+      expect(result.status).toBe(500);
+      expect(await result.json()).toEqual({ error: { message: "Artifact service unavailable." } });
+      expect(get).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe("artifact routing", () => {
   it.each([
