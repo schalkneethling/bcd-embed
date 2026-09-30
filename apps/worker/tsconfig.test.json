@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@bcd-embed/generator": ["../../packages/generator/src/index.ts"],
+      "@bcd-embed/core": ["../../packages/core/src/index.ts"],
+      "@bcd-embed/schema": ["../../packages/schema/src/index.ts"]
+    }
+  },
+  "include": ["tests/worker.test.ts", "src/logging.ts"]
+}
