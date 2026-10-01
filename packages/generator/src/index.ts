@@ -19,6 +19,20 @@ export {
 } from "./emit.js";
 export { createRepresentations, type EncodedArtifact } from "./representations.js";
 export {
+  compareOutputTrees,
+  parseDiffApproval,
+  DEFAULT_DIFF_POLICY,
+  type CompareOutputTreesOptions,
+  type DiffApproval,
+  type DiffReport,
+} from "./diff.js";
+export {
+  parseDiffCommand,
+  diffUsage,
+  type DiffCommand,
+  type DiffCommandParseResult,
+} from "./diff-cli.js";
+export {
   parseGenerateCommand,
   usage as cliUsage,
   type GenerateCommand,
