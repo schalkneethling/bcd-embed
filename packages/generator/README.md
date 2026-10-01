@@ -111,3 +111,27 @@ There is no schema fetch or network access at runtime.
 An upgrade must review upstream public schema and normalizer compatibility,
 update the exact dependency/version pin and reviewed schema fingerprint, and
 run all gates. Changing only a dependency version fails closed.
+
+## Semantic output diff
+
+After building, compare two emitted trees with:
+
+```sh
+node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate artifacts-after
+node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate artifacts-after --approval reviewed-approval.json
+```
+
+The grammar is defined in `src/diff-cli.ts`. The gate validates schemas and
+index coverage, then compares output JSON with provenance-only normalization;
+contract and support data remain significant. It keeps feature/index keys and
+digests plus a sorted path inventory, but parses one artifact at a time. The
+default limits are 10%/2,500 changed, 2%/500 added, and 0.25%/50 removed
+features; crossing either bound blocks. Operators adjust these reviewed source
+constants in `src/diff.ts`, not with a command-line bypass. Bootstrap and
+namespace changes also require approval. Every approval binds the exact
+baseline and candidate tree SHA-256 digests and includes a review reason; stale
+approvals fail. Schema and contract errors cannot be approved. Browser release
+metadata changes are reported but do not independently block routine refreshes.
+
+The measured BCD 8.0.13→8.1.3 output delta and complexity model are recorded in
+[`docs/planning/06-phase5-output-diff.md`](../../docs/planning/06-phase5-output-diff.md).

@@ -144,7 +144,7 @@ Pipeline gates: schema validation of the input, schema validation of every outpu
 
 Two operational specifics are decided here rather than discovered later. First, the Dependabot bump PR auto-merges when every gate is green: freshness must not depend on a maintainer being available to click merge, or "live data" quietly degrades into "data as fresh as the maintainer's week." Second, a blocked gate is a notification, not a log line. Sentry is the error-tracking and alerting mechanism throughout — the generation pipeline reports failures and blocked gates to it, and the Worker reports runtime errors. The pipeline silently stopping while the service keeps serving aging data is precisely the failure this project exists to prevent, so "it stopped and nobody noticed" has to be impossible by construction, not merely unlikely by habit.
 
-The output diff is also a reusable artifact in its own right — a machine-readable record of what changed in browser and runtime support over a given period. Out of scope here; noted as a candidate for later.
+The output-diff gate emits a machine-readable report of feature, browser, index, and namespace changes. Its validation, digest-bound approval, measured defaults, and bounded-memory comparison are documented in Document 6. Persisting historical reports and scheduling freshness runs remain orchestration work.
 
 ---
 

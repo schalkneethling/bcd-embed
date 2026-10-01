@@ -55,7 +55,7 @@ try {
   }
   await writeFile(
     join(temporaryDirectory, "smoke.mjs"),
-    `import { emitGeneratedSnapshot, generateSnapshot, validateRawArtifact, BCD_VERSION, GENERATOR_VERSION } from "@bcd-embed/generator";
+    `import { compareOutputTrees, emitGeneratedSnapshot, generateSnapshot, parseDiffApproval, validateRawArtifact, BCD_VERSION, GENERATOR_VERSION } from "@bcd-embed/generator";
 const generation = generateSnapshot({ generated: "2026-08-28T12:00:00Z", expires: "2026-11-26" });
 if (generation.snapshot.id !== "bcd-" + BCD_VERSION + "-gen-" + GENERATOR_VERSION) throw new Error("Bad package metadata");
 const iterator = generation.artifacts[Symbol.iterator]();
@@ -64,10 +64,12 @@ const raw = iterator.next().value;
 if (feature.kind !== "feature" || raw.kind !== "raw") throw new Error("Incomplete artifact pair");
 validateRawArtifact(raw.data);
 if (typeof emitGeneratedSnapshot !== "function") throw new Error("Missing emitter export");
+if (typeof compareOutputTrees !== "function" || typeof parseDiffApproval !== "function") throw new Error("Missing output-diff exports");
 `,
   );
   run(process.execPath, [join(temporaryDirectory, "smoke.mjs")]);
   run(process.execPath, [join(scope, "generator", "dist", "bin.js"), "--help"]);
+  run(process.execPath, [join(scope, "generator", "dist", "diff-bin.js"), "--help"]);
   await writeFile(
     join(temporaryDirectory, "smoke.ts"),
     `import { generateSnapshot, type GeneratedArtifact, type GeneratedSnapshot } from "@bcd-embed/generator";
