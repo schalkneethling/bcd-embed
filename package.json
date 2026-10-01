@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "oxfmt": "0.70.0",
-    "oxlint": "1.85.0",
+    "oxlint": "1.86.0",
     "stylelint": "^17.15.0",
     "stylelint-config-standard": "^40.0.0",
     "stylelint-plugin-use-baseline": "^1.4.6",
