@@ -34,6 +34,22 @@ may remain, but no alias is changed.
 checks artifact paths, envelopes, and path-to-payload identity, but does not
 deep-parse every payload again; generation already performs those validations.
 
+Emission additionally creates deterministic gzip (level 6) and Brotli (quality 4)
+variants. Snapshot variants append `.gz`/`.br`; metadata variants are immutable
+`v1/_meta/<identity-meta-sha256>.json.gz`/`.json.br`. Only `v1/meta.json` is mutable
+in publication. `createRepresentations(logicalPath, bytes)` exports these exact
+bytes and an inventory descriptor with logicalPath, path, encoding, size,
+sha256, and quoted SHA-256 etag. Gzip embeds no wall-clock timestamp; identical
+inputs/settings/toolchain produce identical bytes.
+
+The local control file `.bcd-embed-manifest.json` uses the schema package's
+`artifactManifestSchema` and is returned as `EmissionResult.manifest`. `files`
+counts representations plus this control file. Do not upload the control file;
+publishers must verify actual bytes and complete logical inventory before use.
+Merged retained metadata must be re-encoded before publishing its variants and
+the canonical metadata CAS. Representation work is O(sum(Bi)) time and
+O(Bmax + K) auxiliary memory, processing one artifact at a time.
+
 `generateSnapshot({ generated, expires, data? })` returns snapshot metadata,
 namespace names, and a single-use lazy `Iterable<GeneratedArtifact>`. The default
 input is exact BCD 8.1.3; optional input must satisfy the same published schema

@@ -55,7 +55,7 @@ describe("Worker cache boundary", () => {
   });
 
   it("uses named, header-free GET keys and preserves the request authority", async () => {
-    const address = "https://api.example.test//other.example.test/v1/meta.json?ignored=1";
+    const address = "https://api.example.test:8443/v1/meta.json?ignored=1";
     await (
       await fetch(address, {
         headers: { range: "bytes=0-1", "if-modified-since": "Wed, 30 Sep 2026 00:00:00 GMT" },
@@ -64,11 +64,37 @@ describe("Worker cache boundary", () => {
     await Promise.all(pending);
     expect(caches.open).toHaveBeenCalledWith("bcd-embed-api-v1");
     const key = match.mock.calls[0]?.[0] as Request;
-    expect(key.url).toBe("https://api.example.test//other.example.test/v1/meta.json");
+    expect(key.url).toBe("https://api.example.test:8443/v1/meta.json?__bcd_encoding=identity");
     expect(key.method).toBe("GET");
     expect([...key.headers]).toEqual([]);
     await (await fetch(address)).text();
     expect(origin).toHaveBeenCalledOnce();
+  });
+
+  it("does not let immutable pinned edge entries bypass snapshot retirement", async () => {
+    const address = "https://api.example.test/v1/bcd-8.1.3-gen-0.0.0/features/api.Element.json";
+    const policy = "max-age=31536000, immutable";
+    origin.mockResolvedValueOnce(
+      new Response("artifact", { headers: { "cache-control": policy, etag: '"artifact"' } }),
+    );
+    const published = await fetch(address);
+    expect(published.headers.get("cache-control")).toBe(policy);
+    expect(await published.text()).toBe("artifact");
+    await Promise.all(pending);
+    origin.mockResolvedValueOnce(new Response("retired", { status: 404 }));
+    const retired = await fetch(address);
+    expect(retired.status).toBe(404);
+    expect(await retired.text()).toBe("retired");
+    expect(origin).toHaveBeenCalledTimes(2);
+    expect(match).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("does not cache nested path lookalikes", async () => {
+    await (await fetch("https://api.example.test//other.example.test/v1/meta.json")).text();
+    expect(origin).toHaveBeenCalledOnce();
+    expect(match).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it("applies HEAD and weak/list conditionals to cached successful responses", async () => {
@@ -121,6 +147,19 @@ describe("Worker cache boundary", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("artifact");
     expect(origin).toHaveBeenCalledOnce();
+  });
+
+  it("rejects corrupt private length metadata and falls back to the origin", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const address = "https://api.example.test/v1/meta.json";
+    await (await fetch(address)).text();
+    await Promise.all(pending);
+    const entry = [...entries.values()][0]!;
+    entry.headers.set("x-bcd-cache-representation-length", "-1");
+    const response = await fetch(address);
+    expect(await response.text()).toBe("artifact");
+    expect(response.headers.has("x-bcd-cache-representation-length")).toBe(false);
+    expect(origin).toHaveBeenCalledTimes(2);
   });
 
   it("isolates cache write failures through waitUntil", async () => {

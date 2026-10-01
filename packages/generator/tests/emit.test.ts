@@ -122,7 +122,7 @@ describe("emitGeneratedSnapshot", () => {
 
     await expect(
       emitGeneratedSnapshot({ outputRoot, generatedSnapshot: fixtureSnapshot() }),
-    ).resolves.toMatchObject({ files: 6, snapshot: "created", meta: "created", snapshotId });
+    ).resolves.toMatchObject({ files: 19, snapshot: "created", meta: "created", snapshotId });
 
     await expect(readFile(join(outputRoot, "keep.txt"), "utf8")).resolves.toBe("keep\n");
     await expect(readFile(join(outputRoot, "v1", "meta.json"), "utf8")).resolves.toBe(

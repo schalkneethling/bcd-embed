@@ -1,6 +1,13 @@
 import { fork } from "node:child_process";
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
+import {
+  brotliCompressSync,
+  brotliDecompressSync,
+  constants as zlibConstants,
+  gzipSync,
+  gunzipSync,
+} from "node:zlib";
 import { cpus, platform, release, tmpdir, totalmem } from "node:os";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -16,6 +23,8 @@ import {
   featureResponseSchema,
   indexResponseSchema,
   metaResponseSchema,
+  ARTIFACT_MANIFEST_PATH,
+  artifactManifestSchema,
 } from "@bcd-embed/schema";
 import { normalizeFeatureSubtree } from "@bcd-embed/core";
 import publicSchema from "../src/upstream/public.schema.json" with { type: "json" };
@@ -103,7 +112,8 @@ for (const [namespace, tree] of Object.entries(bcd)) {
 
 const sourceKeys = [...expectedSource.keys()];
 const sourceNamespaces = [...expectedByNamespace.keys()];
-const snapshotArtifactCount = (keyCount, namespaceCount) => keyCount * 2 + namespaceCount + 3;
+const snapshotArtifactCount = (keyCount, namespaceCount) =>
+  (keyCount * 2 + namespaceCount + 3) * 3 + 1;
 
 const waitForCli = (outputRoot, timeoutMs) =>
   new Promise((resolve, reject) => {
@@ -250,6 +260,20 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
   for (const namespace of sourceNamespaces) {
     expectedPaths.add(`${snapshotPrefix}index/${namespace}.json`);
   }
+  const identityPaths = new Set(expectedPaths);
+  const manifest = artifactManifestSchema.parse(
+    JSON.parse(await readFile(join(outputRoot, ARTIFACT_MANIFEST_PATH), "utf8")),
+  );
+  if (manifest.snapshotId !== snapshotId) fail("Manifest snapshot identity mismatch.");
+  const inventory = new Map(manifest.artifacts.map((artifact) => [artifact.path, artifact]));
+  const logicalPaths = new Set(manifest.artifacts.map((artifact) => artifact.logicalPath));
+  if (
+    logicalPaths.size !== identityPaths.size ||
+    [...logicalPaths].some((path) => !identityPaths.has(path))
+  )
+    fail("Manifest logical artifacts differ from BCD.");
+  for (const artifact of manifest.artifacts) expectedPaths.add(artifact.path);
+  expectedPaths.add(ARTIFACT_MANIFEST_PATH);
   const expectedDirectories = new Set();
   for (const path of expectedPaths) {
     const segments = path.split("/");
@@ -286,6 +310,23 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
     const fileInfo = await stat(absolutePath);
     if (!fileInfo.isFile()) fail(`Generated path '${relativePath}' is not a regular file.`);
     const diskBuffer = await readFile(absolutePath);
+    if (relativePath === ARTIFACT_MANIFEST_PATH) return;
+    const representation = inventory.get(relativePath);
+    if (
+      representation === undefined ||
+      representation.size !== diskBuffer.length ||
+      representation.sha256 !== createHash("sha256").update(diskBuffer).digest("hex")
+    )
+      fail(`Representation checksum mismatch at '${relativePath}'.`);
+    if (representation.encoding !== "identity") {
+      const decoded =
+        representation.encoding === "br"
+          ? brotliDecompressSync(diskBuffer)
+          : gunzipSync(diskBuffer);
+      if (!decoded.equals(await readFile(join(outputRoot, representation.logicalPath))))
+        fail(`Representation contents mismatch at '${relativePath}'.`);
+      return;
+    }
     const diskText = diskBuffer.toString("utf8");
     let value;
     const isArrayArtifact =
@@ -574,8 +615,10 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
   if (totals.array.normalized === undefined || totals.array.raw === undefined) {
     fail("Expected both normalized and raw javascript.builtins.Array artifacts.");
   }
-  if (totals.artifacts !== actualPaths.size) {
-    fail(`Metrics counted ${totals.artifacts} artifacts but read ${actualPaths.size} paths.`);
+  if (totals.artifacts !== identityPaths.size) {
+    fail(
+      `Metrics counted ${totals.artifacts} identity artifacts but expected ${identityPaths.size}.`,
+    );
   }
 
   return {

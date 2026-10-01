@@ -50,9 +50,19 @@ Every response carries a strong ETag. Conditional GET/HEAD use weak comparison,
 wildcards, and entity-tag lists under
 [RFC 9110 §13.1.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.2).
 Malformed conditions are ignored; conditions do not turn error responses into
-304s. Compression belongs to the hosting layer: adapters must preserve strong
-validator identity across encoded representations, not label different bytes
-with the same strong tag.
+304s. Encoding selection uses prebuilt `.br`/`.gz` variants and quality weights;
+all responses carry `Vary: Accept-Encoding`. Missing/empty headers choose
+identity; coding ties prefer Brotli. Malformed/ambiguous headers or no acceptable
+encoding return bodyless transport 406, with no storage I/O. Metadata variants
+are addressed by the SHA-256 of bounded identity metadata bytes. Missing required
+variants are corruption, not absent features.
+
+The optional `encodeJson(bytes, encoding)` adapter hook encodes only bounded
+generated error JSON. Without it, errors fall back to acceptable identity, or
+bodyless 406 when identity is excluded. Encoder failures are reported via
+`onError`: safe identity 500 if acceptable, bodyless 500 otherwise. No Node
+compression dependency enters this portable package. Hosting adapters must
+disable automatic recompression and preserve the selected byte-specific ETag.
 
 ## Input and resource bounds
 
@@ -70,7 +80,7 @@ served. Security does not depend on recovering it: object paths are constructed
 only from validated route tokens, never arbitrary request paths. No input can
 select private files, leave the artifact tree, or introduce storage separators.
 
-Only resolution metadata (256 KiB) and miss-classification shards (2 MiB) are
+Only resolution/compressed-route metadata (256 KiB) and miss-classification shards (2 MiB) are
 buffered and schema-validated. Known lengths are rejected before reading; unknown
 lengths are checked per chunk and cancelled on overflow. Zero-byte chunks are
 not retained. Full indexes and successful payloads are streamed, not parsed or
@@ -79,10 +89,11 @@ capped. These bounds allow headroom above Phase 3's 368,237-byte largest shard.
 ## Complexity
 
 Successful snapshot routes use two storage reads (bounded metadata plus one
-artifact); metadata itself uses one. Streaming needs O(1) auxiliary payload
+artifact); identity metadata uses one, compressed metadata two. Streaming needs O(1) auxiliary payload
 space; delivery is O(B) for B bytes. Metadata validation/resolution takes O(M)
 time/space for bounded metadata size M, not dataset size. A feature miss uses at
-most one additional shard read and scans its K entries: O(I + K × L) time and
+an additional shard read (plus an identity existence check for encoded misses)
+and scans its K entries: O(I + K × L) time and
 O(I) space for bounded shard bytes I and maximum key length L. No fuzzy search,
 normalization, full-index parse, or dataset scan runs at request time.
 
