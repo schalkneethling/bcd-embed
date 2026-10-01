@@ -1,0 +1,32 @@
+{
+  "name": "@bcd-embed/publisher",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "bcd-embed-publish": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json && node scripts/package-smoke-test.mjs",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.901.0",
+    "@bcd-embed/generator": "workspace:*",
+    "@bcd-embed/schema": "workspace:*",
+    "semver": "7.7.3"
+  },
+  "devDependencies": {
+    "@types/semver": "7.7.1"
+  }
+}

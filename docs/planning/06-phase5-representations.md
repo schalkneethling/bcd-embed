@@ -10,7 +10,10 @@ artifacts array. Each `ArtifactRepresentation` has logicalPath, encoding
 (`identity`, `br`, `gzip`), path, byte size, lowercase SHA-256, and its quoted
 strong ETag. Safe paths, ownership, uniqueness, and all three encoding groups
 are validated in O(K). Publishers still verify actual bytes and complete logical
-inventory; the manifest is a local control file, never an uploaded object.
+inventory; the manifest is not a public API object. The private publisher preserves
+an immutable copy under `v1/_candidates/<snapshotId>/` for exact baseline recovery,
+alongside the original singleton metadata and its compressed variants. See
+`packages/publisher/README.md` for the verified publication and restoration contract.
 
 Identity public paths remain unchanged. Snapshot variants append `.br`/`.gz`.
 Metadata variants live at `v1/_meta/<identity-meta-sha256>.json.br`/`.json.gz`.

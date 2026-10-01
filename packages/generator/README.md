@@ -44,8 +44,9 @@ inputs/settings/toolchain produce identical bytes.
 
 The local control file `.bcd-embed-manifest.json` uses the schema package's
 `artifactManifestSchema` and is returned as `EmissionResult.manifest`. `files`
-counts representations plus this control file. Do not upload the control file;
-publishers must verify actual bytes and complete logical inventory before use.
+counts representations plus this control file. Do not expose the control file as
+a public API artifact; the private publisher archives an immutable copy for exact
+baseline recovery. Publishers must verify actual bytes and complete logical inventory before use.
 Merged retained metadata must be re-encoded before publishing its variants and
 the canonical metadata CAS. Representation work is O(sum(Bi)) time and
 O(Bmax + K) auxiliary memory, processing one artifact at a time.
