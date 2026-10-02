@@ -1,0 +1,137 @@
+name: Freshness
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.user.id == 49699333 && github.event.pull_request.user.type == 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository
+    outputs:
+      kind: ${{ steps.input.outputs.kind }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: base
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Check out candidate as data only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: candidate
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: base/package.json
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.18.0
+
+      - name: Verify exact candidate revision and allowed input diff
+        id: input
+        env:
+          EXPECTED_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          test "$(git -C candidate rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
+          git -C candidate fetch --depth=1 origin "$BASE_SHA"
+          pnpm --dir "$GITHUB_WORKSPACE/base" install --frozen-lockfile --ignore-scripts
+          node base/scripts/freshness-gate.mjs --base "$GITHUB_WORKSPACE/base" --base-sha "$BASE_SHA" --candidate "$GITHUB_WORKSPACE/candidate"
+
+      - name: Derive one deterministic generation window
+        if: steps.input.outputs.kind == 'bcd'
+        id: window
+        run: |
+          node - <<'NODE' >> "$GITHUB_OUTPUT"
+          const generated = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+          const expires = new Date(Date.parse(generated) + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          console.log(`generated=${generated}`);
+          console.log(`expires=${expires}`);
+          NODE
+
+      - name: Generate trusted baseline output
+        if: steps.input.outputs.kind == 'bcd'
+        run: |
+          pnpm --dir "$GITHUB_WORKSPACE/base" --recursive --filter @bcd-embed/generator... run build
+          node base/packages/generator/dist/bin.js --out "$RUNNER_TEMP/base-output" --generated "${{ steps.window.outputs.generated }}" --expires "${{ steps.window.outputs.expires }}"
+
+      - name: Generate candidate output with trusted source only
+        if: steps.input.outputs.kind == 'bcd'
+        run: |
+          mkdir "$RUNNER_TEMP/candidate-trusted"
+          tar -C base --exclude=.git --exclude=node_modules -cf - . | tar -C "$RUNNER_TEMP/candidate-trusted" -xf -
+          cp candidate/packages/core/package.json "$RUNNER_TEMP/candidate-trusted/packages/core/package.json"
+          cp candidate/packages/generator/package.json "$RUNNER_TEMP/candidate-trusted/packages/generator/package.json"
+          cp candidate/apps/worker/package.json "$RUNNER_TEMP/candidate-trusted/apps/worker/package.json"
+          cp candidate/pnpm-lock.yaml "$RUNNER_TEMP/candidate-trusted/pnpm-lock.yaml"
+          pnpm --dir "$RUNNER_TEMP/candidate-trusted" install --frozen-lockfile --ignore-scripts
+          pnpm --dir "$RUNNER_TEMP/candidate-trusted" --recursive --filter @bcd-embed/generator... run build
+          node "$RUNNER_TEMP/candidate-trusted/packages/generator/dist/bin.js" --out "$RUNNER_TEMP/candidate-output" --generated "${{ steps.window.outputs.generated }}" --expires "${{ steps.window.outputs.expires }}"
+
+      - name: Gate the generated output diff, not the input diff
+        if: steps.input.outputs.kind == 'bcd'
+        run: node base/scripts/compare-freshness-output.mjs --baseline "$RUNNER_TEMP/base-output" --candidate "$RUNNER_TEMP/candidate-output"
+
+  enable-auto-merge:
+    needs: freshness
+    if: vars.BCD_EMBED_AUTO_MERGE_ENABLED == 'true' && needs.freshness.result == 'success' && needs.freshness.outputs.kind == 'bcd'
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Enable protected auto-merge at this exact head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTO_MERGE_ENABLED: ${{ vars.BCD_EMBED_AUTO_MERGE_ENABLED }}
+        run: node scripts/enable-auto-merge.mjs
+
+  notify-failure:
+    needs:
+      - freshness
+      - enable-auto-merge
+    if: always() && (needs.freshness.result == 'failure' || needs.enable-auto-merge.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Report failure when an operator configured Sentry
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: node scripts/notify-sentry.mjs freshness failure
