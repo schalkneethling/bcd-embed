@@ -17,6 +17,7 @@ import type { PublicationStore } from "./store.js";
 import { putAndVerify, readMetadata, readVerified } from "./objects.js";
 import { uploadCandidateControls } from "./archive.js";
 import { runBounded } from "./concurrency.js";
+import { PublisherError } from "./errors.js";
 import { MAX_META_BYTES, validateCandidate } from "./validate.js";
 
 const META_KEY = "v1/meta.json";
@@ -29,7 +30,7 @@ const wallClock: PublicationClock = () => new Date();
 const readClock = (clock: PublicationClock): Date => {
   const value = clock();
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
-    throw new Error("Publication clock must return a finite Date.");
+    throw new PublisherError("Publication clock must return a finite Date.");
   }
   return value;
 };
@@ -38,21 +39,23 @@ const assertMonotonic = (previous: Snapshot | undefined, candidate: Snapshot, no
   const generated = Date.parse(candidate.generated);
   const expiry = Date.parse(candidate.expires);
   if (generated > now.getTime() || expiry <= now.getTime()) {
-    throw new Error("Candidate generation/expiry time is not publishable now.");
+    throw new PublisherError("Candidate generation/expiry time is not publishable now.");
   }
   if (expiry - generated > RETENTION_DAYS * DAY_MS) {
-    throw new Error("Candidate retention exceeds the reviewed 90-day policy.");
+    throw new PublisherError("Candidate retention exceeds the reviewed 90-day policy.");
   }
   if (
     [candidate.source.version, candidate.generatorVersion].some(
       (version) => validVersion(version) === null,
     )
   ) {
-    throw new Error("Snapshot source and generator versions must be valid SemVer for publication.");
+    throw new PublisherError(
+      "Snapshot source and generator versions must be valid SemVer for publication.",
+    );
   }
   if (previous === undefined) return;
   if (generated <= Date.parse(previous.generated)) {
-    throw new Error("New snapshot generation must be later than published current.");
+    throw new PublisherError("New snapshot generation must be later than published current.");
   }
   const source = candidate.source.version;
   const priorSource = previous.source.version;
@@ -63,10 +66,12 @@ const assertMonotonic = (previous: Snapshot | undefined, candidate: Snapshot, no
       (version) => validVersion(version) === null,
     )
   ) {
-    throw new Error("Snapshot source and generator versions must be valid SemVer for publication.");
+    throw new PublisherError(
+      "Snapshot source and generator versions must be valid SemVer for publication.",
+    );
   }
   if (compareVersions(source, priorSource) < 0 || compareVersions(generator, priorGenerator) < 0) {
-    throw new Error("Candidate would downgrade published source or generator version.");
+    throw new PublisherError("Candidate would downgrade published source or generator version.");
   }
 };
 
@@ -83,7 +88,7 @@ const mergedMetadata = (candidate: MetaResponse, previous: MetaResponse | undefi
   });
   const bytes = Buffer.from(`${JSON.stringify(body)}\n`, "utf8");
   if (bytes.byteLength > MAX_META_BYTES)
-    throw new Error("Merged metadata exceeds server read cap.");
+    throw new PublisherError("Merged metadata exceeds server read cap.");
   return { body, bytes };
 };
 
@@ -109,10 +114,10 @@ const uploadMetaVariants = async (store: PublicationStore, bytes: Uint8Array) =>
 /** Scheduled/no-change retention still needs a metadata CAS before physical cleanup. */
 const retireExpiredMembership = async (store: PublicationStore, now: Date): Promise<void> => {
   const remote = await readMetadata(store);
-  if (remote === null) throw new Error("Canonical metadata is required before pruning.");
+  if (remote === null) throw new PublisherError("Canonical metadata is required before pruning.");
   const treeDigest = remote.object.metadata["tree-digest"];
   if (treeDigest === undefined || !/^[a-f0-9]{64}$/.test(treeDigest)) {
-    throw new Error("Canonical metadata lacks its reviewed tree digest.");
+    throw new PublisherError("Canonical metadata lacks its reviewed tree digest.");
   }
   const kept = remote.body.snapshots.filter(
     (snapshot) =>
@@ -122,14 +127,14 @@ const retireExpiredMembership = async (store: PublicationStore, now: Date): Prom
   const body = metaResponseSchema.parse({ ...remote.body, snapshots: kept });
   const bytes = Buffer.from(`${JSON.stringify(body)}\n`, "utf8");
   if (bytes.byteLength > MAX_META_BYTES)
-    throw new Error("Retired metadata exceeds server read cap.");
+    throw new PublisherError("Retired metadata exceeds server read cap.");
   const identity = await uploadMetaVariants(store, bytes);
   const current = await readMetadata(store);
   if (
     current?.object.etag !== remote.object.etag ||
     current.object.sha256 !== remote.object.sha256
   ) {
-    throw new Error("Metadata changed while preparing retention CAS.");
+    throw new PublisherError("Metadata changed while preparing retention CAS.");
   }
   const result = await store.put({
     key: META_KEY,
@@ -140,13 +145,14 @@ const retireExpiredMembership = async (store: PublicationStore, now: Date): Prom
     metadata: { "tree-digest": treeDigest },
     ifMatch: remote.object.etag,
   });
-  if (result.type === "precondition-failed") throw new Error("Retention metadata CAS lost a race.");
+  if (result.type === "precondition-failed")
+    throw new PublisherError("Retention metadata CAS lost a race.");
   const verified = await readMetadata(store);
   if (
     verified?.object.sha256 !== identity.sha256 ||
     verified.object.metadata["tree-digest"] !== treeDigest
   ) {
-    throw new Error("Retention metadata committed but readback failed.");
+    throw new PublisherError("Retention metadata committed but readback failed.");
   }
 };
 
@@ -172,13 +178,13 @@ const markerFor = async (
     !/^[a-f0-9]{64}$/.test(object.sha256)
   ) {
     object.dispose();
-    throw new Error(`Invalid publication marker '${key}'.`);
+    throw new PublisherError("Invalid publication marker.");
   }
   const bytes = await readVerified(object, { size: object.size, sha256: object.sha256 }, 1_024);
-  if (bytes === undefined) throw new Error(`Publication marker '${key}' has no bytes.`);
+  if (bytes === undefined) throw new PublisherError("Publication marker has no bytes.");
   const value: unknown = JSON.parse(Buffer.from(bytes).toString("utf8"));
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`Invalid publication marker '${key}'.`);
+    throw new PublisherError("Invalid publication marker.");
   }
   const fields = value as Record<string, unknown>;
   if (
@@ -192,7 +198,7 @@ const markerFor = async (
     !/^[a-f0-9]{64}$/.test(fields.candidateDigest) ||
     key !== `v1/_publication/${fields.snapshotId}.json`
   ) {
-    throw new Error(`Invalid publication marker '${key}'.`);
+    throw new PublisherError("Invalid publication marker.");
   }
   return {
     version: 1,
@@ -220,7 +226,7 @@ const assertListingProgress = (
   let previous = startAfter;
   for (const key of keys) {
     if (!key.startsWith(prefix) || (previous !== undefined && key <= previous)) {
-      throw new Error("R2 listing did not advance within its prefix.");
+      throw new PublisherError("R2 listing did not advance within its prefix.");
     }
     previous = key;
   }
@@ -234,17 +240,17 @@ export const pruneRetiredSnapshots = async (
   await retireExpiredMembership(store, readClock(clock));
   const pruned: string[] = [];
   const metadata = await readMetadata(store);
-  if (metadata === null) throw new Error("Canonical metadata disappeared during pruning.");
+  if (metadata === null) throw new PublisherError("Canonical metadata disappeared during pruning.");
   const referenced = new Set(metadata.body.snapshots.map((snapshot) => snapshot.id));
   let markerStart: string | undefined;
   for (;;) {
     const page = await store.list("v1/_publication/", markerStart, PRUNE_PAGE_SIZE);
     assertListingProgress(page.keys, markerStart, "v1/_publication/");
     if (page.truncated && page.keys.length === 0)
-      throw new Error("R2 marker listing did not advance.");
+      throw new PublisherError("R2 marker listing did not advance.");
     for (const key of page.keys) {
       if (!key.startsWith("v1/_publication/"))
-        throw new Error("R2 marker listing escaped its prefix.");
+        throw new PublisherError("R2 marker listing escaped its prefix.");
       const marker = await markerFor(store, key);
       if (marker === null) continue;
       if (referenced.has(marker.snapshotId)) continue;
@@ -256,16 +262,17 @@ export const pruneRetiredSnapshots = async (
         Date.parse(marker.expires) > now.getTime()
       )
         continue;
+      let deleted = 0;
       for (const prefix of [`v1/${marker.snapshotId}/`, `v1/_candidates/${marker.snapshotId}/`]) {
         let objectStart: string | undefined;
         for (;;) {
           const objects = await store.list(prefix, objectStart, PRUNE_PAGE_SIZE);
           assertListingProgress(objects.keys, objectStart, prefix);
           if (objects.truncated && objects.keys.length === 0) {
-            throw new Error("R2 snapshot listing did not advance.");
+            throw new PublisherError("R2 snapshot listing did not advance.");
           }
           if (objects.keys.some((objectKey) => !objectKey.startsWith(prefix))) {
-            throw new Error("R2 snapshot listing escaped its prefix.");
+            throw new PublisherError("R2 snapshot listing escaped its prefix.");
           }
           const latest = await readMetadata(store);
           const deletionTime = readClock(clock).getTime();
@@ -273,20 +280,23 @@ export const pruneRetiredSnapshots = async (
             Date.parse(marker.generated) + RETENTION_DAYS * DAY_MS > deletionTime ||
             Date.parse(marker.expires) > deletionTime
           ) {
-            throw new Error("Snapshot is no longer eligible for pruning.");
+            throw new PublisherError("Snapshot is no longer eligible for pruning.");
           }
           if (
             latest === null ||
             latest.body.snapshots.some((snapshot) => snapshot.id === marker.snapshotId)
           ) {
-            throw new Error("Snapshot became referenced while pruning.");
+            throw new PublisherError("Snapshot became referenced while pruning.");
           }
-          await store.delete(objects.keys);
+          if (objects.keys.length > 0) {
+            await store.delete(objects.keys);
+            deleted += objects.keys.length;
+          }
           if (!objects.truncated) break;
           objectStart = objects.keys.at(-1);
         }
       }
-      pruned.push(marker.snapshotId);
+      if (deleted > 0) pruned.push(marker.snapshotId);
     }
     if (!page.truncated) break;
     markerStart = page.keys.at(-1);
@@ -324,11 +334,13 @@ export const publishCandidate = async ({
   const candidate = await validateCandidate(candidateRoot);
   const diff = await compareOutputTrees({ baselineRoot, candidateRoot, approval });
   if (diff.blocked.length > 0 && !diff.approved) {
-    throw new Error(`Output diff blocked: ${diff.blocked.join(" ")}`);
+    throw new PublisherError(
+      "Output diff blocked; review the local report and provide exact-digest approval.",
+    );
   }
   const remote = await readMetadata(store);
   if (remote === null && !diff.bootstrap)
-    throw new Error("Remote metadata missing for non-bootstrap baseline.");
+    throw new PublisherError("Remote metadata missing for non-bootstrap baseline.");
   if (
     remote !== null &&
     remote.object.metadata["tree-digest"] === diff.candidateDigest &&
@@ -346,11 +358,11 @@ export const publishCandidate = async ({
     remote !== null &&
     (diff.bootstrap || remote.object.metadata["tree-digest"] !== diff.baselineDigest)
   ) {
-    throw new Error("Remote metadata does not correspond to the reviewed baseline tree.");
+    throw new PublisherError("Remote metadata does not correspond to the reviewed baseline tree.");
   }
   const previous = remote?.body.snapshots.find((snapshot) => snapshot.id === remote.body.current);
   if (remote !== null && previous === undefined)
-    throw new Error("Remote current snapshot is absent.");
+    throw new PublisherError("Remote current snapshot is absent.");
   if (remote !== null && !diff.semanticChanged) {
     const pruned = await pruneRetiredSnapshots(store, clock);
     return {
@@ -362,7 +374,7 @@ export const publishCandidate = async ({
   }
   const candidateSnapshot = candidate.meta.snapshots[0]!;
   if (previous?.id === candidateSnapshot.id) {
-    throw new Error("Snapshot ID already current but candidate semantic content differs.");
+    throw new PublisherError("Snapshot ID already current but candidate semantic content differs.");
   }
   assertMonotonic(previous, candidateSnapshot, now);
 
@@ -406,14 +418,14 @@ export const publishCandidate = async ({
     finalDiff.baselineDigest !== diff.baselineDigest ||
     finalDiff.candidateDigest !== diff.candidateDigest
   ) {
-    throw new Error("Candidate or approval changed before metadata compare-and-swap.");
+    throw new PublisherError("Candidate or approval changed before metadata compare-and-swap.");
   }
   const current = await readMetadata(store);
   if (
     current?.object.etag !== remote?.object.etag ||
     current?.object.sha256 !== remote?.object.sha256
   ) {
-    throw new Error("Remote metadata changed before compare-and-swap.");
+    throw new PublisherError("Remote metadata changed before compare-and-swap.");
   }
   assertMonotonic(previous, candidateSnapshot, readClock(clock));
   const result = await store.put({
@@ -426,7 +438,7 @@ export const publishCandidate = async ({
     ...(remote === null ? { ifNoneMatch: true } : { ifMatch: remote.object.etag }),
   });
   if (result.type === "precondition-failed") {
-    throw new Error("Metadata compare-and-swap lost a concurrent publication race.");
+    throw new PublisherError("Metadata compare-and-swap lost a concurrent publication race.");
   }
   const verified = await readMetadata(store);
   if (
@@ -434,8 +446,16 @@ export const publishCandidate = async ({
     verified.object.sha256 !== identity.sha256 ||
     verified.object.metadata["tree-digest"] !== diff.candidateDigest
   ) {
-    throw new Error(
+    throw new PublisherError(
       "Metadata committed but readback verification failed; investigate before retry.",
+    );
+  }
+  let pruned: string[];
+  try {
+    pruned = await pruneRetiredSnapshots(store, clock);
+  } catch {
+    throw new PublisherError(
+      "Metadata committed but retention cleanup failed; investigate before retry.",
     );
   }
   return {
@@ -443,6 +463,6 @@ export const publishCandidate = async ({
     candidateDigest: diff.candidateDigest,
     current: merged.body.current,
     metaSha256: identity.sha256,
-    pruned: await pruneRetiredSnapshots(store, clock),
+    pruned,
   };
 };
