@@ -296,39 +296,16 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
   }
 
   const files = await filesUnder(root);
-  let meta: MetaResponse | undefined;
-  let manifest: ArtifactManifest | undefined;
-  const measurements = new Map<string, FileMeasurement>();
-  for (const artifact of files) {
-    const bytes = await readFile(artifact.absolutePath);
-    addFramed(exactHash, Buffer.from(artifact.relativePath));
-    addFramed(exactHash, bytes);
-    measurements.set(artifact.relativePath, {
-      size: bytes.byteLength,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-    });
-    if (artifact.relativePath === "v1/meta.json") {
-      meta = parseArtifact(
-        metaResponseSchema,
-        parseJson(bytes, artifact.relativePath),
-        artifact.relativePath,
-      );
-    } else if (artifact.relativePath === ARTIFACT_MANIFEST_PATH) {
-      manifest = parseArtifact(
-        artifactManifestSchema,
-        parseJson(bytes, artifact.relativePath),
-        artifact.relativePath,
-      );
-    }
-    // Snapshot path identity is checked after metadata has been read below.
+  const metaArtifact = files.find(({ relativePath }) => relativePath === "v1/meta.json");
+  if (metaArtifact === undefined) {
+    throw new Error(`Candidate '${root}' is missing 'v1/meta.json'.`);
   }
-  const hasCompressedFiles = files.some(
-    ({ relativePath }) => relativePath.endsWith(".json.br") || relativePath.endsWith(".json.gz"),
+  const metaBytes = await readFile(metaArtifact.absolutePath);
+  const meta = parseArtifact(
+    metaResponseSchema,
+    parseJson(metaBytes, metaArtifact.relativePath),
+    metaArtifact.relativePath,
   );
-  if (hasCompressedFiles && manifest === undefined) {
-    throw new Error(`Artifact tree '${root}' contains compressed files without a manifest.`);
-  }
-  if (meta === undefined) throw new Error(`Candidate '${root}' is missing 'v1/meta.json'.`);
   if (meta.snapshots.length !== 1 || meta.snapshots[0]?.id !== meta.current) {
     throw new Error(`Artifact tree '${root}' must describe exactly its current snapshot.`);
   }
@@ -336,34 +313,11 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
     throw new Error(`Artifact tree '${root}' contains duplicate metadata namespaces.`);
   }
   const snapshotId = meta.current;
-  if (manifest !== undefined) {
-    if (manifest.snapshotId !== snapshotId) {
-      throw new Error(`Artifact manifest snapshot does not match '${root}'.`);
-    }
-    const expectedPaths = new Set<string>();
-    for (const item of manifest.artifacts) {
-      const measured = measurements.get(item.path);
-      if (
-        measured === undefined ||
-        measured.size !== item.size ||
-        measured.sha256 !== item.sha256
-      ) {
-        throw new Error(`Artifact manifest does not match file '${item.path}'.`);
-      }
-      expectedPaths.add(item.path);
-    }
-    const actualPaths = new Set(
-      files
-        .map(({ relativePath }) => relativePath)
-        .filter((relativePath) => relativePath !== ARTIFACT_MANIFEST_PATH),
-    );
-    if (
-      actualPaths.size !== expectedPaths.size ||
-      [...actualPaths].some((relativePath) => !expectedPaths.has(relativePath))
-    ) {
-      throw new Error(`Artifact manifest inventory does not match files in '${root}'.`);
-    }
-  }
+  let manifest: ArtifactManifest | undefined;
+  const measurements = new Map<string, FileMeasurement>();
+  const hasCompressedFiles = files.some(
+    ({ relativePath }) => relativePath.endsWith(".json.br") || relativePath.endsWith(".json.gz"),
+  );
   const featureDigests = new Map<string, string>();
   const rawDigests = new Map<string, string>();
   const featureKeys = new Set<string>();
@@ -376,8 +330,24 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
   let globalIndexKeyCount = 0;
   const shardKeys = new Map<string, string[]>();
 
-  // Payload memory is bounded by the largest individual JSON artifact. Only keys and digests persist.
+  // Exact and semantic hashes use the same bytes for each identity artifact.
+  // Metadata is prefetched only so its snapshot ID can validate the remaining paths.
   for (const artifact of files) {
+    const bytes =
+      artifact.relativePath === "v1/meta.json" ? metaBytes : await readFile(artifact.absolutePath);
+    addFramed(exactHash, Buffer.from(artifact.relativePath));
+    addFramed(exactHash, bytes);
+    measurements.set(artifact.relativePath, {
+      size: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+    if (artifact.relativePath === ARTIFACT_MANIFEST_PATH) {
+      manifest = parseArtifact(
+        artifactManifestSchema,
+        parseJson(bytes, artifact.relativePath),
+        artifact.relativePath,
+      );
+    }
     if (
       artifact.relativePath === "v1/meta.json" ||
       artifact.relativePath === ARTIFACT_MANIFEST_PATH ||
@@ -387,7 +357,6 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
       continue;
     }
     const identity = identify(artifact.relativePath, snapshotId);
-    const bytes = await readFile(artifact.absolutePath);
     const value = parseJson(bytes, artifact.relativePath);
     switch (identity.kind) {
       case "feature": {
@@ -442,6 +411,38 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
       }
       case "meta":
         throw new Error("Metadata should only occur at 'v1/meta.json'.");
+    }
+  }
+
+  if (hasCompressedFiles && manifest === undefined) {
+    throw new Error(`Artifact tree '${root}' contains compressed files without a manifest.`);
+  }
+  if (manifest !== undefined) {
+    if (manifest.snapshotId !== snapshotId) {
+      throw new Error(`Artifact manifest snapshot does not match '${root}'.`);
+    }
+    const expectedPaths = new Set<string>();
+    for (const item of manifest.artifacts) {
+      const measured = measurements.get(item.path);
+      if (
+        measured === undefined ||
+        measured.size !== item.size ||
+        measured.sha256 !== item.sha256
+      ) {
+        throw new Error(`Artifact manifest does not match file '${item.path}'.`);
+      }
+      expectedPaths.add(item.path);
+    }
+    const actualPaths = new Set(
+      files
+        .map(({ relativePath }) => relativePath)
+        .filter((relativePath) => relativePath !== ARTIFACT_MANIFEST_PATH),
+    );
+    if (
+      actualPaths.size !== expectedPaths.size ||
+      [...actualPaths].some((relativePath) => !expectedPaths.has(relativePath))
+    ) {
+      throw new Error(`Artifact manifest inventory does not match files in '${root}'.`);
     }
   }
 
