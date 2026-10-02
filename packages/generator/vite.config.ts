@@ -3,7 +3,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   build: {
     lib: {
-      entry: { index: "src/index.ts", bin: "src/bin.ts" },
+      entry: { index: "src/index.ts", bin: "src/bin.ts", "diff-bin": "src/diff-bin.ts" },
       fileName: (_format, entryName) => `${entryName}.js`,
       formats: ["es"],
     },
