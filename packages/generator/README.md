@@ -124,7 +124,8 @@ node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate
 The grammar is defined in `src/diff-cli.ts`. The gate validates schemas and
 index coverage, then compares output JSON with provenance-only normalization;
 contract and support data remain significant. It keeps feature/index keys and
-digests plus a sorted path inventory, but parses one artifact at a time. The
+digests plus a sorted path inventory, but parses one artifact at a time; each
+artifact's exact-byte and semantic digests are derived from the same read. The
 default limits are 10%/2,500 changed, 2%/500 added, and 0.25%/50 removed
 features; crossing either bound blocks. Operators adjust these reviewed source
 constants in `src/diff.ts`, not with a command-line bypass. Bootstrap and

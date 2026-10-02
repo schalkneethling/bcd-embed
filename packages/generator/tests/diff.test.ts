@@ -3,7 +3,28 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import bcd from "@mdn/browser-compat-data" with { type: "json" };
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const readMutation = vi.hoisted(() => ({
+  enabled: false,
+  path: "",
+  replacement: "",
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      const bytes = await actual.readFile(...args);
+      if (readMutation.enabled && args[0] === readMutation.path) {
+        readMutation.enabled = false;
+        await actual.writeFile(readMutation.path, readMutation.replacement);
+      }
+      return bytes;
+    },
+  };
+});
 
 import { compareOutputTrees, parseDiffApproval } from "../src/diff.js";
 import { emitGeneratedSnapshot } from "../src/emit.js";
@@ -212,6 +233,33 @@ describe("compareOutputTrees", () => {
     expect(report.semanticChanged).toBe(true);
     expect(report.blocked).toEqual([]);
     expect(baselineId).toContain("bcd-8.1.3-gen-");
+  });
+
+  it("uses the same bytes for exact and semantic digests when a file changes during reading", async () => {
+    const baseline = await output();
+    const candidate = await output();
+    const id = await emit(baseline, "2026-09-01T00:00:00Z");
+    await emit(candidate, "2026-09-02T00:00:00Z");
+    const featurePath = join(candidate, "v1", id, "features/api.feature0.json");
+    const originalBytes = await readFile(featurePath);
+    const changedFeature = JSON.parse(originalBytes.toString("utf8")) as {
+      features: Array<{ support: { chrome: { version_added: string } } }>;
+    };
+    changedFeature.features[0]!.support.chrome.version_added = "2";
+
+    const before = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
+    readMutation.path = featurePath;
+    readMutation.replacement = JSON.stringify(changedFeature);
+    readMutation.enabled = true;
+    try {
+      const raced = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
+      expect(readMutation.enabled).toBe(false);
+      expect(raced.features.changed).toBe(0);
+      expect(raced.candidateDigest).toBe(before.candidateDigest);
+      expect(raced.semanticDigest).toBe(before.semanticDigest);
+    } finally {
+      readMutation.enabled = false;
+    }
   });
 
   it("reports feature additions and removals from the emitted indexes", async () => {

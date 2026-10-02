@@ -94,16 +94,17 @@ node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate
 ## Complexity and limits
 
 The gate does not load the BCD aggregate. It keeps a sorted physical file-path
-inventory and first-pass size/digest measurements, feature keys/digests, and
-index coverage sets, then parses and hashes one identity JSON artifact at a
-time. Peak payload memory is bounded by the largest individual artifact plus
+inventory, size/digest measurements, feature keys/digests, and index coverage
+sets while parsing and hashing one identity JSON artifact at a time. Peak
+payload memory is bounded by the largest individual artifact plus
 the path/key indexes: `O(A + K + M)`, where `A` is physical file count, `K` is
 the number of feature/index keys, and `M` is the largest parsed artifact.
 Time is `O(B + A log A + K log K + Σ sᵢ log sᵢ)`: `B` is total emitted bytes,
 path and key collections are sorted for deterministic digests, and each JSON
-object's keys are sorted while canonical hashing. Bytes are read in two
-sequential passes (exact approval digest, then validation/semantic comparison),
-so total I/O remains `O(B)` and no payload tree is accumulated.
+object's keys are sorted while canonical hashing. Metadata is read first to
+identify the snapshot, then the inventory is traversed once; each artifact's
+exact approval digest and semantic checks use the same bytes. Total I/O remains
+`O(B)` and no payload tree is accumulated.
 
 This layer only validates and compares candidate output. Freshness scheduling,
 publishing, alias changes, pruning, and alert delivery remain separate
