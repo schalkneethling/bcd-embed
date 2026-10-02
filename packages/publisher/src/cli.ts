@@ -1,3 +1,4 @@
+import { PublisherError } from "./errors.js";
 export const usage = `Usage: bcd-embed-publish --baseline-root <directory> --candidate-root <directory> [--approval-file <json>] [--execute-remote-write --account-id <id> --bucket <name>]
 
 Without --execute-remote-write, validate and report locally without contacting R2.
@@ -26,23 +27,23 @@ export const parsePublishCommand = (args: readonly string[]): PublishCommand | {
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index]!;
     if (option === "--execute-remote-write") {
-      if (execute) throw new Error(`Repeated '${option}'.\n${usage}`);
+      if (execute) throw new PublisherError(`Repeated '${option}'.\n${usage}`);
       execute = true;
       continue;
     }
     if (!valueOptions.has(option) || values.has(option)) {
-      throw new Error(`Unknown or repeated argument '${option}'.\n${usage}`);
+      throw new PublisherError(`Unknown or repeated argument.\n${usage}`);
     }
     const value = args[++index];
     if (value === undefined || value.length === 0 || value.startsWith("--")) {
-      throw new Error(`Argument '${option}' requires a value.\n${usage}`);
+      throw new PublisherError(`Argument '${option}' requires a value.\n${usage}`);
     }
     values.set(option, value);
   }
   const baselineRoot = values.get("--baseline-root");
   const candidateRoot = values.get("--candidate-root");
   if (baselineRoot === undefined || candidateRoot === undefined) {
-    throw new Error(`Baseline and candidate roots are required.\n${usage}`);
+    throw new PublisherError(`Baseline and candidate roots are required.\n${usage}`);
   }
   const accountId = values.get("--account-id");
   const bucket = values.get("--bucket");
@@ -50,7 +51,9 @@ export const parsePublishCommand = (args: readonly string[]): PublishCommand | {
     (execute && (accountId === undefined || bucket === undefined)) ||
     (!execute && (accountId !== undefined || bucket !== undefined))
   ) {
-    throw new Error(`Remote account and bucket require explicit --execute-remote-write.\n${usage}`);
+    throw new PublisherError(
+      `Remote account and bucket require explicit --execute-remote-write.\n${usage}`,
+    );
   }
   return {
     baselineRoot,

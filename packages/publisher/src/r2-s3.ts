@@ -8,6 +8,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 
+import { PublisherError } from "./errors.js";
 import type { PublicationStore, PutObject, PutResult, StoredObject } from "./store.js";
 
 export type R2S3Options = {
@@ -38,10 +39,11 @@ const objectBody = async function* (
 ): AsyncGenerator<Uint8Array> {
   try {
     for await (const chunk of body) {
-      if (!(chunk instanceof Uint8Array)) throw new Error("R2 returned a non-byte object body.");
+      if (!(chunk instanceof Uint8Array))
+        throw new PublisherError("R2 returned a non-byte object body.");
       yield chunk;
     }
-    if (didTimeout()) throw new Error("R2 object read exceeded its deadline.");
+    if (didTimeout()) throw new PublisherError("R2 object read exceeded its deadline.");
   } finally {
     clearDeadline();
   }
@@ -49,12 +51,12 @@ const objectBody = async function* (
 
 /** Node-side S3 adapter. No account operations happen until methods are invoked. */
 export const createR2S3Store = (options: R2S3Options): PublicationStore => {
-  if (!/^[a-f0-9]{32}$/.test(options.accountId)) throw new Error("Invalid R2 account ID.");
+  if (!/^[a-f0-9]{32}$/.test(options.accountId)) throw new PublisherError("Invalid R2 account ID.");
   if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(options.bucket)) {
-    throw new Error("Invalid R2 bucket name.");
+    throw new PublisherError("Invalid R2 bucket name.");
   }
   if (!options.accessKeyId || !options.secretAccessKey) {
-    throw new Error("R2 S3 credentials are required.");
+    throw new PublisherError("R2 S3 credentials are required.");
   }
   const client = new S3Client({
     region: "auto",
@@ -91,14 +93,14 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
           result.ETag === undefined ||
           !/^"[\x21\x23-\x7e\x80-\xff]*"$/.test(result.ETag)
         ) {
-          throw new Error("R2 returned an object without an iterable body or ETag.");
+          throw new PublisherError("R2 returned an object without an iterable body or ETag.");
         }
         if (
           result.ContentLength === undefined ||
           !Number.isSafeInteger(result.ContentLength) ||
           result.ContentLength < 0
         ) {
-          throw new Error("R2 object has no length.");
+          throw new PublisherError("R2 object has no length.");
         }
         return {
           body: objectBody(body, dispose, () => timedOut),
@@ -132,7 +134,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
             { abortSignal },
           ),
         );
-        if (result.ETag === undefined) throw new Error("R2 PUT returned no ETag.");
+        if (result.ETag === undefined) throw new PublisherError("R2 PUT returned no ETag.");
         return { type: "stored", etag: result.ETag };
       } catch (error) {
         if (
@@ -146,7 +148,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
     },
     async list(prefix, startAfter, limit) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) {
-        throw new Error("R2 list limit must be 1..1000.");
+        throw new PublisherError("R2 list limit must be 1..1000.");
       }
       const result = await withDeadline((abortSignal) =>
         client.send(
@@ -160,7 +162,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
         ),
       );
       if ((result.Contents ?? []).some((item) => item.Key === undefined))
-        throw new Error("R2 listing returned an object without a key.");
+        throw new PublisherError("R2 listing returned an object without a key.");
       return {
         keys: (result.Contents ?? []).flatMap((item) => (item.Key === undefined ? [] : [item.Key])),
         truncated: result.IsTruncated === true,
@@ -168,7 +170,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
     },
     async delete(keys) {
       if (keys.length === 0) return;
-      if (keys.length > 1_000) throw new Error("R2 batch delete exceeds 1000 keys.");
+      if (keys.length > 1_000) throw new PublisherError("R2 batch delete exceeds 1000 keys.");
       const result = await withDeadline((abortSignal) =>
         client.send(
           new DeleteObjectsCommand({
@@ -178,7 +180,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
           { abortSignal },
         ),
       );
-      if ((result.Errors?.length ?? 0) > 0) throw new Error("R2 batch deletion failed.");
+      if ((result.Errors?.length ?? 0) > 0) throw new PublisherError("R2 batch deletion failed.");
     },
   };
 };

@@ -4,6 +4,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { compareOutputTrees, parseDiffApproval } from "@bcd-embed/generator";
 
 import { parsePublishCommand, usage } from "./cli.js";
+import { PublisherError, formatPublisherError } from "./errors.js";
 import { publishCandidate } from "./publish.js";
 import { createR2S3Store } from "./r2-s3.js";
 import { validateCandidate } from "./validate.js";
@@ -12,7 +13,7 @@ const loadApproval = async (path: string | undefined) => {
   if (path === undefined) return undefined;
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size > 4_096) {
-    throw new Error("Approval must be a bounded regular JSON file.");
+    throw new PublisherError("Approval must be a bounded regular JSON file.");
   }
   return parseDiffApproval(JSON.parse(await readFile(path, "utf8")));
 };
@@ -38,7 +39,9 @@ const main = async (): Promise<void> => {
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
   if (!accessKeyId || !secretAccessKey) {
-    throw new Error("R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY are required for remote writes.");
+    throw new PublisherError(
+      "R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY are required for remote writes.",
+    );
   }
   const store = createR2S3Store({
     ...command.remote,
@@ -58,8 +61,6 @@ try {
   await main();
 } catch (error) {
   // No SDK error details, request IDs, paths, or credentials are echoed.
-  process.stderr.write(
-    `bcd-embed-publish: ${error instanceof Error ? error.name : "UnknownError"}\n`,
-  );
+  process.stderr.write(`bcd-embed-publish: ${formatPublisherError(error)}\n`);
   process.exitCode = 1;
 }

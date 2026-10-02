@@ -556,7 +556,7 @@ describe("publication state machine", () => {
     expect(store.objects.has("v1/meta.json")).toBe(false);
   });
 
-  it("retains current while retiring expired prior snapshot by CAS before physical deletion", async () => {
+  it("reports committed metadata after cleanup failure, then resumes retirement without repeated IDs", async () => {
     const baselineRoot = await temporary();
     const firstRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
     const secondRoot = await emit("8.1.4", "2026-04-02T12:00:00Z", "2026-07-01", "api.Changed");
@@ -570,17 +570,32 @@ describe("publication state machine", () => {
     });
     const firstId = (await validateCandidate(firstRoot)).meta.current;
     const secondId = (await validateCandidate(secondRoot)).meta.current;
+    const secondApproval = await approvalFor(firstRoot, secondRoot);
+    store.failDelete = true;
+    await expect(
+      publishCandidate({
+        baselineRoot: firstRoot,
+        candidateRoot: secondRoot,
+        approval: secondApproval,
+        store,
+        clock: () => new Date("2026-04-03"),
+      }),
+    ).rejects.toThrow("Metadata committed but retention cleanup failed; investigate before retry.");
+    expect(JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()).current).toBe(secondId);
+    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(true);
+    store.failDelete = false;
     const second = await publishCandidate({
       baselineRoot: firstRoot,
       candidateRoot: secondRoot,
-      approval: await approvalFor(firstRoot, secondRoot),
+      approval: secondApproval,
       store,
       clock: () => new Date("2026-04-03"),
     });
-    expect(second).toMatchObject({ type: "published", pruned: [firstId] });
+    expect(second).toMatchObject({ type: "unchanged", pruned: [firstId] });
     expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(false);
     expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${secondId}/`))).toBe(true);
     expect(JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()).current).toBe(secondId);
+    expect(await pruneRetiredSnapshots(store, () => new Date("2026-04-03"))).toEqual([]);
   });
 
   it("retains snapshots during publish, then no-change cleanup CAS removes membership before retryable deletion", async () => {
@@ -631,6 +646,22 @@ describe("publication state machine", () => {
     expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(true);
 
     store.failDelete = false;
+    const deleteObjects = store.delete.bind(store);
+    const interruptedControls = vi.spyOn(store, "delete").mockImplementation(async (keys) => {
+      if (keys.some((key) => key.startsWith(`v1/_candidates/${firstId}/`))) {
+        throw new Error("Simulated control cleanup interruption");
+      }
+      await deleteObjects(keys);
+    });
+    await expect(pruneRetiredSnapshots(store, () => new Date("2026-04-03"))).rejects.toThrow(
+      "control cleanup interruption",
+    );
+    interruptedControls.mockRestore();
+    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(false);
+    expect(
+      [...store.objects.keys()].some((key) => key.startsWith(`v1/_candidates/${firstId}/`)),
+    ).toBe(true);
+
     const resumed = await publishCandidate({
       baselineRoot: firstRoot,
       candidateRoot: secondRoot,
@@ -644,6 +675,7 @@ describe("publication state machine", () => {
       [...store.objects.keys()].some((key) => key.startsWith(`v1/_candidates/${firstId}/`)),
     ).toBe(false);
     expect(store.objects.has(`v1/_publication/${firstId}.json`)).toBe(true);
+    expect(await pruneRetiredSnapshots(store, () => new Date("2026-04-03"))).toEqual([]);
   });
 });
 
