@@ -213,6 +213,7 @@ describe("compareOutputTrees", () => {
     expect(report.baselineDigest).not.toBe(report.candidateDigest);
   });
 
+  // Hundreds of compressed fixture files need headroom on contended CI disks.
   it("counts a real raw and normalized feature data change", async () => {
     const baseline = await output();
     const candidate = await output();
@@ -233,7 +234,7 @@ describe("compareOutputTrees", () => {
     expect(report.semanticChanged).toBe(true);
     expect(report.blocked).toEqual([]);
     expect(baselineId).toContain("bcd-8.1.3-gen-");
-  });
+  }, 30_000);
 
   it("uses the same bytes for exact and semantic digests when a file changes during reading", async () => {
     const baseline = await output();

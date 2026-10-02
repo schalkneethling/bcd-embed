@@ -126,7 +126,7 @@ The 90-day figure is a starting recommendation, not a hard constraint — it can
 
 **Target: Cloudflare — R2 for artifacts, Workers for the adapter.**
 
-R2 has no egress fees, which matters directly given the cost model is bandwidth and success means being embedded on many third-party sites. A traffic spike on a metered host is a bill; on R2 it is not. The Worker validates keys, maps key to object, sets cache and CORS headers, and constructs JSON error bodies. Cloudflare's cache absorbs most requests, so the Worker itself runs rarely, and rate limiting is available at the edge with no added infrastructure.
+R2 has no egress fees, which matters directly given the cost model is bandwidth and success means being embedded on many third-party sites. R2 storage, operations, and Worker invocation still have costs. The Worker validates keys, maps key to object, sets cache and CORS headers, and constructs JSON error bodies. Its Cache API layer reduces R2 reads but does not bypass Worker invocation; entries are local to a data center and do not implement stale-while-revalidate. Edge rate limiting is a separate deployment prerequisite.
 
 On a miss — the mapped object does not exist — the Worker distinguishes the two 404 cases using the snapshot's own index shards (Document 1 §4.3), which exist regardless: fetch the shard for the key's top-level namespace and check whether the key is absent from it (`feature_not_found`) or is a dot-boundary prefix of entries in it (`namespace_not_queryable`); a top-level segment that is not a shard at all resolves against the shard list in `meta.json`. This costs one extra R2 read on misses only, and the 404 it produces is itself cacheable (Document 1 §9), so each unique bad key does this work once. No dedicated manifest artifact is needed.
 
@@ -144,7 +144,7 @@ Pipeline gates: schema validation of the input, schema validation of every outpu
 
 Two operational specifics are decided here rather than discovered later. First, the Dependabot bump PR auto-merges when every gate is green: freshness must not depend on a maintainer being available to click merge, or "live data" quietly degrades into "data as fresh as the maintainer's week." Second, a blocked gate is a notification, not a log line. Sentry is the error-tracking and alerting mechanism throughout — the generation pipeline reports failures and blocked gates to it, and the Worker reports runtime errors. The pipeline silently stopping while the service keeps serving aging data is precisely the failure this project exists to prevent, so "it stopped and nobody noticed" has to be impossible by construction, not merely unlikely by habit.
 
-The output-diff gate emits a machine-readable report of feature, browser, index, and namespace changes. Its validation, digest-bound approval, measured defaults, and bounded-memory comparison are documented in Document 6. Persisting historical reports and scheduling freshness runs remain orchestration work.
+The output-diff gate emits a machine-readable report of feature, browser, index, and namespace changes. Its validation, digest-bound approval, measured defaults, and bounded-memory comparison are documented in `06-phase5-output-diff.md`. Freshness scheduling, protected manual publication, and deferred production activation are documented in `06-phase5-freshness.md`.
 
 ---
 

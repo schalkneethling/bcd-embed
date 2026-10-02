@@ -55,6 +55,9 @@ and exact encoded bytes. The endpoint verifier now runs without the identity-onl
 skip. This is local transport evidence, not deployed Cloudflare edge acceptance;
 an explicitly authorized LIVE probe remains required before launch.
 
-Runtime errors are currently reported as structured, non-request-derived
-error classes in Workers Logs. This is not Sentry integration or guaranteed
-alerting; those must be configured and tested before public launch.
+Runtime errors emit structured, non-request-derived error classes to Workers
+Logs and Sentry when the optional `SENTRY_DSN` Worker secret is configured.
+The Sentry SDK is configured to drop request, user, breadcrumb, message, stack,
+and extra fields; it receives only bounded error types. Without that secret,
+Sentry is deliberately disabled and no alert delivery is implied. Configure and
+test an alert before public launch.
