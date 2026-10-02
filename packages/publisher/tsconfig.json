@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "paths": {
+      "@bcd-embed/core": ["../core/src/index.ts"],
       "@bcd-embed/generator": ["../generator/src/index.ts"],
       "@bcd-embed/schema": ["../schema/src/index.ts"]
     }
