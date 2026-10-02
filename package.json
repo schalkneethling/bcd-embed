@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --recursive --if-present run build",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && node scripts/freshness-integration-check.mjs",
     "dev": "pnpm --filter @bcd-embed/docs dev",
     "fixtures:report": "pnpm --filter @bcd-embed/schema fixtures:report",
     "format": "oxfmt --write .",
@@ -28,7 +28,8 @@
     "stylelint-plugin-use-baseline": "^1.4.6",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "yaml": "2.8.1"
   },
   "engines": {
     "node": ">=22.18.0"

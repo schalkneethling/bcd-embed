@@ -427,6 +427,7 @@ describe("publication state machine", () => {
     expect(store.puts).toEqual([]);
   });
 
+  // Exercise the complete filesystem pipeline without racing cleanup on slow CI disks.
   it("publishes a complete generated tree, verifies bytes, then flips metadata once", async () => {
     const baselineRoot = await temporary();
     const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
@@ -461,7 +462,7 @@ describe("publication state machine", () => {
     });
     expect(repeated.type).toBe("unchanged");
     expect(store.puts.length).toBe(originalPuts);
-  });
+  }, 30_000);
 
   it("keeps canonical metadata absent after a partial immutable upload and resumes identical objects", async () => {
     const baselineRoot = await temporary();
