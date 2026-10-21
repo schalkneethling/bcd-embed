@@ -459,19 +459,27 @@ export const publishCandidate = async ({
     throw new PublisherError("Remote metadata changed before compare-and-swap.");
   }
   assertMonotonic(previous, candidateSnapshot, readClock(clock));
-  const result = await store.put({
-    key: META_KEY,
-    body: identity.bytes,
-    size: identity.size,
-    sha256: identity.sha256,
-    contentType: "application/json; charset=utf-8",
-    metadata: { "tree-digest": diff.candidateDigest },
-    ...(remote === null ? { ifNoneMatch: true } : { ifMatch: remote.object.etag }),
-  });
+  let result: Awaited<ReturnType<PublicationStore["put"]>>;
+  try {
+    result = await store.put({
+      key: META_KEY,
+      body: identity.bytes,
+      size: identity.size,
+      sha256: identity.sha256,
+      contentType: "application/json; charset=utf-8",
+      metadata: { "tree-digest": diff.candidateDigest },
+      ...(remote === null ? { ifNoneMatch: true } : { ifMatch: remote.object.etag }),
+    });
+  } catch {
+    // The server may have committed before the connection failed, so `current` may have moved.
+    throw new PublisherError(
+      "Metadata compare-and-swap outcome is unknown; metadata may have committed. Rerun the same candidate to reconcile.",
+    );
+  }
   if (result.type === "precondition-failed") {
     throw new PublisherError("Metadata compare-and-swap lost a concurrent publication race.");
   }
-  const verified = await readMetadata(store);
+  const verified = await readMetadata(store).catch(() => null);
   if (
     verified === null ||
     verified.object.sha256 !== identity.sha256 ||
