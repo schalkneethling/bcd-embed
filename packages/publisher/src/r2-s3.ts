@@ -24,9 +24,16 @@ const isS3Error = (error: unknown, name: string): boolean =>
 const REQUEST_TIMEOUT_MS = 60_000;
 const withDeadline = async <T>(action: (signal: AbortSignal) => Promise<T>): Promise<T> => {
   const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let timedOut = false;
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
   try {
     return await action(controller.signal);
+  } catch (error) {
+    if (timedOut) throw new PublisherError("R2 request exceeded its deadline.");
+    throw error;
   } finally {
     clearTimeout(deadline);
   }
@@ -38,10 +45,16 @@ const objectBody = async function* (
   didTimeout: () => boolean,
 ): AsyncGenerator<Uint8Array> {
   try {
-    for await (const chunk of body) {
-      if (!(chunk instanceof Uint8Array))
-        throw new PublisherError("R2 returned a non-byte object body.");
-      yield chunk;
+    // Destroying the body at the deadline makes the stream throw before the check below runs.
+    try {
+      for await (const chunk of body) {
+        if (!(chunk instanceof Uint8Array))
+          throw new PublisherError("R2 returned a non-byte object body.");
+        yield chunk;
+      }
+    } catch (error) {
+      if (didTimeout()) throw new PublisherError("R2 object read exceeded its deadline.");
+      throw error;
     }
     if (didTimeout()) throw new PublisherError("R2 object read exceeded its deadline.");
   } finally {
@@ -112,6 +125,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
         };
       } catch (error) {
         dispose();
+        if (timedOut) throw new PublisherError("R2 GET exceeded its deadline.");
         if (isS3Error(error, "NoSuchKey") || isS3Error(error, "NotFound")) return null;
         throw error;
       }

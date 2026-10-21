@@ -24,6 +24,7 @@ vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
   };
 });
 
+import { PublisherError } from "../src/errors.js";
 import { createR2S3Store } from "../src/r2-s3.js";
 
 const options = {
@@ -119,7 +120,9 @@ describe("R2 S3 adapter", () => {
         }),
     );
     const pending = createR2S3Store(options).get("key");
-    const assertion = expect(pending).rejects.toThrow("aborted");
+    const assertion = expect(pending).rejects.toThrow(
+      new PublisherError("R2 GET exceeded its deadline."),
+    );
     await vi.advanceTimersByTimeAsync(60_000);
     await assertion;
     expect(vi.getTimerCount()).toBe(0);
@@ -133,10 +136,29 @@ describe("R2 S3 adapter", () => {
     const pending = (async () => {
       for await (const chunk of object!.body) void chunk;
     })();
-    const assertion = expect(pending).rejects.toThrow();
+    const assertion = expect(pending).rejects.toThrow(
+      new PublisherError("R2 object read exceeded its deadline."),
+    );
     await vi.advanceTimersByTimeAsync(60_000);
     await assertion;
     expect(body.destroyed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reports an aborted list request as a deadline error and releases its timer", async () => {
+    vi.useFakeTimers();
+    mocks.send.mockImplementation(
+      (_command, { abortSignal }) =>
+        new Promise((_resolve, reject) => {
+          abortSignal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        }),
+    );
+    const pending = createR2S3Store(options).list("v1/", undefined, 10);
+    const assertion = expect(pending).rejects.toThrow(
+      new PublisherError("R2 request exceeded its deadline."),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    await assertion;
     expect(vi.getTimerCount()).toBe(0);
   });
 
