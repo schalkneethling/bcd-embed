@@ -21,6 +21,7 @@ export { createRepresentations, type EncodedArtifact } from "./representations.j
 export {
   compareOutputTrees,
   parseDiffApproval,
+  DiffApprovalMismatchError,
   DEFAULT_DIFF_POLICY,
   type CompareOutputTreesOptions,
   type DiffApproval,

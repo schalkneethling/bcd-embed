@@ -39,8 +39,9 @@ variants. Snapshot variants append `.gz`/`.br`; metadata variants are immutable
 `v1/_meta/<identity-meta-sha256>.json.gz`/`.json.br`. Only `v1/meta.json` is mutable
 in publication. `createRepresentations(logicalPath, bytes)` exports these exact
 bytes and an inventory descriptor with logicalPath, path, encoding, size,
-sha256, and quoted SHA-256 etag. Gzip embeds no wall-clock timestamp; identical
-inputs/settings/toolchain produce identical bytes.
+sha256, and quoted SHA-256 etag. Gzip embeds no wall-clock timestamp and its
+header OS byte is fixed to 255 ("unknown", RFC 1952), so identical
+inputs/settings/toolchain produce identical bytes on any host OS.
 
 The local control file `.bcd-embed-manifest.json` uses the schema package's
 `artifactManifestSchema` and is returned as `EmissionResult.manifest`. `files`
