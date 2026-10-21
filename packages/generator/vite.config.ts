@@ -18,6 +18,7 @@ export default defineConfig({
         "node:fs/promises",
         "node:module",
         "node:path",
+        "node:zlib",
       ],
     },
   },

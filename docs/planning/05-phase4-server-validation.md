@@ -25,9 +25,8 @@ pnpm check
 
 The checks cover portable handler routes and the Worker/R2 Miniflare integration
 using generated fixture artifacts. They do not prove Cloudflare edge behavior.
-The Worker integration invokes the endpoint CLI in loopback-only
-`--local-identity-only` mode, which explicitly skips its compressed-representation
-probes.
+Phase 4 initially invoked the CLI with `--local-identity-only`. Phase 5 removes
+that skip: the seeded local Worker passes default raw-HTTP compressed probes.
 
 To check a locally running HTTP endpoint, pass its origin explicitly:
 
@@ -85,15 +84,15 @@ identifier/index data is O(K), with response bodies capped at 8 MiB each and
 32 MiB total. Parsed-object memory varies with JSON shape, so these are input
 bounds rather than a precise RSS guarantee.
 
-The seeded Miniflare/workerd HTTP transport negotiated Brotli for the generated
+During Phase 4, the seeded Miniflare/workerd HTTP transport negotiated Brotli for the generated
 Array feature and returned 5,854 bytes instead of the 642,088-byte identity
 body, while retaining the same strong R2 ETag. This is a local runtime
 observation, not evidence about Cloudflare's production edge. The default CLI
-correctly rejects that representation pair. The CI Worker integration therefore
-uses `--local-identity-only` to verify the remaining routes and identity
-validators without claiming compression acceptance; its report states that
-compression was skipped. The compressed strong-ETag contract remains unverified
-until a controlled LIVE probe passes.
+correctly rejected that representation pair. Phase 5 uses offline variants,
+byte-specific SHA-256 validators, restored client encoding preferences, and
+manual encoded-body delivery. The CI Worker integration now passes default
+compression verification. Deployed-edge acceptance still requires a controlled
+LIVE probe; local wire tests do not establish that property.
 
 Adversarial paths are sent using a raw HTTP request target rather than building
 a URL for each path; a local HTTP fixture asserts that the encoded probe bytes
