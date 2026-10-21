@@ -81,6 +81,31 @@ describe("pipeline Sentry notification", () => {
     },
   );
 
+  it("fails when response cleanup never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const response = new Response(
+        new ReadableStream({
+          cancel: () => new Promise<void>(() => {}),
+        }),
+      );
+      const result = notifySentry({
+        dsn: "https://public@example.invalid/42",
+        event: "freshness",
+        fetchImpl: async () => response,
+        status: "failure",
+      });
+      const assertion = expect(result).rejects.toThrow(
+        "Sentry response cleanup exceeded its deadline.",
+      );
+      await vi.advanceTimersByTimeAsync(2_000);
+      await assertion;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not claim delivery if response cleanup fails", async () => {
     const response = new Response(
       new ReadableStream({

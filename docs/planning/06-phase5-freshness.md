@@ -27,7 +27,20 @@ Lockfile validation takes O(L log L) time and O(L) space for L parsed lockfile
 entries (canonical key sorting); it never scans the BCD dataset. Output comparison
 uses the generator's bounded-memory semantic diff and its documented complexity.
 
-Auto-merge defaults off. Set repository variable `BCD_EMBED_AUTO_MERGE_ENABLED`
+Auto-merge defaults off. Prerequisites before turning it on:
+
+- The repository setting "Allow auto-merge" must be enabled; without it
+  `gh pr merge --auto` fails.
+- The required-check ruleset described below does not exist yet. It must be
+  created before setting `BCD_EMBED_AUTO_MERGE_ENABLED`.
+
+The merge job needs `contents: write` (in addition to `pull-requests: write`)
+because enabling auto-merge is a write to the repository. The workflow's
+top-level permissions stay read-only, and the job only checks out the trusted
+base revision and runs its script; it never checks out or runs candidate code,
+which is what makes the broader permission safe.
+
+Set repository variable `BCD_EMBED_AUTO_MERGE_ENABLED`
 to exactly `true` only after configuring the rules below. The merge job waits
 for the latest CI run at the checked candidate SHA and verifies `CI / check`
 has `success`, not skipped or neutral. It rechecks the trusted PR immediately
@@ -44,6 +57,11 @@ valid deployment control.
 The weekly backstop validates `main`, performs a full-volume generation check,
 and preserves an immutable GitHub Actions candidate artifact. It does not
 provision Cloudflare, upload to R2, or deploy a Worker.
+
+The backstop also runs on every push to `main`. Merges made through
+`GITHUB_TOKEN`, which includes auto-merged BCD bumps, do not trigger `push`
+workflows, so those commits do not get the per-commit backstop run. The weekly
+schedule or a manual dispatch covers them.
 
 The existing protected manual publish job requires dispatch from `main`, an
 operator request, and the configured `bcd-embed-production` environment controls.
