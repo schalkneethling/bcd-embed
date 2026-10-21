@@ -1,6 +1,10 @@
+import { withSentry } from "@sentry/cloudflare";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { createArtifactHandler, matchesIfNoneMatch, negotiateEncoding } from "@bcd-embed/server";
 import { reportError } from "./logging.js";
+import { sentryOptions } from "./sentry.js";
+
+type WorkerEnv = Env & { SENTRY_DSN?: string };
 const CACHE_LENGTH_HEADER = "x-bcd-cache-representation-length";
 
 const cacheable = (response: Response): boolean => {
@@ -65,8 +69,8 @@ const manualResponse = (response: Response): Response =>
     encodeBody: "manual",
   });
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+const worker = {
+  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     // Cloudflare rewrites Accept-Encoding for origins; negotiate the actual client value.
     const clientEncoding = request.cf?.clientAcceptEncoding;
     if (typeof clientEncoding === "string") {
@@ -156,4 +160,6 @@ export default {
     }
     return response;
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<WorkerEnv>;
+
+export default withSentry<WorkerEnv, unknown, unknown, typeof worker>(sentryOptions, worker);

@@ -4,6 +4,9 @@ updates:
     directories:
       - "/"
       - "/apps/docs"
+      - "/apps/worker"
+      - "/packages/core"
+      - "/packages/generator"
       - "/packages/schema"
     schedule:
       interval: "daily"
@@ -14,6 +17,11 @@ updates:
       semver-patch-days: 2
       include:
         - "*"
+    groups:
+      bcd-pins:
+        patterns:
+          - "@mdn/browser-compat-data"
+        group-by: "dependency-name"
 
   - package-ecosystem: "github-actions"
     directory: "/"

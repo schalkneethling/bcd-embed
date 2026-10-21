@@ -1,0 +1,179 @@
+name: Freshness backstop
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Request protected remote publication after exact-hash approval"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-artifacts:
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      generated: ${{ steps.candidate.outputs.generated }}
+      expires: ${{ steps.candidate.outputs.expires }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.18.0
+
+      - name: Validate and prepare local candidate artifacts
+        id: candidate
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+          node --expose-gc packages/generator/scripts/full-volume-check.mjs
+          pnpm --recursive --filter @bcd-embed/generator... run build
+          eval "$(node - <<'NODE'
+          const epoch = Number(require("node:child_process").execFileSync("git", ["show", "--no-patch", "--format=%ct", process.env.GITHUB_SHA], { encoding: "utf8" }).trim());
+          const generated = new Date(epoch * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+          const expires = new Date(Date.parse(generated) + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          console.log(`GENERATED=${JSON.stringify(generated)}`);
+          console.log(`EXPIRES=${JSON.stringify(expires)}`);
+          NODE
+          )"
+          echo "generated=$GENERATED" >> "$GITHUB_OUTPUT"
+          echo "expires=$EXPIRES" >> "$GITHUB_OUTPUT"
+          node packages/generator/dist/bin.js --out "$RUNNER_TEMP/candidate-output" --generated "$GENERATED" --expires "$EXPIRES"
+          echo "Publication intentionally disabled: a reviewed exact-hash approval and explicit remote-write command are required."
+
+      - name: Preserve immutable local candidate for a reviewed publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bcd-embed-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-output
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+  publish:
+    needs: prepare-artifacts
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: read
+    environment:
+      name: bcd-embed-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.18.0
+
+      - name: Install and build trusted publication code without remote credentials
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --recursive --filter @bcd-embed/publisher... run build
+
+      - name: Restore durable baseline and reuse a persisted reservation
+        id: reservation
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          PUBLICATION_GENERATED: ${{ needs.prepare-artifacts.outputs.generated }}
+          PUBLICATION_EXPIRES: ${{ needs.prepare-artifacts.outputs.expires }}
+        run: |
+          test -n "$R2_ACCESS_KEY_ID"
+          test -n "$R2_SECRET_ACCESS_KEY"
+          test -n "$R2_ACCOUNT_ID"
+          test -n "$R2_BUCKET"
+          node scripts/prepare-publication.mjs "$RUNNER_TEMP/baseline-output" > "$RUNNER_TEMP/publication.json"
+          node - <<'NODE' "$RUNNER_TEMP/publication.json" >> "$GITHUB_OUTPUT"
+          const publication = JSON.parse(require("node:fs").readFileSync(process.argv[2], "utf8"));
+          console.log(`generated=${publication.generated}`);
+          console.log(`expires=${publication.expires}`);
+          NODE
+
+      - name: Generate the exact reviewed or reserved candidate without remote credentials
+        env:
+          GENERATED: ${{ steps.reservation.outputs.generated }}
+          EXPIRES: ${{ steps.reservation.outputs.expires }}
+        run: |
+          node packages/generator/dist/bin.js --out "$RUNNER_TEMP/candidate-output" --generated "$GENERATED" --expires "$EXPIRES"
+
+      - name: Record exact output hashes for review without remote credentials
+        run: |
+          status=0
+          node scripts/compare-freshness-output.mjs --baseline "$RUNNER_TEMP/baseline-output" --candidate "$RUNNER_TEMP/candidate-output" > "$RUNNER_TEMP/publication-diff.json" || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+            exit "$status"
+          fi
+
+      - name: Preserve exact protected candidate for approval or recovery
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bcd-embed-publication-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/candidate-output
+            ${{ runner.temp }}/publication-diff.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Require reviewed exact-hash approval and publish
+        env:
+          APPROVAL: ${{ secrets.BCD_EMBED_DIFF_APPROVAL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          test -n "$APPROVAL"
+          printf '%s' "$APPROVAL" > "$RUNNER_TEMP/approval.json"
+          node packages/publisher/dist/bin.js --baseline-root "$RUNNER_TEMP/baseline-output" --candidate-root "$RUNNER_TEMP/candidate-output" --approval-file "$RUNNER_TEMP/approval.json" --execute-remote-write --account-id "$R2_ACCOUNT_ID" --bucket "$R2_BUCKET"
+
+  notify-failure:
+    needs:
+      - prepare-artifacts
+      - publish
+    if: always() && github.ref == 'refs/heads/main' && (needs.prepare-artifacts.result == 'failure' || needs.publish.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Report failure when an operator configured Sentry
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: node scripts/notify-sentry.mjs freshness_backstop failure

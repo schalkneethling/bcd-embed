@@ -2,9 +2,16 @@ import { createHash } from "node:crypto";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { CompatData, Identifier } from "@mdn/browser-compat-data/types";
+import generatorPackage from "../package.json" with { type: "json" };
 import publicSchema from "./upstream/public.schema.json" with { type: "json" };
 
-export const BCD_VERSION = "8.1.3" as const;
+const bcdVersion = generatorPackage.dependencies["@mdn/browser-compat-data"];
+if (typeof bcdVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(bcdVersion)) {
+  throw new Error("Generator must declare an exact @mdn/browser-compat-data version.");
+}
+
+/** Exact BCD dependency declared by the generator package, never a duplicated source pin. */
+export const BCD_VERSION = bcdVersion;
 export const BCD_SCHEMA_SHA256 =
   "0a94f39473d919fd6caa54ef4055879a4442810ffded72081707130fef7b81b7" as const;
 
