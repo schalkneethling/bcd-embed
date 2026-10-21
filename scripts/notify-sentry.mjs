@@ -16,6 +16,28 @@ const envelopeUrl = (dsn) => {
   );
 };
 
+const CLEANUP_TIMEOUT_MS = 2_000;
+
+// The fetch signal does not cover cancel(), which can stall on a misbehaving peer.
+const cancelWithDeadline = async (body) => {
+  if (body === null || body === undefined) return;
+  let timer;
+  const deadline = new Promise((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Sentry response cleanup exceeded its deadline.")),
+      CLEANUP_TIMEOUT_MS,
+    );
+  });
+  const cancelled = body.cancel();
+  // A cancel that fails after the deadline already won must not become an unhandled rejection.
+  cancelled.catch(() => {});
+  try {
+    await Promise.race([cancelled, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const notifySentry = async ({ dsn, event, fetchImpl = fetch, status }) => {
   if (dsn === undefined || dsn.trim() === "") {
     return {
@@ -47,7 +69,7 @@ export const notifySentry = async ({ dsn, event, fetchImpl = fetch, status }) =>
     signal: AbortSignal.timeout(2_000),
   });
   // The response payload is not needed; never buffer untrusted or stalled bytes.
-  await response.body?.cancel();
+  await cancelWithDeadline(response.body);
   if (!response.ok)
     throw new Error(`Sentry pipeline notification failed with HTTP ${response.status}.`);
   return { delivered: true };

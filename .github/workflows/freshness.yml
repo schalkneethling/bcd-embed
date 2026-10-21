@@ -98,7 +98,7 @@ jobs:
     permissions:
       actions: read
       checks: read
-      contents: read
+      contents: write
       pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -43,7 +43,7 @@ describe("freshness automation policy", () => {
     expect(merge.permissions).toEqual({
       actions: "read",
       checks: "read",
-      contents: "read",
+      contents: "write",
       "pull-requests": "write",
     });
     expect(merge.steps.at(-1).run).toBe("node scripts/enable-auto-merge.mjs");
