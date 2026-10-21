@@ -26,7 +26,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
-import { compareOutputTrees, parseDiffApproval } from "../src/diff.js";
+import { compareOutputTrees, DiffApprovalMismatchError, parseDiffApproval } from "../src/diff.js";
 import { emitGeneratedSnapshot } from "../src/emit.js";
 import { generateSnapshot } from "../src/generate.js";
 import { createRepresentations } from "../src/representations.js";
@@ -319,6 +319,36 @@ describe("compareOutputTrees", () => {
     ).rejects.toThrow("Invalid input");
   });
 
+  it("names the tree that is missing its metadata file", async () => {
+    const baseline = await output();
+    const candidate = await output();
+    await emit(baseline, "2026-09-01T00:00:00Z");
+    await emit(candidate, "2026-09-02T00:00:00Z");
+    await rm(join(baseline, "v1/meta.json"));
+    await expect(
+      compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate }),
+    ).rejects.toThrow(`Artifact tree '${baseline}' is missing 'v1/meta.json'.`);
+  });
+
+  it("reports the offending path for invalid index and feature paths", async () => {
+    const baseline = await output();
+    const badFeature = await output();
+    const badIndex = await output();
+    await emit(baseline, "2026-09-01T00:00:00Z");
+    const featureId = await emit(badFeature, "2026-09-02T00:00:00Z");
+    const indexId = await emit(badIndex, "2026-09-03T00:00:00Z");
+    const featurePath = `v1/${featureId}/features/Bad Key.json`;
+    await writeFile(join(badFeature, featurePath), "{}\n");
+    const indexPath = `v1/${indexId}/index/Bad Namespace.json`;
+    await writeFile(join(badIndex, indexPath), "{}\n");
+    await expect(
+      compareOutputTrees({ baselineRoot: baseline, candidateRoot: badFeature }),
+    ).rejects.toThrow(`Invalid feature path '${featurePath}'.`);
+    await expect(
+      compareOutputTrees({ baselineRoot: baseline, candidateRoot: badIndex }),
+    ).rejects.toThrow(`Invalid index path '${indexPath}'.`);
+  });
+
   it("rejects unlisted representation files and manifest byte mismatches", async () => {
     const baseline = await output();
     const extraRepresentation = await output();
@@ -352,7 +382,7 @@ describe("compareOutputTrees", () => {
     const id = await emit(candidate, "2026-09-02T00:00:00Z");
     const initial = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
     expect(initial.bootstrap).toBe(true);
-    expect(initial.blocked).toContain("Bootstrap has no approved baseline.");
+    expect(initial.blocked).toEqual(["Bootstrap has no approved baseline."]);
     const approval = {
       baselineDigest: initial.baselineDigest,
       candidateDigest: initial.candidateDigest,
@@ -364,15 +394,19 @@ describe("compareOutputTrees", () => {
       candidateRoot: candidate,
       approval,
     });
-    expect(accepted.blocked).toContain("Bootstrap has no approved baseline.");
+    expect(accepted.blocked).toEqual(["Bootstrap has no approved baseline."]);
     expect(accepted.semanticChanged).toBe(true);
     expect(accepted.approved).toBe(true);
     const rawPath = join(candidate, "v1", id, "raw/api.feature0.json");
     await writeFile(rawPath, `${await readFile(rawPath, "utf8")} `);
     await refreshRepresentations(candidate, id);
-    await expect(
-      compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate, approval }),
-    ).rejects.toThrow("does not match these exact");
+    const stale = compareOutputTrees({
+      baselineRoot: baseline,
+      candidateRoot: candidate,
+      approval,
+    });
+    await expect(stale).rejects.toThrow("does not match these exact");
+    await expect(stale).rejects.toBeInstanceOf(DiffApprovalMismatchError);
   });
 
   it("blocks large changes until an exact-output approval is provided", async () => {

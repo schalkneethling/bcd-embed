@@ -7,6 +7,7 @@ import publicSchema from "../../generator/src/upstream/public.schema.json" with 
 import {
   compareOutputTrees,
   createRepresentations,
+  DiffApprovalMismatchError,
   emitGeneratedSnapshot,
   generateSnapshot,
   type DiffApproval,
@@ -21,6 +22,7 @@ import {
   pruneRetiredSnapshots,
 } from "../src/publish.js";
 import { restorePublishedBaseline } from "../src/archive.js";
+import { formatPublisherError } from "../src/errors.js";
 import {
   hashDecodedStream,
   validateCandidate,
@@ -29,7 +31,7 @@ import {
 } from "../src/validate.js";
 import type { PublicationStore, PutObject, PutResult, StoredObject } from "../src/store.js";
 import { Readable } from "node:stream";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const directories: string[] = [];
@@ -491,6 +493,93 @@ describe("publication state machine", () => {
         clock: () => new Date("2026-01-02"),
       }),
     ).resolves.toMatchObject({ type: "published" });
+  });
+
+  it("names a stale approval instead of reporting an unknown error", async () => {
+    const baselineRoot = await temporary();
+    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const approval = {
+      ...(await approvalFor(baselineRoot, candidateRoot)),
+      candidateDigest: "0".repeat(64),
+    };
+    const store = new MemoryStore();
+    const failure = await publishCandidate({
+      baselineRoot,
+      candidateRoot,
+      approval,
+      store,
+      clock: () => new Date("2026-01-02"),
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(DiffApprovalMismatchError);
+    expect(formatPublisherError(failure)).toBe(
+      "Approval digest does not match these exact baseline and candidate trees.",
+    );
+    expect(store.puts).toHaveLength(0);
+  });
+
+  it("resumes when a metadata variant exists with different compressed bytes", async () => {
+    const baselineRoot = await temporary();
+    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const approval = await approvalFor(baselineRoot, candidateRoot);
+    const publish = (store: MemoryStore) =>
+      publishCandidate({
+        baselineRoot,
+        candidateRoot,
+        approval,
+        store,
+        clock: () => new Date("2026-01-02"),
+      });
+    const reference = new MemoryStore();
+    await publish(reference);
+    const variantKey = [...reference.objects.keys()].find((key) =>
+      /^v1\/_meta\/[a-f0-9]{64}\.json\.gz$/.test(key),
+    )!;
+    const identity = gunzipSync(reference.objects.get(variantKey)!.bytes);
+    const recompressed = gzipSync(identity, { level: 0 });
+    expect(recompressed.equals(reference.objects.get(variantKey)!.bytes)).toBe(false);
+
+    const store = new MemoryStore();
+    store.objects.set(variantKey, {
+      bytes: recompressed,
+      etag: '"seeded"',
+      metadata: { sha256: sha256(recompressed) },
+    });
+    await expect(publish(store)).resolves.toMatchObject({ type: "published" });
+    expect(store.objects.get(variantKey)!.bytes.equals(recompressed)).toBe(true);
+  });
+
+  it("rejects an existing metadata variant that does not decode to the expected metadata", async () => {
+    const baselineRoot = await temporary();
+    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const approval = await approvalFor(baselineRoot, candidateRoot);
+    const reference = new MemoryStore();
+    await publishCandidate({
+      baselineRoot,
+      candidateRoot,
+      approval,
+      store: reference,
+      clock: () => new Date("2026-01-02"),
+    });
+    const variantKey = [...reference.objects.keys()].find((key) =>
+      /^v1\/_meta\/[a-f0-9]{64}\.json\.gz$/.test(key),
+    )!;
+    const wrong = gzipSync(Buffer.from('{"not":"the metadata"}\n'));
+    const store = new MemoryStore();
+    store.objects.set(variantKey, {
+      bytes: wrong,
+      etag: '"seeded"',
+      metadata: { sha256: sha256(wrong) },
+    });
+    await expect(
+      publishCandidate({
+        baselineRoot,
+        candidateRoot,
+        approval,
+        store,
+        clock: () => new Date("2026-01-02"),
+      }),
+    ).rejects.toThrow("Existing metadata variant does not decode to the expected metadata.");
+    expect(store.objects.has("v1/meta.json")).toBe(false);
   });
 
   it("rejects a remote baseline that differs from the exact reviewed tree", async () => {

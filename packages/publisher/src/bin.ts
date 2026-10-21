@@ -15,7 +15,11 @@ const loadApproval = async (path: string | undefined) => {
   if (!info.isFile() || info.isSymbolicLink() || info.size > 4_096) {
     throw new PublisherError("Approval must be a bounded regular JSON file.");
   }
-  return parseDiffApproval(JSON.parse(await readFile(path, "utf8")));
+  try {
+    return parseDiffApproval(JSON.parse(await readFile(path, "utf8")));
+  } catch {
+    throw new PublisherError("Approval file is not a valid diff approval.");
+  }
 };
 
 const main = async (): Promise<void> => {

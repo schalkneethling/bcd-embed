@@ -251,17 +251,18 @@ const identify = (relativePath: string, snapshotId: string): Identity => {
   if (path === "index.json") return { kind: "index", namespace: "*" };
   if (path.startsWith("index/") && path.endsWith(".json")) {
     const namespace = path.slice("index/".length, -".json".length);
-    namespaceSchema.parse(namespace);
-    if (namespace.includes("/")) throw new Error(`Invalid index path '${relativePath}'.`);
+    if (!namespaceSchema.safeParse(namespace).success || namespace.includes("/")) {
+      throw new Error(`Invalid index path '${relativePath}'.`);
+    }
     return { kind: "index", namespace };
   }
   for (const kind of ["feature", "raw"] as const) {
     const directory = kind === "feature" ? "features" : "raw";
     if (path.startsWith(`${directory}/`) && path.endsWith(".json")) {
       const key = path.slice(directory.length + 1, -".json".length);
-      featureKeySchema.parse(key);
-      if (path !== `${directory}/${key}.json`)
+      if (!featureKeySchema.safeParse(key).success || path !== `${directory}/${key}.json`) {
         throw new Error(`Invalid feature path '${relativePath}'.`);
+      }
       return { kind, key };
     }
   }
@@ -298,7 +299,7 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
   const files = await filesUnder(root);
   const metaArtifact = files.find(({ relativePath }) => relativePath === "v1/meta.json");
   if (metaArtifact === undefined) {
-    throw new Error(`Candidate '${root}' is missing 'v1/meta.json'.`);
+    throw new Error(`Artifact tree '${root}' is missing 'v1/meta.json'.`);
   }
   const metaBytes = await readFile(metaArtifact.absolutePath);
   const meta = parseArtifact(
@@ -530,6 +531,13 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
 
 const percent = (count: number, total: number): number => (total === 0 ? 0 : (count / total) * 100);
 
+export class DiffApprovalMismatchError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "DiffApprovalMismatchError";
+  }
+}
+
 const validateApproval = (value: unknown): DiffApproval => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Approval must be a JSON object.");
@@ -614,8 +622,9 @@ export const compareOutputTrees = async ({
     blocked.push("Changed feature magnitude exceeds the reviewed policy.");
   }
   if (
-    addedKeys.length > DEFAULT_DIFF_POLICY.maxAddedFeatures ||
-    percent(addedKeys.length, candidate.featureKeys.size) > DEFAULT_DIFF_POLICY.maxAddedPercent
+    !bootstrap &&
+    (addedKeys.length > DEFAULT_DIFF_POLICY.maxAddedFeatures ||
+      percent(addedKeys.length, candidate.featureKeys.size) > DEFAULT_DIFF_POLICY.maxAddedPercent)
   )
     blocked.push("Added feature magnitude exceeds the reviewed policy.");
   if (
@@ -634,7 +643,9 @@ export const compareOutputTrees = async ({
       approval.baselineDigest !== baseline.digest ||
       approval.candidateDigest !== candidate.digest
     ) {
-      throw new Error("Approval digest does not match these exact baseline and candidate trees.");
+      throw new DiffApprovalMismatchError(
+        "Approval digest does not match these exact baseline and candidate trees.",
+      );
     }
     approved = true;
   }

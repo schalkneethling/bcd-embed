@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 
 import { compareOutputTrees, createRepresentations, type DiffApproval } from "@bcd-embed/generator";
 import {
@@ -13,12 +14,12 @@ import {
 } from "@bcd-embed/schema";
 import { compare as compareVersions, valid as validVersion } from "semver";
 
-import type { PublicationStore } from "./store.js";
+import type { PublicationStore, StoredObject } from "./store.js";
 import { putAndVerify, readMetadata, readVerified } from "./objects.js";
 import { uploadCandidateControls } from "./archive.js";
 import { runBounded } from "./concurrency.js";
 import { PublisherError } from "./errors.js";
-import { MAX_META_BYTES, validateCandidate } from "./validate.js";
+import { MAX_META_BYTES, hashDecodedStream, validateCandidate } from "./validate.js";
 
 const META_KEY = "v1/meta.json";
 const RETENTION_DAYS = 90;
@@ -92,23 +93,53 @@ const mergedMetadata = (candidate: MetaResponse, previous: MetaResponse | undefi
   return { body, bytes };
 };
 
+/**
+ * Variants are addressed by identity digest, so a variant left by an earlier run may hold different
+ * compressed bytes (another zlib or Brotli build) that decode to the same metadata. Accept it then.
+ */
+const acceptExistingMetaVariant = async (
+  object: StoredObject,
+  encoding: "br" | "gzip",
+  identity: { size: number; sha256: string },
+): Promise<void> => {
+  try {
+    const decoded = await hashDecodedStream(Readable.from(object.body), encoding, identity.size);
+    if (decoded.size === identity.size && decoded.sha256 === identity.sha256) return;
+  } catch (error) {
+    if (error instanceof PublisherError) throw error;
+  } finally {
+    object.dispose();
+  }
+  throw new PublisherError("Existing metadata variant does not decode to the expected metadata.");
+};
+
 const uploadMetaVariants = async (store: PublicationStore, bytes: Uint8Array) => {
   const representations = createRepresentations(META_KEY, bytes);
+  const identity = representations.find((item) => item.encoding === "identity")!;
   await runBounded(
-    representations.filter((item) => item.encoding !== "identity"),
+    representations.filter(
+      (item): item is typeof item & { encoding: "br" | "gzip" } => item.encoding !== "identity",
+    ),
     async (item) => {
-      await putAndVerify(store, {
+      const result = await store.put({
         key: item.path,
         body: item.bytes,
         size: item.size,
         sha256: item.sha256,
         contentType: "application/json; charset=utf-8",
-        contentEncoding: item.encoding === "identity" ? undefined : item.encoding,
+        contentEncoding: item.encoding,
         ifNoneMatch: true,
       });
+      const object = await store.get(item.path);
+      if (object === null) throw new PublisherError("Published object is missing after PUT.");
+      if (result.type === "stored") {
+        await readVerified(object, { size: item.size, sha256: item.sha256 });
+      } else {
+        await acceptExistingMetaVariant(object, item.encoding, identity);
+      }
     },
   );
-  return representations.find((item) => item.encoding === "identity")!;
+  return identity;
 };
 
 /** Scheduled/no-change retention still needs a metadata CAS before physical cleanup. */

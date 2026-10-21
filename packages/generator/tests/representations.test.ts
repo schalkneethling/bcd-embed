@@ -22,5 +22,6 @@ describe("offline representations", () => {
     expect(brotliDecompressSync(first[1]!.bytes)).toEqual(bytes);
     expect(gunzipSync(first[2]!.bytes)).toEqual(bytes);
     expect(first[2]!.bytes.slice(4, 8)).toEqual(Buffer.from([0, 0, 0, 0]));
+    expect(first[2]!.bytes[9]).toBe(0xff);
   });
 });
