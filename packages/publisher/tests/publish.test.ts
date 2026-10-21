@@ -137,11 +137,16 @@ class MemoryStore implements PublicationStore {
   corruptKey: string | undefined;
   raceOnMeta = false;
   failDelete = false;
+  throwOnMetaPutAfterWrite = false;
+  throwOnMetaGetAfterPut = false;
   repeatedPage = false;
   onPut: ((key: string) => void) | undefined;
   disposed = 0;
 
   async get(key: string): Promise<StoredObject | null> {
+    if (this.throwOnMetaGetAfterPut && key === "v1/meta.json" && this.puts.includes(key)) {
+      throw new Error("Simulated readback failure");
+    }
     const object = this.objects.get(key);
     if (object === undefined) return null;
     return {
@@ -184,6 +189,9 @@ class MemoryStore implements PublicationStore {
     });
     this.puts.push(input.key);
     this.onPut?.(input.key);
+    if (this.throwOnMetaPutAfterWrite && input.key === "v1/meta.json") {
+      throw new Error("Simulated connection loss after commit");
+    }
     return { type: "stored", etag };
   }
 
@@ -644,6 +652,47 @@ describe("publication state machine", () => {
       }),
     ).rejects.toThrow("race");
     expect(store.objects.has("v1/meta.json")).toBe(false);
+  });
+
+  it("reports an unknown compare-and-swap outcome, then a rerun reconciles as unchanged", async () => {
+    const baselineRoot = await temporary();
+    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const approval = await approvalFor(baselineRoot, candidateRoot);
+    const store = new MemoryStore();
+    store.throwOnMetaPutAfterWrite = true;
+    const options = {
+      baselineRoot,
+      candidateRoot,
+      approval,
+      store,
+      clock: () => new Date("2026-01-02"),
+    };
+    await expect(publishCandidate(options)).rejects.toThrow(
+      "Metadata compare-and-swap outcome is unknown; metadata may have committed. Rerun the same candidate to reconcile.",
+    );
+    expect(store.objects.has("v1/meta.json")).toBe(true);
+    store.throwOnMetaPutAfterWrite = false;
+    const current = (await validateCandidate(candidateRoot)).meta.current;
+    expect(await publishCandidate(options)).toMatchObject({ type: "unchanged", current });
+  });
+
+  it("reports failed readback verification when the post-compare-and-swap read throws", async () => {
+    const baselineRoot = await temporary();
+    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const approval = await approvalFor(baselineRoot, candidateRoot);
+    const store = new MemoryStore();
+    store.throwOnMetaGetAfterPut = true;
+    await expect(
+      publishCandidate({
+        baselineRoot,
+        candidateRoot,
+        approval,
+        store,
+        clock: () => new Date("2026-01-02"),
+      }),
+    ).rejects.toThrow(
+      "Metadata committed but readback verification failed; investigate before retry.",
+    );
   });
 
   it("reports committed metadata after cleanup failure, then resumes retirement without repeated IDs", async () => {
