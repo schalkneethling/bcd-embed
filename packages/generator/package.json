@@ -4,6 +4,7 @@
   "description": "Validated, lazy static artifacts from pinned MDN Browser Compatibility Data.",
   "license": "MIT",
   "bin": {
+    "bcd-embed-diff": "./dist/diff-bin.js",
     "bcd-embed-generate": "./dist/bin.js"
   },
   "files": [
