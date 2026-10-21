@@ -1,3 +1,4 @@
+import { DiffApprovalMismatchError } from "@bcd-embed/generator";
 import { describe, expect, it } from "vitest";
 
 import { parsePublishCommand, usage } from "../src/cli.js";
@@ -7,6 +8,11 @@ describe("safe publisher diagnostics", () => {
   it("prints reviewed publisher guidance", () => {
     const message = "Metadata compare-and-swap lost a concurrent publication race.";
     expect(formatPublisherError(new PublisherError(message))).toBe(message);
+  });
+
+  it("prints the reviewed message of a stale or mismatched approval", () => {
+    const message = "Approval digest does not match these exact baseline and candidate trees.";
+    expect(formatPublisherError(new DiffApprovalMismatchError(message))).toBe(message);
   });
 
   it("redacts unknown messages and attacker-controlled names", () => {
