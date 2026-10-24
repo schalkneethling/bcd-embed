@@ -11,7 +11,8 @@
     "wrangler:dry-run": "wrangler deploy --dry-run --outdir ../../.wrangler/worker-dry-run"
   },
   "dependencies": {
-    "@bcd-embed/server": "workspace:*"
+    "@bcd-embed/server": "workspace:*",
+    "@sentry/cloudflare": "11.1.0"
   },
   "devDependencies": {
     "@bcd-embed/generator": "workspace:*",
