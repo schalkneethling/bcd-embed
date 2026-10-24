@@ -36,6 +36,7 @@ Malformed-input tests cover empty/null support, invalid or missing version value
 and non-addressable subtrees. Errors retain the failing feature key and cause.
 This is not a replacement for the generator's upstream JSON Schema input gate.
 
-Full emitted-artifact validation and compressed payload sizing remain generator
-Phase 3 gates. Wall-clock timing is environment-dependent; deterministic coverage
+Full emitted-artifact validation and compressed payload sizing are done by the
+generator's full-volume check (`packages/generator/scripts/full-volume-check.mjs`,
+documented in `docs/planning/04-phase3-generator-validation.md`). Wall-clock timing is environment-dependent; deterministic coverage
 and complexity bounds are preferable to brittle timing thresholds in unit tests.
