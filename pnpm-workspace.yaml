@@ -11,3 +11,6 @@ strictPeerDependencies: true
 allowBuilds:
   esbuild: true
   workerd: true
+minimumReleaseAgeExclude:
+  # Security update: replaces the SDK closure containing fast-xml-parser CVEs.
+  - "@aws-sdk/client-s3@3.1145.0"
