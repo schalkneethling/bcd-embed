@@ -61,7 +61,7 @@ importers:
         version: link:../../packages/server
       '@sentry/cloudflare':
         specifier: 11.1.0
-        version: 11.1.0(@cloudflare/workers-types@5.20260929.1)(wrangler@4.140.0(@cloudflare/workers-types@5.20260929.1)(@types/node@26.6.3))
+        version: 11.1.0(@cloudflare/workers-types@5.20260929.1)(wrangler@4.143.0(@cloudflare/workers-types@5.20260929.1)(@types/node@26.6.3))
     devDependencies:
       '@bcd-embed/generator':
         specifier: workspace:*
@@ -3013,7 +3013,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@sentry/cloudflare@11.1.0(@cloudflare/workers-types@5.20260929.1)(wrangler@4.140.0(@cloudflare/workers-types@5.20260929.1)(@types/node@26.6.3))':
+  '@sentry/cloudflare@11.1.0(@cloudflare/workers-types@5.20260929.1)(wrangler@4.143.0(@cloudflare/workers-types@5.20260929.1)(@types/node@26.6.3))':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@sentry/conventions': 0.24.0
@@ -3023,7 +3023,7 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260929.1
-      wrangler: 4.140.0(@cloudflare/workers-types@5.20260929.1)(@types/node@26.6.3)
+      wrangler: 4.143.0(@cloudflare/workers-types@5.20260929.1)(@types/node@26.6.3)
 
   '@sentry/conventions@0.24.0': {}
 
