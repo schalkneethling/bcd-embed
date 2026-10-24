@@ -1,0 +1,2 @@
+Temporary file used to test that the protect-default-branch ruleset refuses
+to merge a pull request that is behind main. Safe to delete.
