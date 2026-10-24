@@ -17,6 +17,7 @@ export {
   type EmissionResult,
   type EmitGeneratedSnapshotOptions,
 } from "./emit.js";
+export { createRepresentations, type EncodedArtifact } from "./representations.js";
 export {
   parseGenerateCommand,
   usage as cliUsage,

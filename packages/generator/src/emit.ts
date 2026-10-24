@@ -3,13 +3,18 @@ import { basename, dirname, join, posix, relative, resolve, sep } from "node:pat
 
 import {
   CONTRACT_VERSION,
+  ARTIFACT_MANIFEST_PATH,
+  artifactManifestSchema,
   featureKeySchema,
   namespaceSchema,
   snapshotIdentifierSchema,
   type Snapshot,
+  type ArtifactManifest,
+  type ArtifactRepresentation,
 } from "@bcd-embed/schema";
 
 import type { GeneratedArtifact, GeneratedSnapshot } from "./generate.js";
+import { createRepresentations } from "./representations.js";
 
 const stagingPrefix = ".bcd-embed-stage-";
 
@@ -23,6 +28,7 @@ export type EmissionResult = {
   meta: "created" | "existing";
   snapshot: "created" | "existing";
   snapshotId: string;
+  manifest: ArtifactManifest;
 };
 
 const fileBytes = (value: unknown): Uint8Array => {
@@ -267,8 +273,12 @@ export const emitGeneratedSnapshot = async ({
     const finalV1 = join(root, "v1");
     const finalSnapshot = join(finalV1, snapshotId);
     const finalMeta = join(finalV1, "meta.json");
+    const manifestPath = join(root, ARTIFACT_MANIFEST_PATH);
+    const stagedManifest = join(stagingRoot, ARTIFACT_MANIFEST_PATH);
     const artifactPaths = new Set<string>();
     const snapshotFiles = new Set<string>();
+    const representations: ArtifactRepresentation[] = [];
+    const metaVariants: string[] = [];
     let files = 0;
     let hasMeta = false;
 
@@ -282,14 +292,20 @@ export const emitGeneratedSnapshot = async ({
       if (artifact.kind === "meta") {
         if (hasMeta) throw new Error("Generated snapshot contains multiple metadata artifacts.");
         hasMeta = true;
-      } else {
-        snapshotFiles.add(artifact.path.slice(`v1/${snapshotId}/`.length));
       }
-
-      const destination = pathIn(stagingRoot, artifact.path);
-      await mkdir(dirname(destination), { recursive: true });
-      await writeFile(destination, fileBytes(artifact.data), { flag: "wx" });
-      files += 1;
+      for (const { bytes, ...representation } of createRepresentations(
+        artifact.path,
+        fileBytes(artifact.data),
+      )) {
+        representations.push(representation);
+        if (artifact.kind !== "meta")
+          snapshotFiles.add(representation.path.slice(`v1/${snapshotId}/`.length));
+        else if (representation.encoding !== "identity") metaVariants.push(representation.path);
+        const destination = pathIn(stagingRoot, representation.path);
+        await mkdir(dirname(destination), { recursive: true });
+        await writeFile(destination, bytes, { flag: "wx" });
+        files += 1;
+      }
     }
 
     if (!hasMeta || snapshotFiles.size === 0) {
@@ -297,13 +313,41 @@ export const emitGeneratedSnapshot = async ({
     }
 
     const meta = await assertMatchingMeta(stagedMeta, finalMeta);
+    const manifest = artifactManifestSchema.parse({
+      version: 1,
+      snapshotId,
+      artifacts: representations,
+    });
+    await writeFile(stagedManifest, fileBytes(manifest), { flag: "wx" });
+    const metaDirectory = join(finalV1, "_meta");
+    const existingMetaDirectory = await lstatIfPresent(metaDirectory);
+    if (
+      existingMetaDirectory !== undefined &&
+      (!existingMetaDirectory.isDirectory() || existingMetaDirectory.isSymbolicLink())
+    )
+      throw new Error("Existing metadata representation root is not a directory.");
+    const newMetaVariants: string[] = [];
+    for (const path of metaVariants) {
+      if ((await assertMatchingMeta(pathIn(stagingRoot, path), pathIn(root, path))) === "created")
+        newMetaVariants.push(path);
+    }
     const existingSnapshot = (await lstatIfPresent(finalSnapshot)) !== undefined;
     await assertMatchingTree(stagedSnapshot, finalSnapshot, snapshotFiles);
+    const existingManifest = await assertMatchingMeta(stagedManifest, manifestPath);
     await mkdir(finalV1, { recursive: true });
     if (!existingSnapshot) await rename(stagedSnapshot, finalSnapshot);
+    await mkdir(metaDirectory, { recursive: true });
+    for (const path of newMetaVariants) await rename(pathIn(stagingRoot, path), pathIn(root, path));
+    if (existingManifest === "created") await rename(stagedManifest, manifestPath);
     if (meta === "created") await rename(stagedMeta, finalMeta);
 
-    return { files, meta, snapshot: existingSnapshot ? "existing" : "created", snapshotId };
+    return {
+      files: files + 1,
+      meta,
+      snapshot: existingSnapshot ? "existing" : "created",
+      snapshotId,
+      manifest,
+    };
   } finally {
     try {
       if (stagingRoot !== undefined) await rm(stagingRoot, { recursive: true, force: true });
