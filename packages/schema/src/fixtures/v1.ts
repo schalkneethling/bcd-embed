@@ -148,14 +148,15 @@ export const v1NormalizedFixture: FeatureResponse = {
     }),
     feature("api.AbortController.abort", 0, {
       chrome: targetSupport("supported", readded, [
+        // Most-recent-first, per Document 1 section 5.1.
         branch([
+          readded,
+          statement({ versionAdded: "16", versionRemoved: "17" }),
           statement({
             versionAdded: "14",
             versionRemoved: "16",
             partialImplementation: true,
           }),
-          statement({ versionAdded: "16", versionRemoved: "17" }),
-          readded,
         ]),
       ]),
     }),

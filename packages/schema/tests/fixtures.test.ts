@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { bcdSourceFixtures, v1FixtureCases, v1NormalizedFixture } from "../src/fixtures/v1.js";
 import { featureResponseSchema } from "../src/index.js";
+import type { FeatureResponse, SupportBranch, SupportStatement } from "../src/index.js";
 
 const schema = JSON.parse(
   await readFile(new URL("../json-schema/feature-response.schema.json", import.meta.url), "utf8"),
@@ -31,6 +32,80 @@ const fixtureFeature = (key: string) => {
   if (found === undefined) throw new Error(`Missing normalized fixture feature: ${key}`);
   return found;
 };
+
+// An independent restatement of the ordering rules in Document 1, section 5.1.
+// It deliberately does not import `core`. The comparison cases below pin the
+// edge cases where it must agree with core's dotted-version comparison.
+const dottedVersionPattern = /^\d+(?:\.\d+)*$/;
+
+/** Compares numeric components left to right; a missing component counts as 0. */
+const compareDottedVersions = (left: string, right: string): number => {
+  const leftParts = left.split(".").map(BigInt);
+  const rightParts = right.split(".").map(BigInt);
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index++) {
+    const leftPart = leftParts[index] ?? 0n;
+    const rightPart = rightParts[index] ?? 0n;
+    if (leftPart !== rightPart) return leftPart < rightPart ? -1 : 1;
+  }
+  return 0;
+};
+
+/**
+ * 2 for a preview statement, 1 for a released dotted-decimal version, and 0
+ * when `versionAdded` is unresolved. The fixture's browser metadata has no
+ * release map, so every dotted-decimal version counts as released here.
+ */
+const statementTier = (statement: SupportStatement): number => {
+  if (statement.isPreview) return 2;
+  return typeof statement.versionAdded === "string" &&
+    dottedVersionPattern.test(statement.versionAdded)
+    ? 1
+    : 0;
+};
+
+/** Negative when `first` belongs before `second`, 0 when source order decides. */
+const compareStatementOrder = (first: SupportStatement, second: SupportStatement): number => {
+  const tierDifference = statementTier(second) - statementTier(first);
+  if (tierDifference !== 0) return tierDifference;
+  if (statementTier(first) === 1) {
+    return compareDottedVersions(second.versionAdded as string, first.versionAdded as string);
+  }
+  return 0;
+};
+
+const branchIdentityKey = ({ alternativeName, prefix }: SupportBranch): string =>
+  `${alternativeName ?? ""}\0${prefix ?? ""}`;
+
+/** Canonical branch first, then by `(alternativeName, prefix)`. */
+const compareBranchOrder = (first: SupportBranch, second: SupportBranch): number => {
+  if (first.canonical !== second.canonical) return first.canonical ? -1 : 1;
+  const [firstKey, secondKey] = [branchIdentityKey(first), branchIdentityKey(second)];
+  return firstKey < secondKey ? -1 : firstKey > secondKey ? 1 : 0;
+};
+
+const orderViolations = (response: FeatureResponse): string[] =>
+  response.features.flatMap(({ key, support }) =>
+    Object.entries(support).flatMap(([target, { branches }]) => {
+      const violations: string[] = [];
+      branches.forEach((branch, branchIndex) => {
+        const location = `${key} (${target}), branch ${branchIndex}`;
+        const previousBranch = branches[branchIndex - 1];
+        if (previousBranch !== undefined && compareBranchOrder(previousBranch, branch) > 0) {
+          violations.push(`${location} is out of order`);
+        }
+        branch.statements.forEach((statement, statementIndex) => {
+          const previousStatement = branch.statements[statementIndex - 1];
+          if (
+            previousStatement !== undefined &&
+            compareStatementOrder(previousStatement, statement) > 0
+          ) {
+            violations.push(`${location}, statement ${statementIndex} is out of order`);
+          }
+        });
+      });
+      return violations;
+    }),
+  );
 
 const countCompatBlocks = (value: unknown): number => {
   if (value === null || typeof value !== "object") return 0;
@@ -92,9 +167,9 @@ describe("published v1 fixtures", () => {
   it("contains add/remove/re-add and every five-state precedence branch", () => {
     const history = fixtureFeature(v1FixtureCases.addRemoveReadd).support.chrome!;
     expect(history.branches[0]!.statements.map((item) => item.versionRemoved)).toEqual([
-      "16",
-      "17",
       null,
+      "17",
+      "16",
     ]);
 
     const states = new Set(
@@ -103,6 +178,31 @@ describe("published v1 fixtures", () => {
       ),
     );
     expect(states).toEqual(new Set(["unsupported", "unknown", "preview", "partial", "supported"]));
+  });
+
+  it("orders every branch and its statements as the contract requires", () => {
+    expect(orderViolations(v1NormalizedFixture)).toEqual([]);
+  });
+
+  it("compares dotted versions by numeric component, not as text", () => {
+    expect(compareDottedVersions("1.39", "1.8")).toBeGreaterThan(0);
+    expect(compareDottedVersions("10", "9")).toBeGreaterThan(0);
+    expect(compareDottedVersions("17.2.0", "17.0.0")).toBeGreaterThan(0);
+    expect(compareDottedVersions("1", "1.0")).toBe(0);
+  });
+
+  it("detects statements and branches that are out of contract order", () => {
+    const oldestFirst = structuredClone(v1NormalizedFixture);
+    oldestFirst.features
+      .find(({ key }) => key === v1FixtureCases.addRemoveReadd)!
+      .support.chrome!.branches[0]!.statements.reverse();
+    expect(orderViolations(oldestFirst)).toHaveLength(2);
+
+    const prefixedFirst = structuredClone(v1NormalizedFixture);
+    prefixedFirst.features
+      .find(({ key }) => key === v1FixtureCases.branching)!
+      .support.chrome!.branches.reverse();
+    expect(orderViolations(prefixedFirst)).not.toEqual([]);
   });
 
   it("isolates every summary-selection precedence branch", () => {
