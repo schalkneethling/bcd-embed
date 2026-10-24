@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 
 import publicSchema from "../../generator/src/upstream/public.schema.json" with { type: "json" };
 import {
+  BCD_VERSION,
   compareOutputTrees,
   createRepresentations,
   DiffApprovalMismatchError,
@@ -69,19 +70,23 @@ const fixture = (version: string, name = "api.Test") => ({
   },
 });
 
+// A release after the pinned one, derived so a BCD update never invalidates it.
+const [major, minor, patch] = BCD_VERSION.split(".").map(Number);
+const LATER_VERSION = `${major}.${minor}.${patch! + 1}`;
+
 const emit = async (version: string, generated: string, expires: string, name?: string) => {
   const root = await temporary();
   await emitGeneratedSnapshot({
     outputRoot: root,
-    generatedSnapshot: generateSnapshot({ generated, expires, data: fixture("8.1.3", name) }),
+    generatedSnapshot: generateSnapshot({ generated, expires, data: fixture(BCD_VERSION, name) }),
   });
-  if (version === "8.1.3") return root;
+  if (version === BCD_VERSION) return root;
   // The generator deliberately pins one BCD release. Exercise later-version
   // publication using transformed *real emitted* artifacts and its encoder.
   const original = await validateCandidate(root);
   const nextRoot = await temporary();
   const oldId = original.meta.current;
-  const nextId = oldId.replace("bcd-8.1.3-", `bcd-${version}-`);
+  const nextId = oldId.replace(`bcd-${BCD_VERSION}-`, `bcd-${version}-`);
   const artifacts: ArtifactRepresentation[] = [];
   for (const entry of original.manifest.artifacts) {
     if (entry.encoding !== "identity") continue;
@@ -212,7 +217,7 @@ class MemoryStore implements PublicationStore {
 describe("publication state machine", () => {
   it("resumes interrupted private control upload without relaxing candidate identity", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const store = new MemoryStore();
     const approval = await approvalFor(baselineRoot, candidateRoot);
     store.onPut = (key) => {
@@ -250,7 +255,7 @@ describe("publication state machine", () => {
 
   it("rejects corrupt, oversized, and missing restoration bodies and remote-current races", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const store = new MemoryStore();
     await publishCandidate({
       baselineRoot,
@@ -303,7 +308,7 @@ describe("publication state machine", () => {
 
   it("restores the exact original candidate and reads the strict timestamp reservation", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const store = new MemoryStore();
     const approval = await approvalFor(baselineRoot, candidateRoot);
     await publishCandidate({
@@ -335,12 +340,12 @@ describe("publication state machine", () => {
     expect(report.candidateDigest).toBe(report.baselineDigest);
     await expect(restorePublishedBaseline({ store, outputRoot })).rejects.toThrow("empty");
     await expect(readPublicationReservation(store, "../secret")).rejects.toThrow();
-    expect(await readPublicationReservation(store, "bcd-8.1.4-gen-0.0.0")).toBeNull();
+    expect(await readPublicationReservation(store, `bcd-${LATER_VERSION}-gen-0.0.0`)).toBeNull();
   });
 
   it("rejects an invalid clock before any storage I/O and fresh expiry before final CAS", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const store = new MemoryStore();
     const approval = await approvalFor(baselineRoot, candidateRoot);
     await expect(
@@ -366,7 +371,7 @@ describe("publication state machine", () => {
 
   it("fails closed on nonadvancing nonempty listing pages", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const store = new MemoryStore();
     await publishCandidate({
       baselineRoot,
@@ -382,7 +387,7 @@ describe("publication state machine", () => {
   });
 
   it("enforces reviewed identity and aggregate caps before reading artifact bodies", async () => {
-    const root = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const root = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const path = join(root, ARTIFACT_MANIFEST_PATH);
     const original = JSON.parse(await readFile(path, "utf8"));
     const oversized = structuredClone(original);
@@ -424,7 +429,7 @@ describe("publication state machine", () => {
 
   it("blocks unapproved bootstrap before any remote write", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const store = new MemoryStore();
     await expect(
       publishCandidate({
@@ -440,7 +445,7 @@ describe("publication state machine", () => {
   // Exercise the complete filesystem pipeline without racing cleanup on slow CI disks.
   it("publishes a complete generated tree, verifies bytes, then flips metadata once", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const store = new MemoryStore();
     const result = await publishCandidate({
@@ -476,7 +481,7 @@ describe("publication state machine", () => {
 
   it("keeps canonical metadata absent after a partial immutable upload and resumes identical objects", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const store = new MemoryStore();
     store.failAfter = 3;
@@ -505,7 +510,7 @@ describe("publication state machine", () => {
 
   it("names a stale approval instead of reporting an unknown error", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = {
       ...(await approvalFor(baselineRoot, candidateRoot)),
       candidateDigest: "0".repeat(64),
@@ -527,7 +532,7 @@ describe("publication state machine", () => {
 
   it("resumes when a metadata variant exists with different compressed bytes", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const publish = (store: MemoryStore) =>
       publishCandidate({
@@ -558,7 +563,7 @@ describe("publication state machine", () => {
 
   it("rejects an existing metadata variant that does not decode to the expected metadata", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const reference = new MemoryStore();
     await publishCandidate({
@@ -592,8 +597,13 @@ describe("publication state machine", () => {
 
   it("rejects a remote baseline that differs from the exact reviewed tree", async () => {
     const baselineRoot = await temporary();
-    const firstRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
-    const secondRoot = await emit("8.1.4", "2026-03-01T12:00:00Z", "2026-05-30", "api.Changed");
+    const firstRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
+    const secondRoot = await emit(
+      LATER_VERSION,
+      "2026-03-01T12:00:00Z",
+      "2026-05-30",
+      "api.Changed",
+    );
     const store = new MemoryStore();
     await publishCandidate({
       baselineRoot,
@@ -618,7 +628,7 @@ describe("publication state machine", () => {
 
   it("rejects corrupted stored bytes and a conditional metadata race", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const store = new MemoryStore();
     const candidate = await validateCandidate(candidateRoot);
@@ -656,7 +666,7 @@ describe("publication state machine", () => {
 
   it("reports an unknown compare-and-swap outcome, then a rerun reconciles as unchanged", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const store = new MemoryStore();
     store.throwOnMetaPutAfterWrite = true;
@@ -678,7 +688,7 @@ describe("publication state machine", () => {
 
   it("reports failed readback verification when the post-compare-and-swap read throws", async () => {
     const baselineRoot = await temporary();
-    const candidateRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const approval = await approvalFor(baselineRoot, candidateRoot);
     const store = new MemoryStore();
     store.throwOnMetaGetAfterPut = true;
@@ -697,8 +707,13 @@ describe("publication state machine", () => {
 
   it("reports committed metadata after cleanup failure, then resumes retirement without repeated IDs", async () => {
     const baselineRoot = await temporary();
-    const firstRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
-    const secondRoot = await emit("8.1.4", "2026-04-02T12:00:00Z", "2026-07-01", "api.Changed");
+    const firstRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
+    const secondRoot = await emit(
+      LATER_VERSION,
+      "2026-04-02T12:00:00Z",
+      "2026-07-01",
+      "api.Changed",
+    );
     const store = new MemoryStore();
     await publishCandidate({
       baselineRoot,
@@ -739,8 +754,13 @@ describe("publication state machine", () => {
 
   it("retains snapshots during publish, then no-change cleanup CAS removes membership before retryable deletion", async () => {
     const baselineRoot = await temporary();
-    const firstRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
-    const secondRoot = await emit("8.1.4", "2026-03-01T12:00:00Z", "2026-05-30", "api.Changed");
+    const firstRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
+    const secondRoot = await emit(
+      LATER_VERSION,
+      "2026-03-01T12:00:00Z",
+      "2026-05-30",
+      "api.Changed",
+    );
     const store = new MemoryStore();
     const firstApproval = await approvalFor(baselineRoot, firstRoot);
     const secondApproval = await approvalFor(firstRoot, secondRoot);
@@ -840,7 +860,7 @@ describe("candidate compression validation", () => {
   });
 
   it("rejects missing manifest inventory and variant corruption", async () => {
-    const root = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const root = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const candidate = await validateCandidate(root);
     const variant = candidate.manifest.artifacts.find((item) => item.encoding === "gzip")!;
     const path = join(root, variant.path);
@@ -855,7 +875,7 @@ describe("candidate compression validation", () => {
   });
 
   it("rejects a self-consistent manifest that omits the generated snapshot", async () => {
-    const generatedRoot = await emit("8.1.3", "2026-01-01T12:00:00Z", "2026-04-01");
+    const generatedRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
     const generated = await validateCandidate(generatedRoot);
     const forgedRoot = await temporary();
     const metaOnly = generated.manifest.artifacts.filter(

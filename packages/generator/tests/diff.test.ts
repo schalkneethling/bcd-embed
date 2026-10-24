@@ -29,6 +29,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 import { compareOutputTrees, DiffApprovalMismatchError, parseDiffApproval } from "../src/diff.js";
 import { emitGeneratedSnapshot } from "../src/emit.js";
 import { generateSnapshot } from "../src/generate.js";
+import { BCD_VERSION } from "../src/input.js";
 import { createRepresentations } from "../src/representations.js";
 
 const outputRoots: string[] = [];
@@ -54,7 +55,7 @@ const fixture = (
       .filter((key) => key !== "__meta" && key !== "browsers")
       .map((key) => [key, {}]),
   ),
-  __meta: { version: "8.1.3", timestamp: "2026-09-01T00:00:00Z" },
+  __meta: { version: BCD_VERSION, timestamp: "2026-09-01T00:00:00Z" },
   browsers: {
     chrome: {
       name: "Chrome",
@@ -200,7 +201,7 @@ describe("compareOutputTrees", () => {
 
     const report = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
     expect(report.baselineVersion).toBe("8.1.2");
-    expect(report.candidateVersion).toBe("8.1.3");
+    expect(report.candidateVersion).toBe(BCD_VERSION);
     expect(report.features).toEqual({
       baseline: 1,
       candidate: 1,
@@ -233,7 +234,7 @@ describe("compareOutputTrees", () => {
     });
     expect(report.semanticChanged).toBe(true);
     expect(report.blocked).toEqual([]);
-    expect(baselineId).toContain("bcd-8.1.3-gen-");
+    expect(baselineId).toContain(`bcd-${BCD_VERSION}-gen-`);
   }, 30_000);
 
   it("uses the same bytes for exact and semantic digests when a file changes during reading", async () => {
