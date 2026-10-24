@@ -62,7 +62,7 @@ jobs:
           echo "Publication intentionally disabled: a reviewed exact-hash approval and explicit remote-write command are required."
 
       - name: Preserve immutable local candidate for a reviewed publication
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bcd-embed-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/candidate-output
@@ -139,7 +139,7 @@ jobs:
           fi
 
       - name: Preserve exact protected candidate for approval or recovery
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bcd-embed-publication-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
