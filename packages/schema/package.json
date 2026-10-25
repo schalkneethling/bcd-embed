@@ -32,7 +32,7 @@
     "generate:json-schema": "node scripts/generate-json-schemas.mjs",
     "fixtures:report": "node --import tsx scripts/report-fixtures.mjs",
     "schema:validate": "node scripts/validate-contract.mjs",
-    "test": "node scripts/generate-source-fixtures.mjs --check && node scripts/generate-json-schemas.mjs --check && vitest run",
+    "test": "node scripts/generate-json-schemas.mjs --check && vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -108,9 +108,10 @@ coverage, are documented in the schema `$comment` and enforced by Zod.
 
 The `@bcd-embed/schema/fixtures/v1` subpath publishes the adversarial normalized
 golden response, its named-case catalog, and exact source fragments extracted
-from `@mdn/browser-compat-data@8.1.3`. Run
-`pnpm --filter @bcd-embed/schema generate:fixtures` after intentionally changing
-the pinned source corpus; tests reject stale extracted data.
+from `@mdn/browser-compat-data@8.1.3`. These fragments are a frozen snapshot:
+automatic BCD updates do not change them, and tests check the snapshot against
+its own recorded source rather than the installed BCD. See the
+[schema README](packages/schema/README.md) to regenerate them deliberately.
 
 ## Core package
 

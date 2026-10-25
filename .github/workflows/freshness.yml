@@ -82,6 +82,7 @@ jobs:
           tar -C base --exclude=.git --exclude=node_modules -cf - . | tar -C "$RUNNER_TEMP/candidate-trusted" -xf -
           cp candidate/packages/core/package.json "$RUNNER_TEMP/candidate-trusted/packages/core/package.json"
           cp candidate/packages/generator/package.json "$RUNNER_TEMP/candidate-trusted/packages/generator/package.json"
+          cp candidate/packages/schema/package.json "$RUNNER_TEMP/candidate-trusted/packages/schema/package.json"
           cp candidate/apps/worker/package.json "$RUNNER_TEMP/candidate-trusted/apps/worker/package.json"
           cp candidate/pnpm-lock.yaml "$RUNNER_TEMP/candidate-trusted/pnpm-lock.yaml"
           pnpm --dir "$RUNNER_TEMP/candidate-trusted" install --frozen-lockfile --ignore-scripts

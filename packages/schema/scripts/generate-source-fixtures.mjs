@@ -1,12 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 
 import bcd from "@mdn/browser-compat-data" with { type: "json" };
 
-const check = process.argv.slice(2).includes("--check");
-const unknownArguments = process.argv.slice(2).filter((argument) => argument !== "--check");
-
-if (unknownArguments.length > 0) {
-  throw new Error(`Unknown arguments: ${unknownArguments.join(", ")}`);
+if (process.argv.length > 2) {
+  throw new Error(`Unknown arguments: ${process.argv.slice(2).join(", ")}`);
 }
 
 const fragmentPaths = [
@@ -16,10 +13,6 @@ const fragmentPaths = [
   "api.AudioTrackList",
   "api.Attr.localName",
 ];
-
-if (bcd.__meta.version !== "8.1.3") {
-  throw new Error(`Expected BCD 8.1.3, received ${bcd.__meta.version}.`);
-}
 
 const atPath = (path) =>
   path.split(".").reduce((value, segment) => {
@@ -51,11 +44,4 @@ const document = {
 const contents = `${JSON.stringify(document, null, 2)}\n`;
 const output = new URL("../src/fixtures/source-fragments.json", import.meta.url);
 
-if (check) {
-  const committed = await readFile(output, "utf8");
-  if (committed !== contents) {
-    throw new Error("source-fragments.json is not up to date with BCD 8.1.3.");
-  }
-} else {
-  await writeFile(output, contents);
-}
+await writeFile(output, contents);

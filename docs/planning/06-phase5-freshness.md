@@ -2,17 +2,35 @@
 
 ## Automated BCD updates
 
-Dependabot groups the exact `@mdn/browser-compat-data` pin across `core`,
-`generator`, and `worker`. It preserves the repository's existing daily
-schedule and cooldown values. The generator reads its required BCD version from
-its own exact dependency declaration; do not create a second source pin.
+Dependabot watches the repository root only (`directory: "/"`). Four manifests
+pin `@mdn/browser-compat-data` exactly: `core`, `generator`, `schema` (a
+devDependency used only to regenerate source fixtures by hand), and `worker`.
+In a pnpm workspace, one root update rewrites every member's manifest and the
+single `pnpm-lock.yaml` together. Per-folder Dependabot entries cannot update
+the shared lockfile, so they produced manifest-only pull requests that fail
+`pnpm install --frozen-lockfile`; they were removed, along with the separate
+BCD group, which the root entry makes unnecessary. It preserves the
+repository's existing daily schedule and cooldown values. The generator reads
+its required BCD version from its own exact dependency declaration; do not
+create a second source pin.
+
+The npm `open-pull-requests-limit` is 10 rather than Dependabot's default of 5.
+Dependabot raises no new version-update pull requests while that many are
+open. Two Dependabot runs reported creating a BCD pull request that does not
+exist, most likely because five npm pull requests were already open. A BCD
+update should not be held back by unrelated bumps.
+
+Tests must not hard-code the BCD version or live BCD values. They import
+`BCD_VERSION` from the generator (derived from its manifest) or use synthetic
+data, so a routine BCD bump needs no test edits. The one exception is the schema
+package's `source-fragments.json`, a frozen BCD 8.1.3 snapshot.
 
 `Freshness` runs only for same-repository Dependabot pull requests targeting `main`.
 The guard verifies login, immutable account ID `49699333`, bot type, and both
 head and base repositories. Its
 `pull_request_target` workflow checks out the base SHA as trusted source and
-the candidate SHA as data. It rejects any changed path beyond the three BCD
-manifests and `pnpm-lock.yaml`, confirms all three pins match, and checks the
+the candidate SHA as data. It rejects any changed path beyond the four BCD
+manifests and `pnpm-lock.yaml`, confirms all four pins match, and checks the
 candidate lock integrity against npm's public registry. Candidate source is
 never built or executed. The base generator produces both output trees;
 candidate manifests and lockfile are copied into a trusted base tree and
