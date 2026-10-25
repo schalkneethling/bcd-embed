@@ -126,5 +126,7 @@ transport contract before marking this gate complete.
 
 The CLI probe is not a load test or a substitute for deployment-specific
 security review. Phase 5 freshness automation, output-diff gates, alias flips,
-retention/pruning, and Sentry alerting remain out of scope. Phase 6 self-hosting
-recipes remain separate.
+retention/pruning, and Sentry alerting were out of scope for Phase 4. They are
+now built on `main` and described in `06-phase5-freshness.md`,
+`06-phase5-output-diff.md`, and `06-phase5-representations.md`. Phase 6
+self-hosting recipes remain separate.

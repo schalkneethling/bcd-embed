@@ -27,13 +27,16 @@ versions together before advancing the date.
 
 The configured bucket name is a **deployment prerequisite**, not a resource
 created by this repository. No bucket is provisioned and no remote objects are
-uploaded by these commands. Before a public endpoint exists, an operator must
-create the bucket, publish and verify all immutable snapshot objects, then
-publish `v1/meta.json` last. A validated idempotent uploader, atomic alias
-flip, pruning, freshness pipeline, Sentry alerting, account-level rate limit,
-and live deployment/pressure tests remain separate work. Do not deploy an
-empty bucket or assume the candidate metadata produced by the generator is
-already a safe remote publication.
+uploaded by these commands, and the Worker has not been deployed. Before a
+public endpoint exists, an operator must create the bucket and publish a
+snapshot with `@bcd-embed/publisher` (see its README), which uploads the
+immutable snapshot objects and switches `v1/meta.json` last. The publisher and
+the freshness workflows in `.github/workflows/` supply the idempotent uploader,
+the atomic alias flip, pruning, and the freshness pipeline. An account-level
+rate limit, a configured and tested Sentry alert, and live deployment and
+pressure tests remain separate work. Do not deploy an empty bucket or assume
+the candidate metadata produced by the generator is already a safe remote
+publication.
 
 The Worker serves offline variants with `encodeBody: "manual"`; no large-body
 compression runs on requests. It restores `request.cf.clientAcceptEncoding`
