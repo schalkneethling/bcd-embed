@@ -54,7 +54,7 @@ O(Bmax + K) auxiliary memory, processing one artifact at a time.
 
 `generateSnapshot({ generated, expires, data? })` returns snapshot metadata,
 namespace names, and a single-use lazy `Iterable<GeneratedArtifact>`. The default
-input is exact BCD 8.1.3; optional input must satisfy the same published schema
+input is the exact pinned BCD version; optional input must satisfy the same published schema
 and exact source-version gate. Timestamps and retention dates are caller inputs,
 so identical reruns produce identical artifacts. Expiry must be later than
 generation. Generator version comes from this package's manifest.

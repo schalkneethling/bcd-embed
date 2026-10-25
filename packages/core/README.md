@@ -26,7 +26,8 @@ discover addressable roots in one traversal and avoid repeated global key search
 
 ## Validation
 
-The dataset test visits all 20,647 compatibility records in BCD 8.1.3 and checks
+The dataset test visits every compatibility record in the pinned BCD version (and
+asserts a sanity floor of more than 20,000 records, not an exact count) and checks
 each normalized record against the canonical schema, preserving every target.
 Each record is normalized once so this test does not repeatedly process overlapping
 subtrees. Dedicated subtree tests cover composition. This sweep checks conformance,
@@ -36,6 +37,7 @@ Malformed-input tests cover empty/null support, invalid or missing version value
 and non-addressable subtrees. Errors retain the failing feature key and cause.
 This is not a replacement for the generator's upstream JSON Schema input gate.
 
-Full emitted-artifact validation and compressed payload sizing remain generator
-Phase 3 gates. Wall-clock timing is environment-dependent; deterministic coverage
+Full emitted-artifact validation and compressed payload sizing are done by the
+generator's full-volume check (`packages/generator/scripts/full-volume-check.mjs`,
+documented in `docs/planning/04-phase3-generator-validation.md`). Wall-clock timing is environment-dependent; deterministic coverage
 and complexity bounds are preferable to brittle timing thresholds in unit tests.

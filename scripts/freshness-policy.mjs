@@ -6,6 +6,7 @@ export const BCD_PACKAGE = "@mdn/browser-compat-data";
 export const BCD_MANIFESTS = [
   "packages/core/package.json",
   "packages/generator/package.json",
+  "packages/schema/package.json",
   "apps/worker/package.json",
 ];
 export const ALLOWED_BCD_UPDATE_PATHS = [...BCD_MANIFESTS, "pnpm-lock.yaml"];
@@ -115,7 +116,9 @@ export const validateBcdCandidate = async ({
   );
   if (new Set(baseVersions).size !== 1) throw new Error("Base BCD pins disagree; blocking update.");
   if (new Set(candidateVersions).size !== 1) {
-    throw new Error("Candidate BCD pins disagree across core, generator, and Worker.");
+    throw new Error(
+      "Candidate BCD pins disagree across the core, generator, schema, and Worker manifests.",
+    );
   }
   const [baseVersion] = baseVersions;
   const [version] = candidateVersions;

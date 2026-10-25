@@ -9,14 +9,38 @@ import { parse } from "yaml";
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
 describe("freshness automation policy", () => {
-  it("groups exact BCD pins without changing existing cooldowns", async () => {
-    const dependabot = await read("../.github/dependabot.yml");
-    expect(dependabot).toContain("bcd-pins:");
-    expect(dependabot).toContain('group-by: "dependency-name"');
-    expect(dependabot).toContain('"/apps/worker"');
-    expect(dependabot).toContain('"/packages/core"');
-    expect(dependabot).toContain('"/packages/generator"');
-    expect(dependabot).toContain("semver-patch-days: 2");
+  it("updates BCD from the root directory only, without changing existing cooldowns", async () => {
+    const dependabot = parse(await read("../.github/dependabot.yml"));
+    const npm = dependabot.updates.filter(
+      (entry: { "package-ecosystem": string }) => entry["package-ecosystem"] === "npm",
+    );
+    expect(npm).toHaveLength(1);
+    expect(npm[0].directory).toBe("/");
+    expect(npm[0].directories).toBeUndefined();
+    expect(npm[0].groups).toBeUndefined();
+    expect(npm[0]["open-pull-requests-limit"]).toBe(10);
+    expect(npm[0].cooldown["semver-patch-days"]).toBe(2);
+  });
+
+  it("copies every BCD manifest and the lockfile from the candidate into the trusted tree", async () => {
+    const workflow = parse(await read("../.github/workflows/freshness.yml"));
+    const step = workflow.jobs.freshness.steps.find(
+      (step: { name: string }) =>
+        step.name === "Generate candidate output with trusted source only",
+    );
+    const copied = step.run
+      .split("\n")
+      .filter((line: string) => line.trim().startsWith("cp candidate/"))
+      .map((line: string) => line.trim().split(" ")[1]);
+    expect(copied.sort()).toEqual(
+      [
+        "candidate/apps/worker/package.json",
+        "candidate/packages/core/package.json",
+        "candidate/packages/generator/package.json",
+        "candidate/packages/schema/package.json",
+        "candidate/pnpm-lock.yaml",
+      ].sort(),
+    );
   });
 
   it("uses a trusted base checkout and never grants an administrative merge bypass", async () => {

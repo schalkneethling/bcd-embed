@@ -99,9 +99,14 @@ describe("normalizeTargetSupport", () => {
       },
     ]);
 
+    // Preview support is a moving target in live BCD data, so use a synthetic browser and statement.
+    const previewTarget = {
+      ...browser("chrome"),
+      releases: { "1": { index: 0, status: "current" as const } },
+    };
     const preview = normalizeTargetSupport(
-      supportAt("api.AnimationTimeline.duration", "firefox"),
-      browser("firefox"),
+      { version_added: "preview" } as unknown as BcdSupportStatement,
+      previewTarget,
     );
     expect(preview.summary).toMatchObject({
       state: "preview",

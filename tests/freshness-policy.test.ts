@@ -14,12 +14,11 @@ import {
 
 const integrity = "sha512-registry-provenance";
 
+const importers = ["packages/core", "packages/generator", "packages/schema", "apps/worker"];
+const devDependencyImporters = new Set(["packages/schema", "apps/worker"]);
+
 const writeCandidate = async (root: string, version: string): Promise<void> => {
-  await Promise.all(
-    ["packages/core", "packages/generator", "apps/worker"].map((path) =>
-      mkdir(join(root, path), { recursive: true }),
-    ),
-  );
+  await Promise.all(importers.map((path) => mkdir(join(root, path), { recursive: true })));
   await Promise.all([
     writeFile(
       join(root, "packages/core/package.json"),
@@ -30,6 +29,10 @@ const writeCandidate = async (root: string, version: string): Promise<void> => {
       JSON.stringify({ dependencies: { [BCD_PACKAGE]: version } }),
     ),
     writeFile(
+      join(root, "packages/schema/package.json"),
+      JSON.stringify({ devDependencies: { [BCD_PACKAGE]: version } }),
+    ),
+    writeFile(
       join(root, "apps/worker/package.json"),
       JSON.stringify({ devDependencies: { [BCD_PACKAGE]: version } }),
     ),
@@ -38,10 +41,10 @@ const writeCandidate = async (root: string, version: string): Promise<void> => {
       stringify({
         lockfileVersion: "9.0",
         importers: Object.fromEntries(
-          ["packages/core", "packages/generator", "apps/worker"].map((path) => [
+          importers.map((path) => [
             path,
             {
-              [path === "apps/worker" ? "devDependencies" : "dependencies"]: {
+              [devDependencyImporters.has(path) ? "devDependencies" : "dependencies"]: {
                 [BCD_PACKAGE]: { specifier: version, version },
               },
             },
@@ -104,6 +107,33 @@ describe("trusted BCD freshness policy", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  it("blocks an update where only the schema pin disagrees", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bcd-freshness-"));
+    try {
+      const base = join(root, "base");
+      const candidate = join(root, "candidate");
+      await Promise.all([writeCandidate(base, "8.1.3"), writeCandidate(candidate, "8.1.4")]);
+      await writeFile(
+        join(candidate, "packages/schema/package.json"),
+        JSON.stringify({ devDependencies: { [BCD_PACKAGE]: "8.1.3" } }),
+      );
+      await expect(
+        validateBcdCandidate({
+          baseRoot: base,
+          candidateRoot: candidate,
+          changedPaths: ALLOWED_BCD_UPDATE_PATHS,
+          registryMetadata: { version: "8.1.4", "dist.integrity": integrity },
+        }),
+      ).rejects.toThrow("pins disagree");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("requires the schema manifest among the allowed BCD paths", () => {
+    expect(ALLOWED_BCD_UPDATE_PATHS).toContain("packages/schema/package.json");
   });
 
   it("rejects malicious manifest and lockfile changes while leaving non-BCD updates neutral", async () => {
