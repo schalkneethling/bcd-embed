@@ -6,6 +6,7 @@ import {
   validateBcdInput,
   validateRawArtifact,
   GENERATOR_VERSION,
+  BCD_VERSION,
 } from "../src/index.js";
 
 const generated = "2026-08-28T12:00:00Z";
@@ -20,7 +21,7 @@ const fixture = () => ({
       .filter((key) => key !== "__meta" && key !== "browsers")
       .map((key) => [key, {}]),
   ),
-  __meta: { version: "8.1.3", timestamp: generated },
+  __meta: { version: BCD_VERSION, timestamp: generated },
   browsers: {
     chrome: {
       name: "Chrome",
@@ -45,7 +46,7 @@ describe("generation foundation", () => {
     const before = JSON.stringify(data);
     const result = generateSnapshot({ ...options, data });
     const artifacts = [...result.artifacts];
-    expect(result.snapshot.id).toBe(`bcd-8.1.3-gen-${GENERATOR_VERSION}`);
+    expect(result.snapshot.id).toBe(`bcd-${BCD_VERSION}-gen-${GENERATOR_VERSION}`);
     expect(result.namespaces).toEqual(["api"]);
     expect(artifacts.map(({ kind }) => kind)).toEqual([
       "feature",

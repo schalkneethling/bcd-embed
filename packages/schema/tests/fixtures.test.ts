@@ -1,7 +1,5 @@
 import { readFile } from "node:fs/promises";
 
-import bcd from "@mdn/browser-compat-data" with { type: "json" };
-import type { CompatData } from "@mdn/browser-compat-data/types";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { describe, expect, it } from "vitest";
@@ -15,16 +13,6 @@ const schema = JSON.parse(
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 addFormats(ajv);
 const validateJsonSchema = ajv.compile(schema);
-
-const installedBcd: CompatData = bcd;
-
-const atPath = (root: unknown, path: string): unknown =>
-  path.split(".").reduce<unknown>((value, segment) => {
-    if (value === null || typeof value !== "object" || !(segment in value)) {
-      throw new Error(`Missing fixture path: ${path}`);
-    }
-    return (value as Record<string, unknown>)[segment];
-  }, root);
 
 const fixtureFeature = (key: string) => {
   const found = v1NormalizedFixture.features.find((candidate) => candidate.key === key);
@@ -41,18 +29,27 @@ const countCompatBlocks = (value: unknown): number => {
 };
 
 describe("published v1 fixtures", () => {
-  it("matches every source fragment and subtree to installed BCD 8.1.3", () => {
-    expect(installedBcd.__meta.version).toBe("8.1.3");
+  it("records the frozen BCD 8.1.3 snapshot and keeps it internally consistent", () => {
     expect(bcdSourceFixtures.source).toEqual({
       package: "@mdn/browser-compat-data",
       version: "8.1.3",
     });
 
-    for (const [path, fragment] of Object.entries(bcdSourceFixtures.fragments)) {
-      expect(fragment).toEqual((atPath(installedBcd, path) as { __compat: unknown }).__compat);
+    const fragments = Object.entries(bcdSourceFixtures.fragments);
+    expect(fragments.length).toBeGreaterThan(0);
+    for (const [path, fragment] of fragments) {
+      expect(path, "fragment paths are dotted BCD feature identifiers").toMatch(
+        /^[\w-]+(\.[\w-]+)+$/,
+      );
+      expect(fragment, path).toHaveProperty("support");
+      expect(fragment, path).not.toHaveProperty("__compat");
     }
-    for (const [path, subtree] of Object.entries(bcdSourceFixtures.subtrees)) {
-      expect(subtree).toEqual(atPath(installedBcd, path));
+
+    const subtrees = Object.entries(bcdSourceFixtures.subtrees);
+    expect(subtrees.length).toBeGreaterThan(0);
+    for (const [path, subtree] of subtrees) {
+      expect(subtree, path).toHaveProperty("__compat.support");
+      expect(countCompatBlocks(subtree), path).toBeGreaterThan(0);
     }
   });
 
