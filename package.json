@@ -25,7 +25,7 @@
     "oxlint": "1.89.0",
     "stylelint": "^17.16.0",
     "stylelint-config-standard": "^40.0.0",
-    "stylelint-plugin-use-baseline": "^1.4.6",
+    "stylelint-plugin-use-baseline": "^1.4.8",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",
