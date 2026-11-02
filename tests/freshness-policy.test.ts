@@ -9,6 +9,8 @@ import {
   ALLOWED_BCD_UPDATE_PATHS,
   BCD_PACKAGE,
   classifyBcdCandidate,
+  findReviewApproval,
+  parseReviewApprovals,
   validateBcdCandidate,
 } from "../scripts/freshness-policy.mjs";
 
@@ -256,5 +258,48 @@ describe("trusted BCD freshness policy", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+});
+
+describe("reviewed freshness approvals", () => {
+  const approval = {
+    baselineVersion: "8.1.3",
+    candidateVersion: "8.1.7",
+    baselineSemanticDigest: "a".repeat(64),
+    candidateSemanticDigest: "b".repeat(64),
+    reason: "Upstream removed these features.",
+  };
+  const report = {
+    baselineVersion: "8.1.3",
+    candidateVersion: "8.1.7",
+    baselineSemanticDigest: "a".repeat(64),
+    semanticDigest: "b".repeat(64),
+  };
+
+  it("accepts only complete approvals with a human reason", () => {
+    expect(parseReviewApprovals([approval])).toEqual([approval]);
+    expect(parseReviewApprovals([])).toEqual([]);
+    expect(() => parseReviewApprovals(approval)).toThrow("JSON array");
+    for (const invalid of [
+      { ...approval, reason: "short" },
+      { ...approval, candidateSemanticDigest: "B".repeat(64) },
+      { ...approval, candidateVersion: "^8.1.7" },
+      { ...approval, approved: true },
+      (({ baselineVersion: _, ...rest }) => rest)(approval),
+    ]) {
+      expect(() => parseReviewApprovals([invalid])).toThrow("Freshness approval 0");
+    }
+  });
+
+  it("matches only the exact semantic change and versions it names", () => {
+    expect(findReviewApproval(report, [approval])).toBe(approval);
+    expect(
+      findReviewApproval({ ...report, semanticDigest: "c".repeat(64) }, [approval]),
+    ).toBeNull();
+    expect(
+      findReviewApproval({ ...report, baselineSemanticDigest: "c".repeat(64) }, [approval]),
+    ).toBeNull();
+    expect(findReviewApproval({ ...report, candidateVersion: "8.1.8" }, [approval])).toBeNull();
+    expect(findReviewApproval({ ...report, baselineSemanticDigest: null }, [approval])).toBeNull();
   });
 });

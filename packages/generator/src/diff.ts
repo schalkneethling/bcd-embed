@@ -39,6 +39,8 @@ export type DiffApproval = {
 export type DiffReport = {
   baselineDigest: string;
   candidateDigest: string;
+  /** Provenance-free digest of the baseline tree; null when there is no baseline (bootstrap). */
+  baselineSemanticDigest: string | null;
   semanticDigest: string;
   semanticChanged: boolean;
   baselineVersion: string | null;
@@ -655,6 +657,7 @@ export const compareOutputTrees = async ({
   return {
     baselineDigest: baseline.digest,
     candidateDigest: candidate.digest,
+    baselineSemanticDigest: baseline.rootIsEmpty ? null : baseline.semanticDigest,
     semanticDigest: candidate.semanticDigest,
     semanticChanged: bootstrap || baseline.semanticDigest !== candidate.semanticDigest,
     baselineVersion: baseline.rootIsEmpty ? null : baseline.version,

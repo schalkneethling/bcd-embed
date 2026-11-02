@@ -46,11 +46,14 @@ Three GitHub Actions workflows live in `.github/workflows/`, and the scripts the
 call live in `scripts/`:
 
 - `ci.yml` runs `pnpm check`, a generation check at full BCD volume, and the
-  `core` mutation gate on every pull request and push to `main`.
+  `core` mutation gate on every pull request and push to `main`. A pull request
+  that changes only `.github/freshness-approvals.json` runs just the format check
+  and approval validation for that file.
 - `freshness.yml` handles Dependabot pull requests that update
   `@mdn/browser-compat-data`. It generates artifacts from both the base and the
   candidate, and fails the pull request when the output diff crosses the reviewed
-  limits. Auto-merge is off unless an operator turns it on with a repository
+  limits, unless a maintainer approved that exact change in
+  `.github/freshness-approvals.json`. Auto-merge is off unless an operator turns it on with a repository
   variable.
 - `freshness-backstop.yml` runs on pushes to `main`, weekly, and on manual
   dispatch. It validates `main` and preserves a candidate artifact tree.
