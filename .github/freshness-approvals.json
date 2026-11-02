@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "baselineVersion": "8.1.3",
+    "candidateVersion": "8.1.7",
+    "baselineSemanticDigest": "9909a3979945fe36ab21b3ea2d65328fc8fe4a8e18971bcd29318cd18768e402",
+    "candidateSemanticDigest": "7831a922ab95f57727e3de5b4b88984c2d4b252f3ffb4dbb1a192e5693f62329",
+    "reason": "Upstream BCD removed 115 features across 8.1.4 to 8.1.7 (12, 46, 21 and 36 per release notes)."
+  }
+]
