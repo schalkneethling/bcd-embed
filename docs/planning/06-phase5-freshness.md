@@ -82,6 +82,56 @@ which take seconds instead of the full suite's minutes. The `check` job still
 runs and reports, because the ruleset requires it. Any other changed file, a
 diff that cannot be listed, and every push to `main` run the full suite.
 
+### Approving a blocked BCD update
+
+Use this procedure only when the `freshness` job fails in its last step, "Gate
+the generated output diff, not the input diff". A failure in an earlier step,
+such as "Candidate lockfile changes data beyond the BCD package", means the
+pull request changes more than BCD. An approval cannot fix that, because the
+approval is only checked after the input checks pass.
+
+1. **Read the report.** Open the failed `freshness` job on the Dependabot pull
+   request. The last step prints one line of JSON. Check that `blocked` lists
+   only magnitude reasons, and note `baselineVersion`, `candidateVersion`,
+   `baselineSemanticDigest`, `semanticDigest`, and the `features` counts.
+2. **Check the change against upstream.** Compare the counts with BCD's release
+   notes for every release in the range, for example with
+   `gh release view v8.1.5 -R mdn/browser-compat-data`. For 8.1.3 to 8.1.7, the
+   release notes listed 12, 46, 21, and 36 removals, which added up to the 115
+   the report counted. If the numbers don't match, investigate the generator
+   before approving anything.
+3. **Add the entry.** On a branch from `main`, append an entry to
+   `.github/freshness-approvals.json`. Copy `baselineSemanticDigest` into
+   `baselineSemanticDigest`, and copy the report's `semanticDigest` into
+   `candidateSemanticDigest`. Write a reason that says what upstream changed.
+   Keep the file as two-space JSON with a trailing newline, which is what
+   `JSON.stringify(entries, null, 2)` produces, because CI checks its format.
+   Run `node scripts/validate-freshness-approvals.mjs` to check the entry.
+4. **Merge the approval.** Open a pull request that changes only that file.
+   CI takes the fast path described above.
+5. **Rerun the gate.** Comment `@dependabot rebase` on the BCD pull request.
+   The ruleset requires it to be up to date with `main` anyway, and the rebase
+   reruns Freshness against the new approvals file. The passing report shows
+   the matching entry under `reviewApproval`. Merge once `check` also passes.
+
+Take the digests from the CI report rather than generating the trees locally.
+Generation needs a case-sensitive filesystem (see
+[`04-phase3-generator-validation.md`](./04-phase3-generator-validation.md)),
+so it fails on a default macOS volume. The CI report is also the run the gate
+actually checks. An entry keeps matching across rebases and reruns. It stops
+matching if the generated content on either side changes, for example when a
+generator change lands on `main` first. In that case, repeat the procedure with
+the new report.
+
+This approval and the publication approval are separate:
+
+| | Pull request gate approval | Publication approval |
+| --- | --- | --- |
+| Where it lives | `.github/freshness-approvals.json` on `main`, added by pull request | The `BCD_EMBED_DIFF_APPROVAL` secret, or the publisher's `--approval-file` |
+| What it binds | Both versions and both semantic digests | Both exact digests |
+| Survives a rebase or rerun | Yes, because timestamps are left out | No, because it matches exact bytes |
+| What it lets through | The Dependabot pull request's `freshness` check | A manual publication to R2 |
+
 Lockfile validation takes O(L log L) time and O(L) space for L parsed lockfile
 entries (canonical key sorting); it never scans the BCD dataset. Output comparison
 uses the generator's bounded-memory semantic diff and its documented complexity.

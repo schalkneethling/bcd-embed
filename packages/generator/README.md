@@ -133,7 +133,12 @@ features; crossing either bound blocks. Operators adjust these reviewed source
 constants in `src/diff.ts`, not with a command-line bypass. Bootstrap and
 namespace changes also require approval. Every approval binds the exact
 baseline and candidate tree SHA-256 digests and includes a review reason; stale
-approvals fail. Schema and contract errors cannot be approved. Browser release
+approvals fail. This is the approval publication uses. The Freshness pull
+request gate has its own reviewed approvals, which bind the report's
+`baselineSemanticDigest` and `semanticDigest` instead, so they survive the
+rerun after a rebase; see
+[Approving a blocked BCD update](../../docs/planning/06-phase5-freshness.md#approving-a-blocked-bcd-update).
+Schema and contract errors cannot be approved. Browser release
 metadata changes are reported but do not independently block routine refreshes.
 
 The measured BCD 8.0.13→8.1.3 output delta and complexity model are recorded in

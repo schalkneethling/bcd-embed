@@ -53,8 +53,9 @@ call live in `scripts/`:
   `@mdn/browser-compat-data`. It generates artifacts from both the base and the
   candidate, and fails the pull request when the output diff crosses the reviewed
   limits, unless a maintainer approved that exact change in
-  `.github/freshness-approvals.json`. Auto-merge is off unless an operator turns it on with a repository
-  variable.
+  `.github/freshness-approvals.json`. To approve one, follow
+  [Approving a blocked BCD update](./docs/planning/06-phase5-freshness.md#approving-a-blocked-bcd-update).
+  Auto-merge is off unless an operator turns it on with a repository variable.
 - `freshness-backstop.yml` runs on pushes to `main`, weekly, and on manual
   dispatch. It validates `main` and preserves a candidate artifact tree.
   Publishing to R2 only happens on a manual dispatch with `publish` set, behind a
