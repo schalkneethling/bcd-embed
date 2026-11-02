@@ -50,7 +50,8 @@ call live in `scripts/`:
 - `freshness.yml` handles Dependabot pull requests that update
   `@mdn/browser-compat-data`. It generates artifacts from both the base and the
   candidate, and fails the pull request when the output diff crosses the reviewed
-  limits. Auto-merge is off unless an operator turns it on with a repository
+  limits, unless a maintainer approved that exact change in
+  `.github/freshness-approvals.json`. Auto-merge is off unless an operator turns it on with a repository
   variable.
 - `freshness-backstop.yml` runs on pushes to `main`, weekly, and on manual
   dispatch. It validates `main` and preserves a candidate artifact tree.

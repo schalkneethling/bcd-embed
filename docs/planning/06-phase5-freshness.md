@@ -41,6 +41,38 @@ trusted generator's output-diff policy validates contracts and compares semantic
 changes with provenance normalized, enforcing reviewed thresholds. Non-BCD
 dependency updates skip generation and cannot enable BCD auto-merge.
 
+### Reviewed approvals for blocked diffs
+
+Upstream sometimes removes more features than the policy allows in one update,
+for example when several BCD releases land together. A maintainer then approves
+that specific change by adding an entry to `.github/freshness-approvals.json`
+through a normal pull request to `main`:
+
+```json
+[
+  {
+    "baselineVersion": "8.1.3",
+    "candidateVersion": "8.1.7",
+    "baselineSemanticDigest": "<baselineSemanticDigest from the failed report>",
+    "candidateSemanticDigest": "<semanticDigest from the failed report>",
+    "reason": "Upstream removed these 115 features across 8.1.4 to 8.1.7."
+  }
+]
+```
+
+The gate reads this file from the trusted base checkout, never from the
+candidate, so a Dependabot pull request cannot approve itself. An entry binds
+the semantic digests of both trees rather than their exact digests. The exact
+digests include the generation timestamp, which changes on every run, so an
+exact-digest approval could never match the rerun that follows a rebase. The
+semantic digests leave out timestamps, snapshot IDs, and versions but cover
+every feature, index, and browser record, so any change to the generated
+content on either side invalidates the entry. A matching entry passes only
+this pull request gate, and the report records it as `reviewApproval`.
+Publication still requires its own exact-digest approval, described below. An
+entry that matches nothing has no effect, so stale entries never fail a later
+update, and bootstrap (an empty baseline) can never match.
+
 Lockfile validation takes O(L log L) time and O(L) space for L parsed lockfile
 entries (canonical key sorting); it never scans the BCD dataset. Output comparison
 uses the generator's bounded-memory semantic diff and its documented complexity.
@@ -49,8 +81,9 @@ Auto-merge defaults off. Prerequisites before turning it on:
 
 - The repository setting "Allow auto-merge" must be enabled; without it
   `gh pr merge --auto` fails.
-- The required-check ruleset described below does not exist yet. It must be
-  created before setting `BCD_EMBED_AUTO_MERGE_ENABLED`.
+- The `protect-default-branch` ruleset exists, but it requires only `check`.
+  `Freshness / freshness` must be added as a required check before setting
+  `BCD_EMBED_AUTO_MERGE_ENABLED`.
 
 The merge job needs `contents: write` (in addition to `pull-requests: write`)
 because enabling auto-merge is a write to the repository. The workflow's
