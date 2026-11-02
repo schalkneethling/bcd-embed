@@ -36,6 +36,11 @@ const withoutBcdLock = (lock) => {
       delete importer[field]?.[BCD_PACKAGE];
     }
   }
+  // pnpm copies a registry deprecation notice into the lockfile whenever it
+  // regenerates it, so a package deprecated since main's lockfile was written
+  // gains a note without changing its version or integrity. The note installs
+  // nothing, so it must not block an otherwise BCD-only update.
+  for (const entry of Object.values(copy.packages ?? {})) delete entry?.deprecated;
   return stable(copy);
 };
 

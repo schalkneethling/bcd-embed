@@ -36,7 +36,10 @@ never built or executed. The base generator produces both output trees;
 candidate manifests and lockfile are copied into a trusted base tree and
 installed with `--ignore-scripts`. Trusted base dependencies are installed before
 the YAML parser runs. Structural lockfile checks reject arbitrary BCD tarballs,
-importer changes, snapshot dependencies, and unrelated package changes. The
+importer changes, snapshot dependencies, and unrelated package changes. A
+registry deprecation notice is the one difference allowed on other packages:
+pnpm adds one whenever it regenerates the lockfile after a package is
+deprecated, and the notice changes neither the version nor the integrity. The
 trusted generator's output-diff policy validates contracts and compares semantic
 changes with provenance normalized, enforcing reviewed thresholds. Non-BCD
 dependency updates skip generation and cannot enable BCD auto-merge.
