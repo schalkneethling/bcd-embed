@@ -9,6 +9,8 @@ import {
   ALLOWED_BCD_UPDATE_PATHS,
   BCD_PACKAGE,
   classifyBcdCandidate,
+  findReviewApproval,
+  parseReviewApprovals,
   validateBcdCandidate,
 } from "../scripts/freshness-policy.mjs";
 
@@ -185,6 +187,40 @@ describe("trusted BCD freshness policy", () => {
     }
   });
 
+  it("ignores registry deprecation notices on unchanged packages", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bcd-freshness-"));
+    try {
+      const base = join(root, "base");
+      const candidate = join(root, "candidate");
+      await Promise.all([writeCandidate(base, "8.1.3"), writeCandidate(candidate, "8.1.4")]);
+      const other = { resolution: { integrity: "sha512-other" } };
+      const addOther = async (checkout: string, entry: object) => {
+        const path = join(checkout, "pnpm-lock.yaml");
+        const lock = parse(await readFile(path, "utf8"));
+        lock.packages["other@1.0.0"] = entry;
+        await writeFile(path, stringify(lock));
+      };
+      const validate = () =>
+        validateBcdCandidate({
+          baseRoot: base,
+          candidateRoot: candidate,
+          changedPaths: ALLOWED_BCD_UPDATE_PATHS,
+          registryMetadata: { version: "8.1.4", "dist.integrity": integrity },
+        });
+      await addOther(base, other);
+      await addOther(candidate, { ...other, deprecated: "Deprecated due to a bug." });
+      await expect(validate()).resolves.toMatchObject({ version: "8.1.4" });
+      // The notice is the only thing ignored; a changed integrity still blocks.
+      await addOther(candidate, {
+        resolution: { integrity: "sha512-evil" },
+        deprecated: "Deprecated due to a bug.",
+      });
+      await expect(validate()).rejects.toThrow("lockfile changes");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it.each(["tarball", "importer", "snapshot", "extraDescriptor", "missingImporter"])(
     "blocks malicious BCD %s metadata before any candidate install",
     async (attack) => {
@@ -256,5 +292,48 @@ describe("trusted BCD freshness policy", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+});
+
+describe("reviewed freshness approvals", () => {
+  const approval = {
+    baselineVersion: "8.1.3",
+    candidateVersion: "8.1.7",
+    baselineSemanticDigest: "a".repeat(64),
+    candidateSemanticDigest: "b".repeat(64),
+    reason: "Upstream removed these features.",
+  };
+  const report = {
+    baselineVersion: "8.1.3",
+    candidateVersion: "8.1.7",
+    baselineSemanticDigest: "a".repeat(64),
+    semanticDigest: "b".repeat(64),
+  };
+
+  it("accepts only complete approvals with a human reason", () => {
+    expect(parseReviewApprovals([approval])).toEqual([approval]);
+    expect(parseReviewApprovals([])).toEqual([]);
+    expect(() => parseReviewApprovals(approval)).toThrow("JSON array");
+    for (const invalid of [
+      { ...approval, reason: "short" },
+      { ...approval, candidateSemanticDigest: "B".repeat(64) },
+      { ...approval, candidateVersion: "^8.1.7" },
+      { ...approval, approved: true },
+      (({ baselineVersion: _, ...rest }) => rest)(approval),
+    ]) {
+      expect(() => parseReviewApprovals([invalid])).toThrow("Freshness approval 0");
+    }
+  });
+
+  it("matches only the exact semantic change and versions it names", () => {
+    expect(findReviewApproval(report, [approval])).toBe(approval);
+    expect(
+      findReviewApproval({ ...report, semanticDigest: "c".repeat(64) }, [approval]),
+    ).toBeNull();
+    expect(
+      findReviewApproval({ ...report, baselineSemanticDigest: "c".repeat(64) }, [approval]),
+    ).toBeNull();
+    expect(findReviewApproval({ ...report, candidateVersion: "8.1.8" }, [approval])).toBeNull();
+    expect(findReviewApproval({ ...report, baselineSemanticDigest: null }, [approval])).toBeNull();
   });
 });
