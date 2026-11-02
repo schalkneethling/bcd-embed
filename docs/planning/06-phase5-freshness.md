@@ -73,6 +73,12 @@ Publication still requires its own exact-digest approval, described below. An
 entry that matches nothing has no effect, so stale entries never fail a later
 update, and bootstrap (an empty baseline) can never match.
 
+A pull request that changes only the approvals file changes no code, so CI runs
+just the format check and `scripts/validate-freshness-approvals.mjs` for it,
+which take seconds instead of the full suite's minutes. The `check` job still
+runs and reports, because the ruleset requires it. Any other changed file, a
+diff that cannot be listed, and every push to `main` run the full suite.
+
 Lockfile validation takes O(L log L) time and O(L) space for L parsed lockfile
 entries (canonical key sorting); it never scans the BCD dataset. Output comparison
 uses the generator's bounded-memory semantic diff and its documented complexity.

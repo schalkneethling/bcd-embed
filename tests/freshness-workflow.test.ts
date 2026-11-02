@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+
+import { parseReviewApprovals } from "../scripts/freshness-policy.mjs";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -81,7 +83,56 @@ describe("freshness automation policy", () => {
     );
     expect(gate.run).toContain("--approvals base/.github/freshness-approvals.json");
     expect(gate.run).not.toContain("candidate/.github");
-    expect(JSON.parse(await read("../.github/freshness-approvals.json"))).toBeInstanceOf(Array);
+    const approvals = JSON.parse(await read("../.github/freshness-approvals.json"));
+    expect(() => parseReviewApprovals(approvals)).not.toThrow();
+  });
+
+  it("runs the full CI suite unless a pull request changes only the approvals file", async () => {
+    const workflow = parse(await read("../.github/workflows/ci.yml"));
+    const steps = workflow.jobs.check.steps;
+    const scope = steps.find((step: { id?: string }) => step.id === "scope");
+    expect(scope.if).toBe("github.event_name == 'pull_request'");
+    for (const name of [
+      "Check repository",
+      "Validate generated artifacts at full BCD volume",
+      "Check core mutation gate",
+    ]) {
+      expect(steps.find((step: { name: string }) => step.name === name).if).toBe(
+        "steps.scope.outputs.approvals_only != 'true'",
+      );
+    }
+    const root = await mkdtemp(join(tmpdir(), "bcd-ci-scope-"));
+    const git = (...args: string[]) =>
+      execFileSync(
+        "git",
+        ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args],
+        {
+          cwd: root,
+        },
+      );
+    const scopeOf = async (files: string[]) => {
+      for (const file of files) await writeFile(join(root, file), String(Math.random()));
+      git("add", ".");
+      git("commit", "-q", "-m", "change");
+      // Inside .git, so the output file is never part of the next commit.
+      const output = join(root, ".git", "github-output");
+      await writeFile(output, "");
+      execFileSync("bash", ["-e", "-c", scope.run], {
+        cwd: root,
+        env: { ...process.env, GITHUB_OUTPUT: output },
+      });
+      return readFile(output, "utf8");
+    };
+    try {
+      git("init", "-q");
+      await mkdir(join(root, ".github"));
+      await scopeOf(["README.md"]);
+      expect(await scopeOf([".github/freshness-approvals.json"])).toBe("approvals_only=true\n");
+      expect(await scopeOf([".github/freshness-approvals.json", "README.md"])).toBe("");
+      expect(await scopeOf(["README.md"])).toBe("");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("keeps scheduled preparation local until a reviewed remote-write approval exists", async () => {
