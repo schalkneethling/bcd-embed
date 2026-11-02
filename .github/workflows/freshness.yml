@@ -91,7 +91,8 @@ jobs:
 
       - name: Gate the generated output diff, not the input diff
         if: steps.input.outputs.kind == 'bcd'
-        run: node base/scripts/compare-freshness-output.mjs --baseline "$RUNNER_TEMP/base-output" --candidate "$RUNNER_TEMP/candidate-output"
+        # Approvals come from the trusted base checkout, never from the candidate.
+        run: node base/scripts/compare-freshness-output.mjs --baseline "$RUNNER_TEMP/base-output" --candidate "$RUNNER_TEMP/candidate-output" --approvals base/.github/freshness-approvals.json
 
   enable-auto-merge:
     needs: freshness

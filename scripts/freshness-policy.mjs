@@ -218,3 +218,47 @@ export const validateBcdCandidate = async ({
   }
   return { baseVersion, integrity, package: BCD_PACKAGE, version };
 };
+
+const sha256Hex = /^[a-f0-9]{64}$/;
+const REVIEW_APPROVAL_KEYS =
+  "baselineSemanticDigest,baselineVersion,candidateSemanticDigest,candidateVersion,reason";
+
+/**
+ * Parse the reviewed approvals committed to main. Each one binds a blocked output
+ * diff by the provenance-free (semantic) digests of both trees, so the approval
+ * survives rebases and reruns, which only change timestamps, but not any change
+ * to the generated content on either side.
+ */
+export const parseReviewApprovals = (value) => {
+  if (!Array.isArray(value)) throw new Error("Freshness approvals must be a JSON array.");
+  return value.map((approval, index) => {
+    if (
+      approval === null ||
+      typeof approval !== "object" ||
+      Array.isArray(approval) ||
+      Object.keys(approval).sort().join(",") !== REVIEW_APPROVAL_KEYS ||
+      !sha256Hex.test(approval.baselineSemanticDigest) ||
+      !sha256Hex.test(approval.candidateSemanticDigest) ||
+      !exactVersion.test(approval.baselineVersion) ||
+      !exactVersion.test(approval.candidateVersion) ||
+      typeof approval.reason !== "string" ||
+      approval.reason.trim().length < 8
+    ) {
+      throw new Error(
+        `Freshness approval ${index} must contain exactly ${REVIEW_APPROVAL_KEYS}, with SHA-256 digests, x.y.z versions, and a reason of at least 8 characters.`,
+      );
+    }
+    return approval;
+  });
+};
+
+/** Return the approval that covers this exact semantic change, or null. Bootstrap never matches. */
+export const findReviewApproval = (report, approvals) =>
+  approvals.find(
+    (approval) =>
+      report.baselineSemanticDigest !== null &&
+      approval.baselineSemanticDigest === report.baselineSemanticDigest &&
+      approval.candidateSemanticDigest === report.semanticDigest &&
+      approval.baselineVersion === report.baselineVersion &&
+      approval.candidateVersion === report.candidateVersion,
+  ) ?? null;

@@ -383,6 +383,7 @@ describe("compareOutputTrees", () => {
     const id = await emit(candidate, "2026-09-02T00:00:00Z");
     const initial = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
     expect(initial.bootstrap).toBe(true);
+    expect(initial.baselineSemanticDigest).toBeNull();
     expect(initial.blocked).toEqual(["Bootstrap has no approved baseline."]);
     const approval = {
       baselineDigest: initial.baselineDigest,
@@ -421,6 +422,8 @@ describe("compareOutputTrees", () => {
     );
     const report = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
     expect(report.features).toMatchObject({ baseline: 100, candidate: 100, changed: 11 });
+    expect(report.baselineSemanticDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(report.baselineSemanticDigest).not.toBe(report.semanticDigest);
     expect(report.blocked).toContain("Changed feature magnitude exceeds the reviewed policy.");
     const approval = {
       baselineDigest: report.baselineDigest,

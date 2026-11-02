@@ -73,6 +73,17 @@ describe("freshness automation policy", () => {
     expect(merge.steps.at(-1).run).toBe("node scripts/enable-auto-merge.mjs");
   });
 
+  it("reads reviewed approvals from the trusted base checkout only", async () => {
+    const workflow = parse(await read("../.github/workflows/freshness.yml"));
+    const gate = workflow.jobs.freshness.steps.find(
+      (step: { name: string }) =>
+        step.name === "Gate the generated output diff, not the input diff",
+    );
+    expect(gate.run).toContain("--approvals base/.github/freshness-approvals.json");
+    expect(gate.run).not.toContain("candidate/.github");
+    expect(JSON.parse(await read("../.github/freshness-approvals.json"))).toBeInstanceOf(Array);
+  });
+
   it("keeps scheduled preparation local until a reviewed remote-write approval exists", async () => {
     const workflow = parse(await read("../.github/workflows/freshness-backstop.yml"));
     expect(workflow.on.schedule).toEqual([{ cron: "17 4 * * 1" }]);
