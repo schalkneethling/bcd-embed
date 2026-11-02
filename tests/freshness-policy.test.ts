@@ -187,6 +187,40 @@ describe("trusted BCD freshness policy", () => {
     }
   });
 
+  it("ignores registry deprecation notices on unchanged packages", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bcd-freshness-"));
+    try {
+      const base = join(root, "base");
+      const candidate = join(root, "candidate");
+      await Promise.all([writeCandidate(base, "8.1.3"), writeCandidate(candidate, "8.1.4")]);
+      const other = { resolution: { integrity: "sha512-other" } };
+      const addOther = async (checkout: string, entry: object) => {
+        const path = join(checkout, "pnpm-lock.yaml");
+        const lock = parse(await readFile(path, "utf8"));
+        lock.packages["other@1.0.0"] = entry;
+        await writeFile(path, stringify(lock));
+      };
+      const validate = () =>
+        validateBcdCandidate({
+          baseRoot: base,
+          candidateRoot: candidate,
+          changedPaths: ALLOWED_BCD_UPDATE_PATHS,
+          registryMetadata: { version: "8.1.4", "dist.integrity": integrity },
+        });
+      await addOther(base, other);
+      await addOther(candidate, { ...other, deprecated: "Deprecated due to a bug." });
+      await expect(validate()).resolves.toMatchObject({ version: "8.1.4" });
+      // The notice is the only thing ignored; a changed integrity still blocks.
+      await addOther(candidate, {
+        resolution: { integrity: "sha512-evil" },
+        deprecated: "Deprecated due to a bug.",
+      });
+      await expect(validate()).rejects.toThrow("lockfile changes");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it.each(["tarball", "importer", "snapshot", "extraDescriptor", "missingImporter"])(
     "blocks malicious BCD %s metadata before any candidate install",
     async (attack) => {
