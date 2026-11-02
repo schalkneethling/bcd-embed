@@ -1,6 +1,7 @@
 # Phase 3 — generator validation and measurements
 
-The full-volume gate uses the pinned `@mdn/browser-compat-data` 8.1.3 package.
+The full-volume gate uses the pinned `@mdn/browser-compat-data` package, which
+was 8.1.3 when these measurements were taken.
 It invokes the built `bcd-embed-generate` CLI with fixed generation and expiry
 timestamps, writing into an isolated temporary directory. It then reads the
 generated tree one file at a time and removes the temporary directory on both
