@@ -18,7 +18,7 @@
     "@bcd-embed/generator": "workspace:*",
     "@bcd-embed/schema": "workspace:*",
     "@cloudflare/workers-types": "5.20261104.1",
-    "@mdn/browser-compat-data": "8.1.7",
+    "@mdn/browser-compat-data": "8.1.8",
     "miniflare": "5.20260923.0-alpha",
     "wrangler": "4.143.0"
   }
