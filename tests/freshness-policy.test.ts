@@ -319,7 +319,7 @@ describe("reviewed freshness approvals", () => {
       { ...approval, candidateSemanticDigest: "B".repeat(64) },
       { ...approval, candidateVersion: "^8.1.7" },
       { ...approval, approved: true },
-      (({ baselineVersion: _, ...rest }) => rest)(approval),
+      Object.fromEntries(Object.entries(approval).filter(([key]) => key !== "baselineVersion")),
     ]) {
       expect(() => parseReviewApprovals([invalid])).toThrow("Freshness approval 0");
     }
