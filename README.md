@@ -42,7 +42,7 @@ Each package and app has its own README with the details of its behavior.
 
 ## Automation
 
-Three GitHub Actions workflows live in `.github/workflows/`, and the scripts they
+Four GitHub Actions workflows live in `.github/workflows/`, and the scripts they
 call live in `scripts/`:
 
 - `ci.yml` runs `pnpm check`, a generation check at full BCD volume, and the
@@ -61,6 +61,12 @@ call live in `scripts/`:
   Publishing to R2 only happens on a manual dispatch with `publish` set, behind a
   protected environment and an exact-hash approval, so no automatic publication
   is configured.
+- `dependabot-worker-types.yml` regenerates
+  `apps/worker/worker-configuration.d.ts` on Dependabot pull requests and commits
+  it to the pull request's branch, because a Wrangler update can change the
+  generated types and fail CI's `wrangler types --check`. The commit starts a CI
+  run that someone with write access must approve once. The manual steps for
+  when it fails are in [`apps/worker/README.md`](./apps/worker/README.md).
 
 The design behind these is in
 [`docs/planning/06-phase5-freshness.md`](./docs/planning/06-phase5-freshness.md).
