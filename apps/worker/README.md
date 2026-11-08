@@ -36,9 +36,13 @@ approve it. If the workflow fails, regenerate the file by hand:
    `[dependabot skip]` in the message so Dependabot keeps rebasing the pull
    request.
 
-The compatibility date is pinned to 2026-09-23, the latest supported by the
-workerd bundled with the pinned Wrangler/Miniflare versions. Upgrade these
-versions together before advancing the date.
+The compatibility date is pinned to 2026-09-23 in `wrangler.jsonc` and in
+`tests/worker.test.ts`. Wrangler and the standalone Miniflare that the
+integration tests use each bundle their own workerd runtime, and a runtime
+rejects a compatibility date later than its own release. Wrangler's runtime is
+newer, so the limit is Miniflare's (version `5.20260923.0-alpha`, which bundles
+the 2026-09-23 runtime). Upgrade Miniflare before advancing the date, then
+change the date in both files together.
 
 The configured bucket name is a **deployment prerequisite**, not a resource
 created by this repository. No bucket is provisioned and no remote objects are
