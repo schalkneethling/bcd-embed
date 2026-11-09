@@ -31,5 +31,10 @@ tests inside `xvfb-run dbus-run-session --`.
 The setup tool is not a dependency of this workspace, because it needs Node.js 22.19 or later
 and the repository supports 22.18. Running it with `pnpm dlx` therefore needs the newer Node.js.
 
+`@guidepup/guidepup` is pinned to 0.38.0, the version `@guidepup/playwright` 0.21.0 was built
+against. Version 0.40.0 groups the Orca commands by service, and `@guidepup/playwright` 0.21.0
+still looks them up by their old flat names, so moving Orca into the page fails with "Cannot read
+properties of undefined (reading 'service')". Update the two packages together.
+
 These tests do not replace the release gate in Document 3 §9, which names NVDA with Firefox and
 VoiceOver with Safari. Playwright's WebKit is not Safari, and Orca is not NVDA.

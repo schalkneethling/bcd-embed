@@ -50,17 +50,44 @@ export async function walkTable(
       item: await reader.itemText(),
     });
   };
+  // A screen reader follows a focus change made by the page a moment later, and says nothing new
+  // until then. This waits until the item under its cursor matches, and gives up quietly after
+  // ten seconds, so that the step is still recorded with whatever the screen reader was on.
+  const settle = async (pattern: RegExp) => {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && !pattern.test(await reader.itemText())) {
+      await page.waitForTimeout(250);
+    }
+  };
+
+  const summaries = page.locator("summary");
+  const firstSummary = summaries.first();
+  const firstDetails = page.locator("details").first();
 
   try {
     await page.goto(pageUrl(variant.file));
     await page.getByRole("table").waitFor();
     await reader.navigateToWebContent();
 
-    // Keyboard focus moves the screen reader to a known cell: fit-content in Chrome.
-    const firstSummary = page.locator("summary").first();
-    await firstSummary.focus();
-    await record("focus the fit-content cell in Chrome");
+    // The tab stops before the table: the link in the introduction, then the scroll region.
+    await reader.press("Tab");
+    await reader.press("Tab");
+    await expect(page.getByRole("region")).toBeFocused();
+    await settle(/Browser compatibility/);
+    await record("Tab to the scroll region");
 
+    await reader.press("Tab");
+    await expect(firstSummary).toBeFocused();
+    await settle(/fit-content/);
+    await record("Tab to the fit-content cell in Chrome");
+
+    await reader.press("Tab");
+    await expect(summaries.nth(1)).toBeFocused();
+    await record("Tab to the next disclosure");
+
+    // Back to a known cell, then by table navigation along its row and down a column.
+    await firstSummary.focus();
+    await settle(/fit-content/);
     await moves.right();
     await record("move right to Opera");
     await moves.right();
@@ -71,24 +98,18 @@ export async function walkTable(
     }
 
     await firstSummary.focus();
+    await settle(/fit-content/);
     await reader.press("Enter");
+    await expect(firstDetails).toHaveJSProperty("open", true);
+    await expect(firstSummary).toBeFocused();
+    await settle(/expanded/i);
     await record("open the fit-content disclosure");
-    await expect(page.locator("details").first()).toHaveJSProperty("open", true);
-    await expect(firstSummary).toBeFocused();
 
     await reader.press("Enter");
+    await expect(firstDetails).toHaveJSProperty("open", false);
+    await expect(firstSummary).toBeFocused();
+    await settle(/collapsed/i);
     await record("close the fit-content disclosure");
-    await expect(page.locator("details").first()).toHaveJSProperty("open", false);
-    await expect(firstSummary).toBeFocused();
-
-    await page.getByRole("region").focus();
-    await record("focus the scroll region");
-    await reader.press("Tab");
-    await record("Tab from the scroll region");
-    await expect(firstSummary).toBeFocused();
-    await reader.press("Tab");
-    await record("Tab again");
-    await expect(page.locator("summary").nth(1)).toBeFocused();
   } finally {
     await testInfo.attach("transcript.json", {
       body: JSON.stringify(transcript, null, 2),
@@ -102,10 +123,14 @@ export async function walkTable(
     const entry = transcript.find((candidate) => candidate.step === step);
     return `${entry?.spoken ?? ""} ${entry?.item ?? ""}`;
   };
-  expect.soft(heard("focus the fit-content cell in Chrome")).toContain("Supported since Chrome 46");
+  expect.soft(heard("Tab to the scroll region")).toContain("Browser compatibility");
+  expect
+    .soft(heard("Tab to the fit-content cell in Chrome"))
+    .toContain("Supported since Chrome 46");
   expect.soft(heard("move right to Opera")).toContain("No data for Opera");
   expect.soft(heard("move right to Node.js")).toContain("No data for Node.js");
   // Question 1 of the Phase 1 document: is the platform header announced on entering its column?
   expect.soft(heard("move right to Node.js")).toContain("Server");
-  expect.soft(heard("focus the scroll region")).toContain("Browser compatibility");
+  expect.soft(heard("open the fit-content disclosure")).toMatch(/expanded/i);
+  expect.soft(heard("close the fit-content disclosure")).toMatch(/collapsed/i);
 }
