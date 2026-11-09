@@ -72,20 +72,28 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22.18.0
+          # Newer than the 22.18.0 of the other workflows, because Guidepup's setup tool depends
+          # on a version of undici that needs Node.js 22.19 or later.
+          node-version: 24
           cache: pnpm
 
       - name: Install the element workspace
         run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
 
-      # Prepares the runner for screen reader automation: on macOS it lets AppleScript control
-      # VoiceOver, and on Linux it installs Orca and its tools with apt. The runner is discarded
-      # after the job.
+      # Guidepup's setup tool runs with `pnpm dlx`, not as a dependency of the workspace, because
+      # its Node.js requirement is higher than this repository's and `engineStrict` would then
+      # fail every install on Node.js 22.18. Its version is pinned here.
+      #
+      # `setup` prepares the runner for screen reader automation: on macOS it lets AppleScript
+      # control VoiceOver, and on Linux it installs Orca and its tools with apt. The runner is
+      # discarded after the job. `install` reads the workspace's @guidepup/guidepup version to
+      # pick the matching screen reader assets, so it runs in the workspace's directory.
       - name: Set up the runner for screen reader automation
-        run: pnpm --filter @bcd-embed/element run screen-reader:setup --ci
+        run: pnpm dlx @guidepup/setup@0.29.3 setup --ci
 
       - name: Install the screen reader assets
-        run: pnpm --filter @bcd-embed/element exec guidepup install ${{ matrix.reader }}
+        working-directory: packages/element
+        run: pnpm dlx @guidepup/setup@0.29.3 install ${{ matrix.reader }}
 
       - name: Install the browser
         run: pnpm --filter @bcd-embed/element exec playwright install --with-deps ${{ matrix.browser }}

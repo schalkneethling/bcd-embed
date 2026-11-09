@@ -23,11 +23,13 @@ Each test attaches a `transcript.json` and prints it to the job log. The checks 
 (which element has focus, whether a disclosure is open) fail the test. The checks on the spoken
 wording are soft: they are reported, and the transcript is still complete.
 
-To run them locally, set the machine up once with
-`pnpm --filter @bcd-embed/element run screen-reader:setup`, then install the assets with
-`pnpm --filter @bcd-embed/element exec guidepup install` and the browser with
-`pnpm --filter @bcd-embed/element exec playwright install webkit` (or `firefox` on Linux). On
-Linux, run the tests inside `xvfb-run dbus-run-session --`.
+To run them locally, set the machine up once with `pnpm dlx @guidepup/setup@0.29.3 setup`. Then,
+in `packages/element`, install the assets with `pnpm dlx @guidepup/setup@0.29.3 install` and the
+browser with `pnpm exec playwright install webkit` (or `firefox` on Linux). On Linux, run the
+tests inside `xvfb-run dbus-run-session --`.
+
+The setup tool is not a dependency of this workspace, because it needs Node.js 22.19 or later
+and the repository supports 22.18. Running it with `pnpm dlx` therefore needs the newer Node.js.
 
 These tests do not replace the release gate in Document 3 §9, which names NVDA with Firefox and
 VoiceOver with Safari. Playwright's WebKit is not Safari, and Orca is not NVDA.
