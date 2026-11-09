@@ -105,7 +105,7 @@ not NVDA.
 
 ### First automated results
 
-Run 42714919840, on 2026-11-09, gave the first complete transcripts. The
+Runs 42714919840 and 42716636963, on 2026-11-09, gave the first complete transcripts. The
 phrases below are quoted from them.
 
 | Step                                   | VoiceOver, WebKit                                                            | Orca, Firefox                                                                              |
@@ -114,7 +114,7 @@ phrases below are quoted from them.
 | Tab to `fit-content` in Chrome         | "Supported since Chrome 46. History for fit-content in Chrome collapsed summary", then the table's name and size | "table with 16 rows 4 columns. fit-content row header Chrome. Desktop column header. row 3. column 2. Supported since Chrome 46. History for fit-content in Chrome. collapsed button" |
 | Move right to Node.js                  | "Server and Node.js No data for Node.js column 4 of 4"                       | "fit-content. No data for Opera. No data for Node.js. Row 3, column 4."                    |
 | Move down the Node.js column           | "row 4 of 16 abort No data for Node.js"                                      | "abort. No data for Opera. No data for Node.js. Row 4, column 4."                          |
-| Open, then close the disclosure        | Not captured in this run                                                     | "expanded", then "collapsed"                                                               |
+| Open, then close the disclosure        | Nothing new is spoken. The item changes to "expanded summary", then back                                                     | "expanded", then "collapsed"                                                               |
 
 What the transcripts settle so far:
 
@@ -128,6 +128,12 @@ What the transcripts settle so far:
   the column.
 - **Disclosure role.** VoiceOver calls the summary "collapsed summary", and
   Orca calls it "collapsed button".
+- **Disclosure state.** Orca speaks "expanded" and "collapsed" when Enter
+  toggles the disclosure. VoiceOver in WebKit speaks nothing at that moment.
+  The item under its cursor does change to "expanded summary", so the state
+  is exposed, but a VoiceOver user hears it only on reading the item again.
+  Check this in Safari during the manual pass before deciding whether it
+  needs a remedy.
 
 Orca also reads the other cells of the row on each move ("No data for Opera.
 No data for Node.js."). That is Orca's own row-reading behavior, not something

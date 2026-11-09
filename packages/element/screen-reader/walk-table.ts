@@ -58,8 +58,7 @@ export async function walkTable(
   };
   // `capture: true` keeps listening until the screen reader goes quiet.
   const press = (key: string) => reader.press(key, { capture: true });
-  const summaries = page.locator("summary");
-  const firstSummary = summaries.first();
+  const firstSummary = page.locator("summary").first();
   const firstDetails = page.locator("details").first();
 
   try {
@@ -105,8 +104,10 @@ export async function walkTable(
       await record(`move down the Node.js column to row ${row}`);
     }
 
+    // Which disclosure comes next differs: Firefox tabs on from the cell that Orca's table
+    // navigation moved to, and WebKit from the summary that still has focus.
     await press("Tab");
-    await expect(summaries.nth(1)).toBeFocused();
+    await expect(page.locator("summary:focus")).toHaveCount(1);
     await record("Tab to the next disclosure");
   } finally {
     await testInfo.attach("transcript.json", {
