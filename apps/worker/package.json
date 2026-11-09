@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "wrangler deploy --dry-run --outdir ../../.wrangler/worker-dry-run",
+    "deploy": "varlock-wrangler deploy",
     "test": "vitest run --config ../../vitest.config.ts tests",
     "typecheck": "wrangler types worker-configuration.d.ts --include-runtime=false --check && tsc --noEmit && tsc --noEmit --project tsconfig.test.json",
     "wrangler:types": "wrangler types worker-configuration.d.ts --include-runtime=false",
@@ -19,7 +20,12 @@
     "@bcd-embed/schema": "workspace:*",
     "@cloudflare/workers-types": "5.20261104.1",
     "@mdn/browser-compat-data": "8.1.8",
+    "@varlock/cloudflare-integration": "1.6.3",
     "miniflare": "5.20260923.0-alpha",
+    "varlock": "1.24.0",
     "wrangler": "4.157.0"
+  },
+  "varlock": {
+    "loadPath": "./env/"
   }
 }
