@@ -10,8 +10,8 @@ for (const variant of variants) {
       page,
       orca,
       {
-        right: () => orca.perform(MoveRight),
-        down: () => orca.perform(MoveDown),
+        right: () => orca.perform(MoveRight, { capture: true }),
+        down: () => orca.perform(MoveDown, { capture: true }),
       },
       variant,
       testInfo,

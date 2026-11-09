@@ -7,8 +7,9 @@ import { expect } from "@playwright/test";
 /** The part of a screen reader that the walk uses. VoiceOver and Orca both provide it. */
 export type Reader = {
   navigateToWebContent(): Promise<void>;
-  press(key: string): Promise<void>;
-  lastSpokenPhrase(): Promise<string>;
+  press(key: string, options?: { capture: true }): Promise<void>;
+  spokenPhraseLog(): Promise<string[]>;
+  clearSpokenPhraseLog(): Promise<void>;
   itemText(): Promise<string>;
 };
 
@@ -44,12 +45,17 @@ export async function walkTable(
 ): Promise<void> {
   const transcript: Step[] = [];
   const record = async (step: string) => {
+    // Everything spoken since the last recorded step. Orca echoes the key first ("tab"), so the
+    // last phrase alone would miss what it says about the item.
     transcript.push({
       step,
-      spoken: await reader.lastSpokenPhrase(),
+      spoken: (await reader.spokenPhraseLog()).join(" | "),
       item: await reader.itemText(),
     });
+    await reader.clearSpokenPhraseLog();
   };
+  // `capture: true` keeps listening until the screen reader goes quiet.
+  const press = (key: string) => reader.press(key, { capture: true });
   // A screen reader follows a focus change made by the page a moment later, and says nothing new
   // until then. This waits until the item under its cursor matches, and gives up quietly after
   // ten seconds, so that the step is still recorded with whatever the screen reader was on.
@@ -69,25 +75,33 @@ export async function walkTable(
     await page.getByRole("table").waitFor();
     await reader.navigateToWebContent();
 
-    // The tab stops before the table: the link in the introduction, then the scroll region.
-    await reader.press("Tab");
-    await reader.press("Tab");
-    await expect(page.getByRole("region")).toBeFocused();
+    await reader.clearSpokenPhraseLog();
+
+    // Tab to the scroll region. Firefox stops on the link in the introduction first. WebKit does
+    // not, because Safari leaves links out of the tab order by default.
+    const region = page.getByRole("region");
+    for (let presses = 0; presses < 3; presses += 1) {
+      await press("Tab");
+      if (await region.evaluate((element) => element === document.activeElement)) break;
+      await reader.clearSpokenPhraseLog();
+    }
+    await expect(region).toBeFocused();
     await settle(/Browser compatibility/);
     await record("Tab to the scroll region");
 
-    await reader.press("Tab");
+    await press("Tab");
     await expect(firstSummary).toBeFocused();
     await settle(/fit-content/);
     await record("Tab to the fit-content cell in Chrome");
 
-    await reader.press("Tab");
+    await press("Tab");
     await expect(summaries.nth(1)).toBeFocused();
     await record("Tab to the next disclosure");
 
     // Back to a known cell, then by table navigation along its row and down a column.
     await firstSummary.focus();
     await settle(/fit-content/);
+    await reader.clearSpokenPhraseLog();
     await moves.right();
     await record("move right to Opera");
     await moves.right();
@@ -99,13 +113,14 @@ export async function walkTable(
 
     await firstSummary.focus();
     await settle(/fit-content/);
-    await reader.press("Enter");
+    await reader.clearSpokenPhraseLog();
+    await press("Enter");
     await expect(firstDetails).toHaveJSProperty("open", true);
     await expect(firstSummary).toBeFocused();
     await settle(/expanded/i);
     await record("open the fit-content disclosure");
 
-    await reader.press("Enter");
+    await press("Enter");
     await expect(firstDetails).toHaveJSProperty("open", false);
     await expect(firstSummary).toBeFocused();
     await settle(/collapsed/i);

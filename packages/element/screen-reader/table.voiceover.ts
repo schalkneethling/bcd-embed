@@ -9,8 +9,8 @@ for (const variant of variants) {
       page,
       voiceOver,
       {
-        right: () => voiceOver.next(),
-        down: () => voiceOver.perform(voiceOver.keyboardCommands.moveDown),
+        right: () => voiceOver.next({ capture: true }),
+        down: () => voiceOver.perform(voiceOver.keyboardCommands.moveDown, { capture: true }),
       },
       variant,
       testInfo,
