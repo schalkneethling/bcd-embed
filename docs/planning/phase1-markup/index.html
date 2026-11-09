@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 1 markup: variant A (scope)</title>
+    <link rel="stylesheet" href="phase1.css" />
+  </head>
+  <body>
+    <h1>Phase 1 markup: variant A (scope)</h1>
+    <p>
+      Variant A associates headers with <code>scope</code> only. The data is the adversarial fixture
+      <code>fixture.adversarial-v1</code> from <code>@bcd-embed/schema</code>. Compare with
+      <a href="headers-id.html">variant B</a>, which uses explicit <code>headers</code> and
+      <code>id</code>. The test script is in
+      <code>docs/planning/07-component-phase1-markup.md</code>.
+    </p>
+    <div class="bcd-scroller" role="region" aria-labelledby="a-caption" tabindex="0">
+      <table class="bcd-table">
+        <caption id="a-caption">
+          Browser compatibility: fixture.adversarial-v1
+        </caption>
+        <colgroup></colgroup>
+        <colgroup span="2"></colgroup>
+        <colgroup></colgroup>
+        <thead>
+          <tr>
+            <th scope="col" rowspan="2">Feature</th>
+            <th scope="colgroup" colspan="2">Desktop</th>
+            <th scope="colgroup">Server</th>
+          </tr>
+          <tr>
+            <th scope="col">Chrome</th>
+            <th scope="col">Opera</th>
+            <th scope="col">Node.js</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>fit-content</code></th>
+            <td>
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">✓ 46</span
+                  ><span class="visually-hidden"
+                    >Supported since Chrome 46. History for fit-content in Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Supported since Chrome 46.</li>
+                  <li>With the prefix <code>-webkit-</code>: supported since Chrome 22.</li>
+                  <li>
+                    Under the name <code>intrinsic</code>: supported from Chrome 1, removed in
+                    Chrome 48.
+                  </li>
+                </ul>
+              </details>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>abort</code></th>
+            <td>
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">✓ 18</span
+                  ><span class="visually-hidden"
+                    >Supported since Chrome 18. History for abort in Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Supported since Chrome 18.</li>
+                  <li>Supported from Chrome 16, removed in Chrome 17.</li>
+                  <li>Partially supported from Chrome 14, removed in Chrome 16.</li>
+                </ul>
+              </details>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>AudioTrackList</code></th>
+            <td>
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">⚑ 37</span
+                  ><span class="visually-hidden"
+                    >Supported since Chrome 37 behind a flag. Flag details for AudioTrackList in
+                    Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Supported since Chrome 37 behind a flag.</li>
+                  <li>
+                    To enable it, set the preference
+                    <code>enable-experimental-web-platform-features</code> to <code>enabled</code>.
+                  </li>
+                </ul>
+              </details>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>preview_partial</code></th>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Chrome</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">◐ 25 (preview)</span
+              ><span class="visually-hidden">Partial support in Node.js 25, a preview release</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>removed_partial</code></th>
+            <td>
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">✕ 11.1 – 12.1</span
+                  ><span class="visually-hidden"
+                    >No support in Chrome. History and notes for removed_partial in Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Partially supported from Chrome 11.1, removed in Chrome 12.1.</li>
+                  <li>Note: The initial implementation did not abort fetch requests.</li>
+                </ul>
+              </details>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>localName</code></th>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Chrome</span>
+            </td>
+            <td>
+              <span aria-hidden="true">✓ ≤12.1</span
+              ><span class="visually-hidden">Supported since Opera 12.1 or earlier</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>missing_target</code></th>
+            <td>
+              <span aria-hidden="true">✓ 1</span
+              ><span class="visually-hidden">Supported since Chrome 1</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>unknown_runtime</code></th>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Chrome</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">?</span
+              ><span class="visually-hidden">Support unknown in Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>partial_only</code></th>
+            <td>
+              <span aria-hidden="true">◐ 17</span
+              ><span class="visually-hidden">Partial support since Chrome 17</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>notes_only</code></th>
+            <td>
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">✓ 20 *</span
+                  ><span class="visually-hidden"
+                    >Supported since Chrome 20. Notes for notes_only in Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Supported since Chrome 20.</li>
+                  <li>
+                    Note: Support is complete; this note records a historical implementation detail.
+                  </li>
+                </ul>
+              </details>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>prefixed_only</code></th>
+            <td>
+              <span aria-hidden="true">✓ 10 <code>webkit</code></span
+              ><span class="visually-hidden">Supported since Chrome 10 with the prefix webkit</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature"><code>Array</code></th>
+            <td>
+              <span aria-hidden="true">✓ 1</span
+              ><span class="visually-hidden">Supported since Chrome 1</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature bcd-feature-depth-1">
+              <code>from</code> <span class="visually-hidden">(part of Array)</span>
+            </th>
+            <td>
+              <span aria-hidden="true">✓ 45</span
+              ><span class="visually-hidden">Supported since Chrome 45</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row" class="bcd-feature bcd-feature-depth-2">
+              <code>async_iterable</code> <span class="visually-hidden">(part of Array.from)</span>
+            </th>
+            <td>
+              <span aria-hidden="true">✓ 121</span
+              ><span class="visually-hidden">Supported since Chrome 121</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td>
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
