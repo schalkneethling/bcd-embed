@@ -103,6 +103,39 @@ The automated runs cover steps 3 to 7 and answer question 1 below. They do not
 replace the manual pass, because Playwright's WebKit is not Safari and Orca is
 not NVDA.
 
+### First automated results
+
+Run 42714919840, on 2026-11-09, gave the first complete transcripts. The
+phrases below are quoted from them.
+
+| Step                                   | VoiceOver, WebKit                                                            | Orca, Firefox                                                                              |
+| -------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Tab to the scroll region               | "Browser compatibility: fixture.adversarial-v1 region"                       | "Browser compatibility: fixture.adversarial-v1. region"                                    |
+| Tab to `fit-content` in Chrome         | "Supported since Chrome 46. History for fit-content in Chrome collapsed summary", then the table's name and size | "table with 16 rows 4 columns. fit-content row header Chrome. Desktop column header. row 3. column 2. Supported since Chrome 46. History for fit-content in Chrome. collapsed button" |
+| Move right to Node.js                  | "Server and Node.js No data for Node.js column 4 of 4"                       | "fit-content. No data for Opera. No data for Node.js. Row 3, column 4."                    |
+| Move down the Node.js column           | "row 4 of 16 abort No data for Node.js"                                      | "abort. No data for Opera. No data for Node.js. Row 4, column 4."                          |
+| Open, then close the disclosure        | Not captured in this run                                                     | "expanded", then "collapsed"                                                               |
+
+What the transcripts settle so far:
+
+- **Question 1.** `scope` is enough. VoiceOver announced "Server and Node.js"
+  on entering the column in variant A and in variant B, word for word the
+  same. Orca announced "Desktop" and "Chrome" on entering the table in both
+  variants, in a different order.
+- **Question 2.** The support target's name in each cell is needed. Orca's
+  table navigation did not announce a column header when the column changed,
+  in either variant, so "No data for Node.js" was the only thing that named
+  the column.
+- **Disclosure role.** VoiceOver calls the summary "collapsed summary", and
+  Orca calls it "collapsed button".
+
+Orca also reads the other cells of the row on each move ("No data for Opera.
+No data for Node.js."). That is Orca's own row-reading behavior, not something
+the markup controls.
+
+Variant B has not yet shown any advantage. Questions 3 to 5 still need a
+person's judgment.
+
 ## Questions the test must answer
 
 1. Does `scope` alone announce the platform header ("Desktop", "Server") in

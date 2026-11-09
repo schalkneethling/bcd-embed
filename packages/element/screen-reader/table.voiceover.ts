@@ -14,6 +14,8 @@ for (const variant of variants) {
       },
       variant,
       testInfo,
+      // VoiceOver announces the platform header above a column on entering it, in both variants.
+      { "move right to Node.js": "Server and Node.js" },
     );
   });
 }

@@ -15,6 +15,10 @@ for (const variant of variants) {
       },
       variant,
       testInfo,
+      // Orca announces the column headers on entering the table, and not again when table
+      // navigation changes the column, so the support target's name in each cell is what
+      // identifies the column.
+      { "Tab to the fit-content cell in Chrome": "Desktop" },
     );
   });
 }

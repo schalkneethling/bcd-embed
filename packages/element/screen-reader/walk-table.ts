@@ -34,7 +34,8 @@ const pageUrl = (file: string) =>
 /**
  * Walks the table and attaches the transcript to the test. The checks on the page (which element
  * has focus, whether the disclosure is open) are hard failures. The checks on what was spoken are
- * soft, so a wording difference still leaves a complete transcript to read.
+ * soft, so a wording difference still leaves a complete transcript to read. `readerSpecific`
+ * maps a step to a phrase that only this screen reader is expected to say there.
  */
 export async function walkTable(
   page: Page,
@@ -42,6 +43,7 @@ export async function walkTable(
   moves: TableMoves,
   variant: Variant,
   testInfo: TestInfo,
+  readerSpecific: Readonly<Record<string, string>>,
 ): Promise<void> {
   const transcript: Step[] = [];
   const record = async (step: string) => {
@@ -56,16 +58,6 @@ export async function walkTable(
   };
   // `capture: true` keeps listening until the screen reader goes quiet.
   const press = (key: string) => reader.press(key, { capture: true });
-  // A screen reader follows a focus change made by the page a moment later, and says nothing new
-  // until then. This waits until the item under its cursor matches, and gives up quietly after
-  // ten seconds, so that the step is still recorded with whatever the screen reader was on.
-  const settle = async (pattern: RegExp) => {
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline && !pattern.test(await reader.itemText())) {
-      await page.waitForTimeout(250);
-    }
-  };
-
   const summaries = page.locator("summary");
   const firstSummary = summaries.first();
   const firstDetails = page.locator("details").first();
@@ -86,22 +78,24 @@ export async function walkTable(
       await reader.clearSpokenPhraseLog();
     }
     await expect(region).toBeFocused();
-    await settle(/Browser compatibility/);
     await record("Tab to the scroll region");
 
+    // Every later move is made with the keyboard or the screen reader, never by the page: in
+    // WebKit, VoiceOver's cursor does not follow a focus change that a script makes.
     await press("Tab");
     await expect(firstSummary).toBeFocused();
-    await settle(/fit-content/);
     await record("Tab to the fit-content cell in Chrome");
 
-    await press("Tab");
-    await expect(summaries.nth(1)).toBeFocused();
-    await record("Tab to the next disclosure");
+    await press("Enter");
+    await expect(firstDetails).toHaveJSProperty("open", true);
+    await expect(firstSummary).toBeFocused();
+    await record("open the fit-content disclosure");
 
-    // Back to a known cell, then by table navigation along its row and down a column.
-    await firstSummary.focus();
-    await settle(/fit-content/);
-    await reader.clearSpokenPhraseLog();
+    await press("Enter");
+    await expect(firstDetails).toHaveJSProperty("open", false);
+    await expect(firstSummary).toBeFocused();
+    await record("close the fit-content disclosure");
+
     await moves.right();
     await record("move right to Opera");
     await moves.right();
@@ -111,20 +105,9 @@ export async function walkTable(
       await record(`move down the Node.js column to row ${row}`);
     }
 
-    await firstSummary.focus();
-    await settle(/fit-content/);
-    await reader.clearSpokenPhraseLog();
-    await press("Enter");
-    await expect(firstDetails).toHaveJSProperty("open", true);
-    await expect(firstSummary).toBeFocused();
-    await settle(/expanded/i);
-    await record("open the fit-content disclosure");
-
-    await press("Enter");
-    await expect(firstDetails).toHaveJSProperty("open", false);
-    await expect(firstSummary).toBeFocused();
-    await settle(/collapsed/i);
-    await record("close the fit-content disclosure");
+    await press("Tab");
+    await expect(summaries.nth(1)).toBeFocused();
+    await record("Tab to the next disclosure");
   } finally {
     await testInfo.attach("transcript.json", {
       body: JSON.stringify(transcript, null, 2),
@@ -142,10 +125,11 @@ export async function walkTable(
   expect
     .soft(heard("Tab to the fit-content cell in Chrome"))
     .toContain("Supported since Chrome 46");
-  expect.soft(heard("move right to Opera")).toContain("No data for Opera");
-  expect.soft(heard("move right to Node.js")).toContain("No data for Node.js");
-  // Question 1 of the Phase 1 document: is the platform header announced on entering its column?
-  expect.soft(heard("move right to Node.js")).toContain("Server");
   expect.soft(heard("open the fit-content disclosure")).toMatch(/expanded/i);
   expect.soft(heard("close the fit-content disclosure")).toMatch(/collapsed/i);
+  expect.soft(heard("move right to Opera")).toContain("No data for Opera");
+  expect.soft(heard("move right to Node.js")).toContain("No data for Node.js");
+  for (const [step, expected] of Object.entries(readerSpecific)) {
+    expect.soft(heard(step), step).toContain(expected);
+  }
 }
