@@ -1,0 +1,18 @@
+{
+  "name": "@bcd-embed/element",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "screen-reader:setup": "guidepup setup",
+    "test:orca": "playwright test --config playwright.orca.config.ts",
+    "test:voiceover": "playwright test --config playwright.voiceover.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@guidepup/guidepup": "0.40.0",
+    "@guidepup/playwright": "0.21.0",
+    "@guidepup/setup": "0.29.3",
+    "@playwright/test": "1.65.0"
+  }
+}

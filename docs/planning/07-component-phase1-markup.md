@@ -92,6 +92,17 @@ it differs from the expectation.
 | 13  | Variant B: move down the Chrome column from `Array` to `async_iterable`       | Note whether the ancestor row headers are announced, and whether that helps or is noise      |
 | 14  | Variant B: repeat step 3                                                      | Note any difference from variant A in what is announced for the platform row                 |
 
+## Automated runs
+
+`packages/element` runs a shortened form of this script with real screen
+readers through Guidepup: VoiceOver in Playwright's WebKit on macOS, and Orca
+in Playwright's Firefox on Linux. Each run records what was spoken at every
+step as a transcript (`packages/element/README.md`).
+
+The automated runs cover steps 3 to 7 and answer question 1 below. They do not
+replace the manual pass, because Playwright's WebKit is not Safari and Orca is
+not NVDA.
+
 ## Questions the test must answer
 
 1. Does `scope` alone announce the platform header ("Desktop", "Server") in

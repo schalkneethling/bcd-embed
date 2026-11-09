@@ -29,9 +29,10 @@ Workspace-specific TypeScript files may extend the managed root configuration.
 ## Architecture guardrails
 
 - Treat `@bcd-embed/schema` and its fixtures as the first product dependency.
-- Do not add empty future workspaces. Add `element` when its implementation
-  phase begins. The `schema`, `core`, `generator`, `server`, and `publisher`
-  packages and the `docs` and `worker` apps already exist.
+- Do not add empty future workspaces. The `schema`, `core`, `generator`,
+  `server`, `publisher`, and `element` packages and the `docs` and `worker`
+  apps already exist. `element` holds the component's screen reader tests
+  until its implementation starts in Phase 2 of Document 3.
 - Reimplement normalization from the published BCD schema. Do not copy code
   from MDN Fred, which is MPL-2.0 licensed.
 - Treat time and space complexity as design constraints because BCD is a very

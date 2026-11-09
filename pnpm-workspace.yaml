@@ -10,6 +10,9 @@ engineStrict: true
 strictPeerDependencies: true
 allowBuilds:
   esbuild: true
+  # Needed only for the Guidepup setup tool's screen recording, which this project does not use.
+  # Its install script downloads an ffmpeg binary.
+  ffmpeg-static: false
   workerd: true
 minimumReleaseAgeExclude:
   # Security update: replaces the SDK closure containing fast-xml-parser CVEs.
