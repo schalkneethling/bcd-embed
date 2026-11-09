@@ -44,6 +44,35 @@ newer, so the limit is Miniflare's (version `5.20260923.0-alpha`, which bundles
 the 2026-09-23 runtime). Upgrade Miniflare before advancing the date, then
 change the date in both files together.
 
+## Deploying
+
+`pnpm --filter @bcd-embed/worker run deploy` deploys the Worker with
+`varlock-wrangler deploy`. `varlock-wrangler` comes from
+`@varlock/cloudflare-integration` and wraps Wrangler: it resolves the Worker's
+configuration with [Varlock](https://varlock.dev), then passes every item
+marked `@sensitive` to Wrangler as a Worker secret and every other item as a
+plain variable. It also uploads one extra secret, `__VARLOCK_ENV`, which holds
+the resolved configuration for Varlock's optional runtime helper. The Worker
+does not read it.
+
+The schema is `env/.env.schema`, and it is the only Varlock file in git. Values
+live in `env/.env.local`, which is git-ignored. To set the Sentry DSN, add the
+line `SENTRY_DSN=varlock(prompt)` to `env/.env.local` and run
+`pnpm --filter @bcd-embed/worker exec varlock load`. Varlock asks for the
+value, encrypts it for this machine, and writes the encrypted form back to the
+file. The same command prints the resolved configuration with secrets masked.
+
+Varlock's files are in `env/`, not beside `wrangler.jsonc`, because Wrangler
+reads a `.env.local` that sits next to its configuration and adds the keys to
+the types it generates. `worker-configuration.d.ts` would then differ between
+a machine that has the DSN and CI, which does not, and the typecheck would
+fail on the first. The `varlock.loadPath` setting in `package.json` points
+Varlock at `env/`.
+
+A deploy replaces the Worker's variables with the ones in the schema, because
+`varlock-wrangler` passes `--keep-vars=false`. Add a variable to the schema,
+not in the Cloudflare dashboard, or the next deploy removes it.
+
 The configured bucket name is a **deployment prerequisite**, not a resource
 created by this repository. No bucket is provisioned and no remote objects are
 uploaded by these commands, and the Worker has not been deployed. Before a
