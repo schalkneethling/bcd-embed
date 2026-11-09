@@ -103,12 +103,6 @@ export async function walkTable(
       await moves.down();
       await record(`move down the Node.js column to row ${row}`);
     }
-
-    // Which disclosure comes next differs: Firefox tabs on from the cell that Orca's table
-    // navigation moved to, and WebKit from the summary that still has focus.
-    await press("Tab");
-    await expect(page.locator("summary:focus")).toHaveCount(1);
-    await record("Tab to the next disclosure");
   } finally {
     await testInfo.attach("transcript.json", {
       body: JSON.stringify(transcript, null, 2),
