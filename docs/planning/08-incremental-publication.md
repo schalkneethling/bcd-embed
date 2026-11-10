@@ -8,8 +8,8 @@ Today every release of browser-compat-data (BCD) uploads a complete new copy of
 the API's data: about 125,640 files. Between BCD 8.1.7 and 8.1.8, only 592 of
 20,933 features changed. This document proposes storing each distinct file once,
 named by the hash of its content, so that a release uploads only the files that
-are new. The estimate is about 3,900 writes per release where today's design
-needs 125,640.
+are new. Measured on that update, a release needs 3,158 writes where today's
+design needs 125,640.
 
 The change touches the API contract, the generator, the publisher and the
 Worker. It is proposed now because nothing is live yet and nobody consumes the
@@ -264,19 +264,70 @@ copy is invalidated weekly. With the release fields out of the body, a feature
 that did not change keeps its `ETag` across releases, and a consumer's
 revalidation gets a 304 with no body.
 
+## Measurement: 8.1.7 against 8.1.8
+
+Step 1 of the plan below is done. `scripts/measure-incremental-publication.mjs`
+generates both snapshots in memory, removes `generated` and `source` from every
+normalized body, and compares the SHA-256 hash of each file. The design passes
+its gate: 97.6% of the files in 8.1.8 are byte-identical to 8.1.7, against a
+threshold of 90%.
+
+| Files in 8.1.8    | Identical | Changed | Added | Removed |
+| ----------------- | --------- | ------- | ----- | ------- |
+| Normalized        | 20,341    | 557     | 35    | 0       |
+| Raw               | 20,521    | 377     | 35    | 0       |
+| Index and browsers | 9        | 5       | 0     | 0       |
+| **All 41,880**    | 40,871    | 939     | 70    | 0       |
+
+The normalized row matches the Freshness diff report for the same update
+exactly: 557 changed and 35 added. No repeated block changed in every file,
+which was the main risk.
+
+Three results differ from what this document assumed.
+
+**Fewer writes than estimated.** The release needs 972 new blobs. Each has
+three encodings, so that is 2,916 objects, plus 241 shards and one root: 3,158
+writes, where the estimate was about 3,900.
+
+**More storage than estimated.** The new blobs total 55.5 MB (52.2 MB plain,
+1.9 MB gzip, 1.4 MB Brotli), where the estimate was about 20 MB. The changed
+files are much larger than average because a parent feature's file contains its
+whole subtree, so one changed method changes the file of its interface too.
+Twenty files, led by `api.Element` at 3.4 MB, make up half the changed bytes.
+At one release a week and 90 days of retention, about 13 releases add roughly
+0.7 GB to a first snapshot of about 0.57 GB, which stays well inside the 10 GB
+free allowance.
+
+**Almost every shard changes.** 241 of the 256 shards differ, because 592
+changed or added keys spread evenly over 256 shards touch nearly all of them.
+Shards therefore save few writes between releases. They still cost only 8% of
+the release's writes, and their main purpose is to keep each request's lookup
+small: a shard holds between 60 and 106 keys.
+
+Two smaller facts are worth recording. The 41,880 files reduce to 40,612
+distinct blobs, because 1,268 files repeat bytes that another file in the same
+snapshot already has. And the largest single body is 3.4 MB, which is small
+enough to upload from memory as the design proposes.
+
+The script hashes in memory instead of reading two generated folders because
+the generator cannot write a snapshot to a case-insensitive filesystem, which
+is the default on macOS: `api.Crypto.json` and `api.crypto.json` are the same
+file there. Naming blobs by hash removes that collision for everything except
+the staging folder, which step 3 should take into account.
+
 ## Cost after the change
 
-All figures in the "proposed" column are estimates until the measurement in
-step 1 of the plan below.
+The "proposed" column is the measurement above for the 8.1.7 to 8.1.8 update.
+A release that changes more features costs proportionally more.
 
-| Per publication      | Today         | Proposed                                    |
-| -------------------- | ------------- | ------------------------------------------- |
-| Class A (writes)     | 125,640       | about 3,900: 3,600 blobs, 256 shards, a root |
-| Class B (reads)      | about 377,000 | about 4,200                                 |
-| Storage added        | 0.57 GB       | about 20 MB                                 |
-| Cost of a rerun      | up to 125,640 writes | only the writes not yet made          |
+| Per publication  | Today                | Proposed                                    |
+| ---------------- | -------------------- | ------------------------------------------- |
+| Class A (writes) | 125,640              | 3,158: 2,916 blob objects, 241 shards, a root |
+| Class B (reads)  | about 377,000        | about 3,400: 257 to read the live tree, one per write to verify it |
+| Storage added    | 0.57 GB              | 55.5 MB                                     |
+| Cost of a rerun  | up to 125,640 writes | only the writes not yet made                |
 
-At five publications a month, writes come to about 20,000, which is 2% of the
+At five publications a month, writes come to about 16,000, which is 1.6% of the
 free allowance where today's design uses 63%.
 
 ## What stays the same
@@ -290,12 +341,18 @@ free allowance where today's design uses 63%.
 
 ## Risks and open questions
 
-**The share of unchanged files is an estimate.** The diff report counts
-features whose meaning changed. A blob changes whenever any byte changes. If a
+**The share of unchanged files is measured for one release only.** It was
+97.6% for 8.1.7 to 8.1.8. A blob changes whenever any byte changes, so if a
 field that every feature file repeats, such as the `browsers` block, changes in
-a release, every normalized file changes with it. Step 1 of the plan measures
-this on real data before anything else is built. If the measured share is poor,
-the repeated block should move out of the per-feature file.
+a later release, every normalized file changes with it. The publisher's
+operation counts will show this if it happens. The remedy would be to move the
+repeated block out of the per-feature file.
+
+**Plain bytes dominate storage.** 94% of each release's new bytes are the
+uncompressed encoding. Serving the plain encoding by decompressing a stored
+copy would cut storage growth to about 3 MB per release, at the cost of work in
+the Worker. Storage is not a constraint at the measured rate, so this document
+does not propose it.
 
 **The Worker's request path gains two lookups.** They are cacheable forever,
 but a cold start pays for them. The Phase 4 latency checks need to be repeated.
@@ -305,9 +362,9 @@ that a live snapshot needs. The mitigations are the grace period, deleting only
 after a complete and verified read of every live root, and a dry-run mode that
 prints what it would delete.
 
-**Shard count.** 256 is a starting point. Fewer shards mean fewer writes per
-release and larger reads per request. The measurement in step 1 should include
-how many shards change in a typical release.
+**Shard count.** 256 stays. The measurement shows that nearly every shard
+changes in a release at any practical count, so fewer shards would save at most
+a few hundred writes while making every request read a larger file.
 
 **Header names.** `bcd-embed-generated`, `bcd-embed-source-version` and
 `bcd-embed-snapshot` are proposals.
@@ -318,10 +375,11 @@ publisher should log its connection pool's state so a recurrence is visible.
 
 ## Implementation sequence
 
-1. **Measure.** Generate two real snapshots, 8.1.7 and 8.1.8, with the release
-   fields removed, and count identical files and changed shards. This is a
-   script and a table; it changes no behavior. Stop and revisit the design if
-   fewer than 90% of files are identical.
+1. **Measure.** Done: see [the measurement](#measurement-817-against-818).
+   Generate two real snapshots, 8.1.7 and 8.1.8, with the release fields
+   removed, and count identical files and changed shards. This is a script and
+   a table; it changes no behavior. Stop and revisit the design if fewer than
+   90% of files are identical.
 2. **Contract.** Remove `generated` and `source` from response bodies in
    `@bcd-embed/schema` and its fixtures, and add the three headers to Document
    1.
