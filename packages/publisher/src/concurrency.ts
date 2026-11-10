@@ -3,8 +3,8 @@
  *
  * Each object costs two sequential R2 requests (a PUT, then a GET that reads
  * the bytes back), so throughput is bound by request latency, not by CPU. A
- * live run with four workers verified about 207 objects per minute, which
- * needs roughly ten hours for a 125,000-object snapshot. 32 workers bring
+ * live run with four workers verified about 230 objects per minute, which
+ * needs roughly nine hours for a 125,640-object snapshot. 32 workers bring
  * that under the publish job's six-hour limit with room to spare, and stay
  * below the 50 sockets the S3 client opens by default.
  */
