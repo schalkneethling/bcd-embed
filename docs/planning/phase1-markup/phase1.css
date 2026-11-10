@@ -1,0 +1,67 @@
+/*
+ * Readability only. Phase 1 settles structure and names, not design, so nothing here is a
+ * proposal for the base stylesheet (Document 3, Phase 3).
+ */
+
+body {
+  max-inline-size: 70rem;
+  margin-inline: auto;
+  padding: 1rem;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bcd-scroller {
+  overflow-x: auto;
+}
+
+.bcd-history > summary {
+  cursor: pointer;
+}
+
+.bcd-scroller:focus-visible,
+.bcd-history > summary:focus-visible {
+  outline: 2px solid;
+  outline-offset: 2px;
+}
+
+.bcd-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.bcd-table caption {
+  padding-block-end: 0.5rem;
+  font-weight: bold;
+  text-align: start;
+}
+
+.bcd-table th,
+.bcd-table td {
+  padding: 0.5rem;
+  border: 1px solid;
+  text-align: start;
+  vertical-align: top;
+}
+
+.bcd-feature-depth-1 {
+  padding-inline-start: 1.5rem;
+}
+
+.bcd-feature-depth-2 {
+  padding-inline-start: 2.5rem;
+}
+
+.bcd-history-list {
+  margin-block: 0.5rem 0;
+  padding-inline-start: 1.25rem;
+}

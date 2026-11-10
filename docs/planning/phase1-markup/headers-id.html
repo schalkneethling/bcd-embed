@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 1 markup: variant B (headers and id)</title>
+    <link rel="stylesheet" href="phase1.css" />
+  </head>
+  <body>
+    <h1>Phase 1 markup: variant B (headers and id)</h1>
+    <p>
+      Variant B associates every cell with its headers through explicit <code>headers</code> and
+      <code>id</code> attributes, and a nested feature lists its parent features as headers. It
+      holds six of the fixture rows. Compare with <a href="index.html">variant A</a>, which uses
+      <code>scope</code> only.
+    </p>
+    <div class="bcd-scroller" role="region" aria-labelledby="b-caption" tabindex="0">
+      <table class="bcd-table">
+        <caption id="b-caption">
+          Browser compatibility: fixture.adversarial-v1 (six rows)
+        </caption>
+        <colgroup></colgroup>
+        <colgroup span="2"></colgroup>
+        <colgroup></colgroup>
+        <thead>
+          <tr>
+            <th id="b-feature" rowspan="2">Feature</th>
+            <th id="b-desktop" colspan="2">Desktop</th>
+            <th id="b-server">Server</th>
+          </tr>
+          <tr>
+            <th id="b-chrome" headers="b-desktop">Chrome</th>
+            <th id="b-opera" headers="b-desktop">Opera</th>
+            <th id="b-nodejs" headers="b-server">Node.js</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th id="b-row-fit-content" headers="b-feature" class="bcd-feature">
+              <code>fit-content</code>
+            </th>
+            <td headers="b-row-fit-content b-desktop b-chrome">
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">✓ 46</span
+                  ><span class="visually-hidden"
+                    >Supported since Chrome 46. History for fit-content in Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Supported since Chrome 46.</li>
+                  <li>With the prefix <code>-webkit-</code>: supported since Chrome 22.</li>
+                  <li>
+                    Under the name <code>intrinsic</code>: supported from Chrome 1, removed in
+                    Chrome 48.
+                  </li>
+                </ul>
+              </details>
+            </td>
+            <td headers="b-row-fit-content b-desktop b-opera">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td headers="b-row-fit-content b-server b-nodejs">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th id="b-row-audiotracklist" headers="b-feature" class="bcd-feature">
+              <code>AudioTrackList</code>
+            </th>
+            <td headers="b-row-audiotracklist b-desktop b-chrome">
+              <details class="bcd-history">
+                <summary>
+                  <span aria-hidden="true">⚑ 37</span
+                  ><span class="visually-hidden"
+                    >Supported since Chrome 37 behind a flag. Flag details for AudioTrackList in
+                    Chrome</span
+                  >
+                </summary>
+                <ul class="bcd-history-list">
+                  <li>Supported since Chrome 37 behind a flag.</li>
+                  <li>
+                    To enable it, set the preference
+                    <code>enable-experimental-web-platform-features</code> to <code>enabled</code>.
+                  </li>
+                </ul>
+              </details>
+            </td>
+            <td headers="b-row-audiotracklist b-desktop b-opera">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td headers="b-row-audiotracklist b-server b-nodejs">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th id="b-row-preview-partial" headers="b-feature" class="bcd-feature">
+              <code>preview_partial</code>
+            </th>
+            <td headers="b-row-preview-partial b-desktop b-chrome">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Chrome</span>
+            </td>
+            <td headers="b-row-preview-partial b-desktop b-opera">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td headers="b-row-preview-partial b-server b-nodejs">
+              <span aria-hidden="true">◐ 25 (preview)</span
+              ><span class="visually-hidden">Partial support in Node.js 25, a preview release</span>
+            </td>
+          </tr>
+          <tr>
+            <th id="b-row-array" headers="b-feature" class="bcd-feature"><code>Array</code></th>
+            <td headers="b-row-array b-desktop b-chrome">
+              <span aria-hidden="true">✓ 1</span
+              ><span class="visually-hidden">Supported since Chrome 1</span>
+            </td>
+            <td headers="b-row-array b-desktop b-opera">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td headers="b-row-array b-server b-nodejs">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th
+              id="b-row-from"
+              headers="b-feature b-row-array"
+              class="bcd-feature bcd-feature-depth-1"
+            >
+              <code>from</code>
+            </th>
+            <td headers="b-row-array b-row-from b-desktop b-chrome">
+              <span aria-hidden="true">✓ 45</span
+              ><span class="visually-hidden">Supported since Chrome 45</span>
+            </td>
+            <td headers="b-row-array b-row-from b-desktop b-opera">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td headers="b-row-array b-row-from b-server b-nodejs">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+          <tr>
+            <th
+              id="b-row-async-iterable"
+              headers="b-feature b-row-array b-row-from"
+              class="bcd-feature bcd-feature-depth-2"
+            >
+              <code>async_iterable</code>
+            </th>
+            <td headers="b-row-array b-row-from b-row-async-iterable b-desktop b-chrome">
+              <span aria-hidden="true">✓ 121</span
+              ><span class="visually-hidden">Supported since Chrome 121</span>
+            </td>
+            <td headers="b-row-array b-row-from b-row-async-iterable b-desktop b-opera">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Opera</span>
+            </td>
+            <td headers="b-row-array b-row-from b-row-async-iterable b-server b-nodejs">
+              <span aria-hidden="true">—</span
+              ><span class="visually-hidden">No data for Node.js</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>

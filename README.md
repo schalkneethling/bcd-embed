@@ -47,7 +47,7 @@ Each package and app has its own README with the details of its behavior.
 
 ## Automation
 
-Four GitHub Actions workflows live in `.github/workflows/`, and the scripts they
+Five GitHub Actions workflows live in `.github/workflows/`, and the scripts they
 call live in `scripts/`:
 
 - `ci.yml` runs `pnpm check`, a generation check at full BCD volume, and the
@@ -73,8 +73,13 @@ call live in `scripts/`:
   generated types and fail CI's `wrangler types --check`. The commit starts a CI
   run that someone with write access must approve once. The manual steps for
   when it fails are in [`apps/worker/README.md`](./apps/worker/README.md).
+- `screen-readers.yml` runs the web component's screen reader tests with
+  VoiceOver on macOS and Orca on Linux, on pull requests that change
+  `packages/element` or the Phase 1 markup. It is advisory, not a required check,
+  and each run records what the screen reader said. The details are in
+  [`packages/element/README.md`](./packages/element/README.md).
 
-The design behind these is in
+The design behind the freshness workflows is in
 [`docs/planning/06-phase5-freshness.md`](./docs/planning/06-phase5-freshness.md).
 
 ## Planning documents

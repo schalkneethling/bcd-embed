@@ -1,0 +1,111 @@
+name: Screen readers
+
+# Screen reader tests for the web component's markup: VoiceOver on macOS and Orca on Linux,
+# driven by Guidepup (packages/element/README.md). Advisory: not a required check, because
+# screen reader automation is less reliable than the CI job, and because the tests record what
+# each screen reader says for a person to review.
+on:
+  pull_request:
+    branches: [main]
+    paths: &screen-reader-paths
+      - "packages/element/**"
+      - "docs/planning/phase1-markup/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/screen-readers.yml"
+  push:
+    branches: [main]
+    paths: *screen-reader-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-readers-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  screen-reader:
+    # The job skips Dependabot's pull requests, which wait a long time for a macOS runner and
+    # mostly update packages that change nothing a screen reader reads. The push to main after
+    # the merge runs it, so a dependency that breaks a test is still caught there.
+    #
+    # The exceptions are updates to the tests' own tooling: GitHub Actions, and the @guidepup and
+    # @playwright packages. Dependabot puts a scoped package's name in the branch without the @,
+    # as in dependabot/npm_and_yarn/guidepup/setup-0.29.4.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.user.login != 'dependabot[bot]' ||
+      startsWith(github.head_ref, 'dependabot/github_actions/') ||
+      contains(github.head_ref, '/guidepup') ||
+      contains(github.head_ref, '/playwright/')
+    strategy:
+      # One screen reader failing says nothing about the other, so both always finish.
+      fail-fast: false
+      matrix:
+        include:
+          # macOS 26, because VoiceOver's wording and behavior change between macOS releases.
+          - reader: voiceover
+            os: macos-26
+            browser: webkit
+            run: ""
+          # Guidepup's setup supports Ubuntu 26 and later. Orca needs a display and a session
+          # bus, which the runner does not have, so the tests run inside both.
+          - reader: orca
+            os: ubuntu-26.04
+            browser: firefox
+            run: "xvfb-run dbus-run-session --"
+    name: ${{ matrix.reader }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 26.13.0
+          cache: pnpm
+
+      - name: Install the element workspace
+        run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
+
+      # Guidepup's setup tool runs with `pnpm dlx`, not as a dependency of the workspace, because
+      # only this workflow uses it: it prepares a runner and the tests never import it. Its
+      # version is pinned here.
+      #
+      # `setup` prepares the runner for screen reader automation: on macOS it lets AppleScript
+      # control VoiceOver, and on Linux it installs Orca and its tools with apt. The runner is
+      # discarded after the job. `install` reads the workspace's @guidepup/guidepup version to
+      # pick the matching screen reader assets, so it runs in the workspace's directory.
+      - name: Set up the runner for screen reader automation
+        run: pnpm dlx @guidepup/setup@0.29.3 setup --ci
+
+      - name: Install the screen reader assets
+        working-directory: packages/element
+        run: pnpm dlx @guidepup/setup@0.29.3 install ${{ matrix.reader }}
+
+      - name: Install the browser
+        run: pnpm --filter @bcd-embed/element exec playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run the screen reader tests
+        run: >-
+          ${{ matrix.run }} pnpm --filter @bcd-embed/element run test:${{ matrix.reader }}
+          --forbid-only --reporter=list,github
+
+      # Also after a pass, because the transcripts are the result a person reviews.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: screen-reader-results-${{ matrix.reader }}
+          path: packages/element/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
