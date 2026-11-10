@@ -46,45 +46,12 @@ change the date in both files together.
 
 ## Deploying
 
-`pnpm --filter @bcd-embed/worker run deploy` deploys the Worker with
-`varlock-wrangler deploy`. `varlock-wrangler` comes from
-`@varlock/cloudflare-integration` and wraps Wrangler: it resolves the Worker's
-configuration with [Varlock](https://varlock.dev), then passes every item
-marked `@sensitive` to Wrangler as a Worker secret and every other item as a
-plain variable. It also uploads one extra secret, `__VARLOCK_ENV`, which holds
-the resolved configuration for Varlock's optional runtime helper. The Worker
-does not read it.
+How to deploy the Worker, including how [Varlock](https://varlock.dev) supplies
+its configuration and what must exist in the R2 bucket first, is documented in
+[`apps/website/src/content/docs/deployment.md`](../website/src/content/docs/deployment.md).
+Run `pnpm dev:website` from the repository root to read it with its diagrams.
 
-The schema is `env/.env.schema`, and it is the only Varlock file in git. Values
-live in `env/.env.local`, which is git-ignored. To set the Sentry DSN, add the
-line `SENTRY_DSN=varlock(prompt)` to `env/.env.local` and run
-`pnpm --filter @bcd-embed/worker exec varlock load`. Varlock asks for the
-value, encrypts it for this machine, and writes the encrypted form back to the
-file. The same command prints the resolved configuration with secrets masked.
-
-Varlock's files are in `env/`, not beside `wrangler.jsonc`, because Wrangler
-reads a `.env.local` that sits next to its configuration and adds the keys to
-the types it generates. `worker-configuration.d.ts` would then differ between
-a machine that has the DSN and CI, which does not, and the typecheck would
-fail on the first. The `varlock.loadPath` setting in `package.json` points
-Varlock at `env/`.
-
-A deploy replaces the Worker's variables with the ones in the schema, because
-`varlock-wrangler` passes `--keep-vars=false`. Add a variable to the schema,
-not in the Cloudflare dashboard, or the next deploy removes it.
-
-The configured bucket name is a **deployment prerequisite**, not a resource
-created by this repository. No bucket is provisioned and no remote objects are
-uploaded by these commands, and the Worker has not been deployed. Before a
-public endpoint exists, an operator must create the bucket and publish a
-snapshot with `@bcd-embed/publisher` (see its README), which uploads the
-immutable snapshot objects and switches `v1/meta.json` last. The publisher and
-the freshness workflows in `.github/workflows/` supply the idempotent uploader,
-the atomic alias flip, pruning, and the freshness pipeline. An account-level
-rate limit, a configured and tested Sentry alert, and live deployment and
-pressure tests remain separate work. Do not deploy an empty bucket or assume
-the candidate metadata produced by the generator is already a safe remote
-publication.
+## Runtime behavior
 
 The Worker serves offline variants with `encodeBody: "manual"`; no large-body
 compression runs on requests. It restores `request.cf.clientAcceptEncoding`

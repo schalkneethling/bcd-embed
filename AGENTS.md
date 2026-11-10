@@ -9,7 +9,8 @@ are documented in `docs/planning/`.
 - Use the package manager version declared in the root `package.json`.
 - Run `pnpm check` before handing work back. It formats-checks, lints,
   type-checks, tests, and builds all implemented workspaces.
-- Use `pnpm dev` for the documentation application.
+- Use `pnpm dev` for the contract playground (`apps/docs`) and
+  `pnpm dev:website` for the documentation site (`apps/website`).
 
 ## Tooling ownership
 
@@ -31,7 +32,7 @@ Workspace-specific TypeScript files may extend the managed root configuration.
 - Treat `@bcd-embed/schema` and its fixtures as the first product dependency.
 - Do not add empty future workspaces. Add `element` when its implementation
   phase begins. The `schema`, `core`, `generator`, `server`, and `publisher`
-  packages and the `docs` and `worker` apps already exist.
+  packages and the `docs`, `website`, and `worker` apps already exist.
 - Reimplement normalization from the published BCD schema. Do not copy code
   from MDN Fred, which is MPL-2.0 licensed.
 - Treat time and space complexity as design constraints because BCD is a very
