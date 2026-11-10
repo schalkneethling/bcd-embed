@@ -137,7 +137,7 @@ failures throw `BcdNormalizationError` with the failing BCD key.
 
 Requirements:
 
-- Node.js 22.18 or newer
+- Node.js 26.13 or newer
 - pnpm 11.24.0, managed through Corepack
 
 Install dependencies and run the complete repository check:
