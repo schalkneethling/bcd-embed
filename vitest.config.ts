@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { defaultExclude, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -15,5 +15,10 @@ export default defineConfig({
         new URL("./packages/server/src/index.ts", import.meta.url),
       ),
     },
+  },
+  test: {
+    // Claude Code keeps other sessions' worktrees here. Each is a full copy of the repository,
+    // so without this their tests run too and the doubled load times out slow setup hooks.
+    exclude: [...defaultExclude, ".claude/worktrees/**"],
   },
 });
