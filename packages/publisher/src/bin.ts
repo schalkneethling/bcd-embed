@@ -5,7 +5,7 @@ import { compareOutputTrees, parseDiffApproval } from "@bcd-embed/generator";
 
 import { parsePublishCommand, usage } from "./cli.js";
 import { PublisherError, formatPublisherError } from "./errors.js";
-import { publishCandidate } from "./publish.js";
+import { publishCandidate, type PublicationProgress } from "./publish.js";
 import { createR2S3Store } from "./r2-s3.js";
 import { validateCandidate } from "./validate.js";
 
@@ -20,6 +20,14 @@ const loadApproval = async (path: string | undefined) => {
   } catch {
     throw new PublisherError("Approval file is not a valid diff approval.");
   }
+};
+
+const PROGRESS_INTERVAL = 5_000;
+
+// Progress goes to stderr so stdout stays the single JSON result line.
+const reportProgress = ({ verified, total }: PublicationProgress): void => {
+  if (verified % PROGRESS_INTERVAL !== 0 && verified !== total) return;
+  process.stderr.write(`bcd-embed-publish: ${verified} of ${total} objects verified in R2\n`);
 };
 
 const main = async (): Promise<void> => {
@@ -56,6 +64,7 @@ const main = async (): Promise<void> => {
     baselineRoot: command.baselineRoot,
     candidateRoot: command.candidateRoot,
     approval,
+    onProgress: reportProgress,
     store,
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);

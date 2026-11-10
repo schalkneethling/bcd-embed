@@ -72,17 +72,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          # Newer than the 22.18.0 of the other workflows, because Guidepup's setup tool depends
-          # on a version of undici that needs Node.js 22.19 or later.
-          node-version: 24
+          node-version: 26.13.0
           cache: pnpm
 
       - name: Install the element workspace
         run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
 
       # Guidepup's setup tool runs with `pnpm dlx`, not as a dependency of the workspace, because
-      # its Node.js requirement is higher than this repository's and `engineStrict` would then
-      # fail every install on Node.js 22.18. Its version is pinned here.
+      # only this workflow uses it: it prepares a runner and the tests never import it. Its
+      # version is pinned here.
       #
       # `setup` prepares the runner for screen reader automation: on macOS it lets AppleScript
       # control VoiceOver, and on Linux it installs Orca and its tools with apt. The runner is

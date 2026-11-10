@@ -28,8 +28,8 @@ in `packages/element`, install the assets with `pnpm dlx @guidepup/setup@0.29.3 
 browser with `pnpm exec playwright install webkit` (or `firefox` on Linux). On Linux, run the
 tests inside `xvfb-run dbus-run-session --`.
 
-The setup tool is not a dependency of this workspace, because it needs Node.js 22.19 or later
-and the repository supports 22.18. Running it with `pnpm dlx` therefore needs the newer Node.js.
+The setup tool is not a dependency of this workspace, because it only prepares a machine and
+the tests never import it. Running it with `pnpm dlx` keeps its version pinned in one command.
 
 `@guidepup/guidepup` is pinned to 0.38.0, the version `@guidepup/playwright` 0.21.0 was built
 against. Version 0.40.0 groups the Orca commands by service, and `@guidepup/playwright` 0.21.0
