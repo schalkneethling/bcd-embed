@@ -178,21 +178,30 @@ latency and not by processing power. The number of objects handled at the same
 time is `UPLOAD_CONCURRENCY` in
 [`packages/publisher/src/concurrency.ts`](https://github.com/schalkneethling/bcd-embed/blob/main/packages/publisher/src/concurrency.ts).
 
-| Objects at a time | Measured or estimated        | Objects per minute | Time for 125,600 objects |
-| ----------------- | ---------------------------- | ------------------ | ------------------------ |
-| 4                 | Measured on 10 November 2026 | about 207          | about 10 hours           |
-| 32                | Estimated from that figure   | about 1,650        | about 75 minutes         |
+| Objects at a time | What the run did                      | Objects per minute | Time for 125,640 objects |
+| ----------------- | ------------------------------------- | ------------------ | ------------------------ |
+| 4                 | Uploaded new objects (measured)       | about 230          | about 9 hours            |
+| 32                | Re-verified stored objects (measured) | about 3,850        | about 33 minutes         |
+| 32                | Uploads new objects (estimated)       | about 1,840        | about 70 minutes         |
 
-The first live publication ran with four at a time and was cancelled by the
-publish job's six-hour limit after 73,770 objects. The value was raised to 32
-for that reason. The estimate assumes throughput scales with the number of
-parallel requests; replace it with a measured figure after the next full run.
+Both measurements are from 10 November 2026. The first live publication ran
+with four at a time and was cancelled by the publish job's six-hour limit after
+about 81,300 objects, the figure Cloudflare's write metrics recorded. The value
+was raised to 32 for that reason. The estimate in the last row assumes that
+uploading new objects scales with the number of parallel requests, and it has
+not been measured.
+
+The second run, with 32 at a time, re-verified about 60,000 stored objects in
+19 minutes and then failed when a request passed the publisher's 60-second
+deadline. No complete publication has finished with this flow.
+[Document 8](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/08-incremental-publication.md)
+records the diagnosis and proposes a design that uploads only what changed.
 
 While it uploads, the publisher prints a line to the job log every 5,000
 objects:
 
 ```
-bcd-embed-publish: 35000 of 125598 objects verified in R2
+bcd-embed-publish: 35000 of 125640 objects verified in R2
 ```
 
 ## Running a publication
