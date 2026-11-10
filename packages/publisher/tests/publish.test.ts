@@ -497,6 +497,7 @@ describe("publication state machine", () => {
     expect(store.objects.has("v1/meta.json")).toBe(false);
     expect(store.puts.length).toBeGreaterThan(0);
     store.failAfter = undefined;
+    const progress: { verified: number; total: number }[] = [];
     await expect(
       publishCandidate({
         baselineRoot,
@@ -504,8 +505,14 @@ describe("publication state machine", () => {
         approval,
         store,
         clock: () => new Date("2026-01-02"),
+        onProgress: (step) => progress.push(step),
       }),
     ).resolves.toMatchObject({ type: "published" });
+    // A resumed run verifies every object again, including those stored before the failure.
+    const total = progress[0]!.total;
+    expect(progress.map((step) => step.verified)).toEqual(
+      Array.from({ length: total }, (_, index) => index + 1),
+    );
   });
 
   it("names a stale approval instead of reporting an unknown error", async () => {

@@ -335,11 +335,16 @@ export const pruneRetiredSnapshots = async (
   return pruned;
 };
 
+/** How many of the snapshot's immutable objects are stored and verified in R2 so far. */
+export type PublicationProgress = { verified: number; total: number };
+
 export type PublishOptions = {
   approval?: DiffApproval;
   baselineRoot: string;
   candidateRoot: string;
   clock?: PublicationClock;
+  /** Called after each immutable object is stored and read back. Must not throw. */
+  onProgress?: (progress: PublicationProgress) => void;
   store: PublicationStore;
 };
 
@@ -359,6 +364,7 @@ export const publishCandidate = async ({
   baselineRoot,
   candidateRoot,
   clock = wallClock,
+  onProgress,
   store,
 }: PublishOptions): Promise<PublishResult> => {
   const now = readClock(clock);
@@ -424,17 +430,21 @@ export const publishCandidate = async ({
   });
 
   const immutable = candidate.manifest.artifacts.filter((item) => item.logicalPath !== META_KEY);
-  await runBounded(immutable, async (item) => {
-    await putAndVerify(store, {
-      key: item.path,
-      body: createReadStream(join(candidate.root, item.path)),
-      size: item.size,
-      sha256: item.sha256,
-      contentType: "application/json; charset=utf-8",
-      contentEncoding: item.encoding === "identity" ? undefined : item.encoding,
-      ifNoneMatch: true,
-    });
-  });
+  await runBounded(
+    immutable,
+    async (item) => {
+      await putAndVerify(store, {
+        key: item.path,
+        body: createReadStream(join(candidate.root, item.path)),
+        size: item.size,
+        sha256: item.sha256,
+        contentType: "application/json; charset=utf-8",
+        contentEncoding: item.encoding === "identity" ? undefined : item.encoding,
+        ifNoneMatch: true,
+      });
+    },
+    onProgress && ((verified) => onProgress({ verified, total: immutable.length })),
+  );
 
   await uploadCandidateControls(store, candidate);
 
