@@ -4,6 +4,7 @@ export {
   pruneRetiredSnapshots,
   readPublicationReservation,
   type PublicationClock,
+  type PublicationProgress,
   type PublicationReservation,
   type PublishOptions,
   type PublishResult,
