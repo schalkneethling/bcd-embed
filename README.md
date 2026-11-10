@@ -60,7 +60,8 @@ call live in `scripts/`:
   dispatch. It validates `main` and preserves a candidate artifact tree.
   Publishing to R2 only happens on a manual dispatch with `publish` set, behind a
   protected environment and an exact-hash approval, so no automatic publication
-  is configured.
+  is configured. [How publication works](./docs/publication.md) explains what
+  is uploaded and how to run it.
 - `dependabot-worker-types.yml` regenerates
   `apps/worker/worker-configuration.d.ts` on Dependabot pull requests and commits
   it to the pull request's branch, because a Wrangler update can change the
