@@ -1,0 +1,27 @@
+/*
+ * astro-mermaid centers each diagram with `justify-content: center`. When a
+ * diagram is wider than the page, centering pushes its left edge out of reach
+ * of the scrollbar. Auto margins center a diagram that fits and leave a wide
+ * one aligned to the start, so all of it can be scrolled into view.
+ *
+ * The `main` prefix is there for specificity only: astro-mermaid injects its
+ * own `pre.mermaid` rule after this stylesheet, and an equal selector would
+ * lose to it.
+ */
+main pre.mermaid {
+  justify-content: flex-start;
+}
+
+main pre.mermaid > svg {
+  flex-shrink: 0;
+  margin-inline: auto;
+}
+
+/*
+ * Starlight limits every image to the width of the text column. A sequence
+ * diagram is exempt, because shrinking it makes its labels too small to read;
+ * it scrolls sideways inside its own box instead.
+ */
+main pre.mermaid > svg[aria-roledescription="sequence"] {
+  max-width: none;
+}

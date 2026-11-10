@@ -33,7 +33,12 @@ workspaces are:
 - `apps/worker` — `@bcd-embed/worker`, the Cloudflare Worker that runs the
   server handler against an R2 bucket binding and adds edge caching and error
   reporting. It is tested locally and has not been deployed.
-- `apps/docs` — the documentation, examples, and playground application.
+- `apps/docs` — `@bcd-embed/docs`, the playground that validates a response
+  against the contract.
+- `apps/website` — `@bcd-embed/website`, the documentation site, built with
+  [Starlight](https://starlight.astro.build). Its pages are the Markdown files
+  in `apps/website/src/content/docs`. It is configured for Cloudflare hosting
+  and has not been deployed.
 
 The `element` package, the web component, will be added when its implementation
 phase begins.
@@ -60,7 +65,7 @@ call live in `scripts/`:
   dispatch. It validates `main` and preserves a candidate artifact tree.
   Publishing to R2 only happens on a manual dispatch with `publish` set, behind a
   protected environment and an exact-hash approval, so no automatic publication
-  is configured. [How publication works](./docs/publication.md) explains what
+  is configured. [How publication works](./apps/website/src/content/docs/publication.md) explains what
   is uploaded and how to run it.
 - `dependabot-worker-types.yml` regenerates
   `apps/worker/worker-configuration.d.ts` on Dependabot pull requests and commits
@@ -152,6 +157,7 @@ Useful commands:
 
 ```sh
 pnpm dev              # Run the contract playground
+pnpm dev:website      # Run the documentation site
 pnpm fixtures:report  # Summarize the v1 golden fixture corpus
 pnpm format           # Format the repository
 pnpm lint             # Run JavaScript/TypeScript and CSS linting
@@ -183,7 +189,8 @@ pnpm dlx create-project-calavera apply --dry-run
 pnpm dlx create-project-calavera apply
 ```
 
-Package and application builds use Vite; tests use Vitest.
+Package and application builds use Vite; tests use Vitest. The documentation
+site builds with Astro.
 
 ## License
 

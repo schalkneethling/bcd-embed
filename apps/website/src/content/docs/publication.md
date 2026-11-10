@@ -1,4 +1,7 @@
-# How publication works
+---
+title: How publication works
+description: What a snapshot holds, how it reaches the R2 bucket, why an interrupted upload is safe, and how to run a publication.
+---
 
 Publication copies one generated snapshot of browser-compat-data (BCD) into the
 R2 bucket that the API reads from. This page explains what is in a snapshot,
@@ -6,10 +9,12 @@ how it reaches the bucket, why an interrupted upload is safe, and how to run a
 publication.
 
 The command-line tool that does the copying is the publisher, the
-`@bcd-embed/publisher` package in [`packages/publisher`](../packages/publisher).
-Its command grammar and limits are in its
-[README](../packages/publisher/README.md). The design reasoning is in
-[`planning/06-phase5-freshness.md`](./planning/06-phase5-freshness.md).
+`@bcd-embed/publisher` package in
+[`packages/publisher`](https://github.com/schalkneethling/bcd-embed/tree/main/packages/publisher). Its command
+grammar and limits are in its [README](https://github.com/schalkneethling/bcd-embed/blob/main/packages/publisher/README.md). The
+design reasoning is in
+[`06-phase5-freshness.md`](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/06-phase5-freshness.md). For where
+publication sits in the whole pipeline, see [How bcd-embed works](/).
 
 ## What a snapshot holds
 
@@ -20,12 +25,12 @@ release.
 
 The generator (`@bcd-embed/generator`) writes four kinds of file:
 
-| Folder      | What one file holds                                                 | Files per snapshot |
-| ----------- | ------------------------------------------------------------------- | ------------------ |
-| `features/` | The normalized support answer for one BCD feature                   | One per feature    |
-| `raw/`      | The untouched BCD entry for the same feature                        | One per feature    |
-| `index/`    | Lists of feature keys: one for everything and one per BCD namespace | A few              |
-| `browsers/` | Browser names and release data                                      | A few              |
+| Path                   | What one file holds                               | Files per snapshot              |
+| ---------------------- | ------------------------------------------------- | ------------------------------- |
+| `features/`            | The normalized support answer for one BCD feature | One per feature                 |
+| `raw/`                 | The untouched BCD entry for the same feature      | One per feature                 |
+| `index.json`, `index/` | Lists of feature keys                             | One, plus one per BCD namespace |
+| `browsers.json`        | Browser names and release data                    | One                             |
 
 Each file is stored three times: plain, gzip-compressed (`.gz`) and
 Brotli-compressed (`.br`). The Worker returns whichever one the browser
@@ -41,17 +46,21 @@ That multiplication is why a snapshot is large. BCD 8.1.8 has 20,933 features:
 
 ```
 v1/
-├─ meta.json                  the only file that ever changes; names the current snapshot
-├─ _meta/                     compressed copies of meta.json, named by content hash
+├─ meta.json               the only file that ever changes; names the current snapshot
+├─ _meta/                  compressed copies of meta.json, named by content hash
 ├─ _publication/
-│  └─ <snapshot>.json         the reservation: this snapshot's digest and timestamps
+│  └─ <snapshot>.json      the reservation: this snapshot's digest and timestamps
 ├─ _candidates/
-│  └─ <snapshot>/             private copy of the manifest, used to restore a baseline
-└─ <snapshot>/                for example bcd-8.1.8-gen-0.0.0
-   ├─ browsers/
+│  └─ <snapshot>/          private copy of the manifest, used to restore a baseline
+└─ <snapshot>/             for example bcd-8.1.8-gen-0.0.0
+   ├─ browsers.json        browser names and release data
+   ├─ index.json           every feature key
    ├─ index/
+   │  └─ <namespace>.json  the feature keys of one BCD namespace, for example css
    ├─ features/
+   │  └─ <key>.json        for example css.properties.grid.json
    └─ raw/
+      └─ <key>.json        the untouched BCD entry for the same key
 ```
 
 Everything except `v1/meta.json` is immutable: once an object is written, the
@@ -97,6 +106,11 @@ The publisher treats every object the same way: write it, then read it back and
 compare the bytes. It moves on only when the read matches.
 
 ```mermaid
+---
+config:
+  sequence:
+    actorMargin: 100
+---
 sequenceDiagram
     participant P as Publisher
     participant R as R2 bucket
@@ -162,7 +176,7 @@ case the approval no longer matches, and the publication needs a new review.
 Each object costs two requests in sequence, so the upload is limited by request
 latency and not by processing power. The number of objects handled at the same
 time is `UPLOAD_CONCURRENCY` in
-[`packages/publisher/src/concurrency.ts`](../packages/publisher/src/concurrency.ts).
+[`packages/publisher/src/concurrency.ts`](https://github.com/schalkneethling/bcd-embed/blob/main/packages/publisher/src/concurrency.ts).
 
 | Objects at a time | Measured or estimated        | Objects per minute | Time for 125,600 objects |
 | ----------------- | ---------------------------- | ------------------ | ------------------------ |
@@ -184,7 +198,7 @@ bcd-embed-publish: 35000 of 125598 objects verified in R2
 ## Running a publication
 
 Publication is manual. It runs in the `publish` job of
-[`freshness-backstop.yml`](../.github/workflows/freshness-backstop.yml), which
+[`freshness-backstop.yml`](https://github.com/schalkneethling/bcd-embed/blob/main/.github/workflows/freshness-backstop.yml), which
 uses the `bcd-embed-production` environment and only runs from `main`.
 
 Every publication through the workflow needs an approval, including one the

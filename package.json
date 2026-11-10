@@ -9,6 +9,7 @@
     "build": "pnpm --recursive --if-present run build",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && node scripts/freshness-integration-check.mjs",
     "dev": "pnpm --filter @bcd-embed/docs dev",
+    "dev:website": "pnpm --filter @bcd-embed/website dev",
     "fixtures:report": "pnpm --filter @bcd-embed/schema fixtures:report",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
