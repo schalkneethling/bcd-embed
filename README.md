@@ -102,6 +102,9 @@ The validation records for the finished phases are:
   semantic output-diff gate.
 - [`06-phase5-freshness.md`](./docs/planning/06-phase5-freshness.md) — freshness
   workflows, publication checkpoint, and observability.
+- [`08-incremental-publication.md`](./docs/planning/08-incremental-publication.md)
+  — proposal to store each file once by content hash, so a BCD release uploads
+  only what changed.
 
 ## Contract package
 
