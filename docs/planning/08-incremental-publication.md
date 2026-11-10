@@ -20,8 +20,9 @@ API, which makes this the cheapest moment to change the contract.
 ### What the first live publication showed
 
 The first publication was attempted twice on 10 November 2026, and neither run
-finished. [`docs/publication.md`](../publication.md) describes the flow those
-runs followed.
+finished. The documentation site's page
+[How publication works](../../apps/website/src/content/docs/publication.md) describes the flow
+those runs followed.
 
 | Run                                                                                | What happened                                                                                                 |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -335,5 +336,6 @@ publisher should log its connection pool's state so a recurrence is visible.
    left. Deletes are free; listing them costs about 82 Class A operations.
 7. **Publish and deploy.** Run the first publication, deploy the Worker, and
    run the live endpoint verifier.
-8. **Documentation.** Rewrite [`docs/publication.md`](../publication.md) and
-   the package READMEs for the new flow.
+8. **Documentation.** Rewrite the documentation site's page
+   [How publication works](../../apps/website/src/content/docs/publication.md), which describes
+   the flow this proposal replaces, and update the package READMEs.
