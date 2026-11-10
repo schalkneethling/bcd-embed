@@ -38,8 +38,6 @@ const statement = {
 
 const featureResponse = {
   contract: CONTRACT_VERSION,
-  generated: "2026-08-28T12:00:00Z",
-  source,
   query: "css.properties.display",
   browsers: {
     chrome: { name: "Chrome", type: "desktop", previewName: "Canary" },
@@ -108,8 +106,6 @@ const cases = [
     zodSchema: browsersResponseSchema,
     value: {
       contract: CONTRACT_VERSION,
-      generated: "2026-08-28T12:00:00Z",
-      source,
       browsers: {
         nodejs: {
           name: "Node.js",
@@ -125,8 +121,6 @@ const cases = [
     zodSchema: indexResponseSchema,
     value: {
       contract: CONTRACT_VERSION,
-      generated: "2026-08-28T12:00:00Z",
-      source,
       namespace: "css",
       keys: ["css.properties.display"],
     },

@@ -136,6 +136,10 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
     expect(response.headers.get("etag")).toMatch(/^"[^"\r\n]+"$/);
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(response.headers.get("access-control-expose-headers")).toContain("etag");
+    // The body no longer names its release, so the headers must survive the real Worker runtime.
+    expect(response.headers.get("bcd-embed-snapshot")).toBe(generated.snapshot.id);
+    expect(response.headers.get("bcd-embed-generated")).toBe(generated.snapshot.generated);
+    expect(response.headers.get("bcd-embed-source-version")).toBe(bcd.__meta.version);
     expect(response.headers.get("cache-control")).toContain("max-age=86400");
     const body = featureResponseSchema.parse(await response.json());
     expect(body.query).toBe("javascript.builtins.Array");

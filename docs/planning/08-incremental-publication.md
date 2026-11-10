@@ -367,7 +367,8 @@ changes in a release at any practical count, so fewer shards would save at most
 a few hundred writes while making every request read a larger file.
 
 **Header names.** `bcd-embed-generated`, `bcd-embed-source-version` and
-`bcd-embed-snapshot` are proposals.
+`bcd-embed-snapshot` are now part of contract 1.0.0 (Document 1 §7) and are
+exported from `@bcd-embed/schema` as `RELEASE_HEADERS`.
 
 **The stuck-connection diagnosis is unproven against R2.** This design avoids
 the pattern by sending buffers and by making refused writes rare, and the
@@ -380,16 +381,19 @@ publisher should log its connection pool's state so a recurrence is visible.
    removed, and count identical files and changed shards. This is a script and
    a table; it changes no behavior. Stop and revisit the design if fewer than
    90% of files are identical.
-2. **Contract.** Remove `generated` and `source` from response bodies in
+2. **Contract.** Done. Remove `generated` and `source` from response bodies in
    `@bcd-embed/schema` and its fixtures, and add the three headers to Document
-   1.
+   1. The server already sends the headers, taken from the snapshot's entry in
+   `meta.json`, so the contract and the implementation did not disagree in
+   between. That part of step 5 is therefore complete.
 3. **Generator.** Emit blobs, shards and a root. Document the Big O behavior of
    building the pointer tree, which is one pass over the artifacts.
 4. **Publisher.** Compare pointers, upload missing blobs from buffers with
    retries, report operation counts, and replace folder deletion with the
    cleanup described above.
-5. **Server and Worker.** Resolve requests through the root and shards, add the
-   headers, cache the immutable lookups, and repeat the latency checks.
+5. **Server and Worker.** Resolve requests through the root and shards, cache
+   the immutable lookups, and repeat the latency checks. The headers were added
+   in step 2.
 6. **Clean the bucket.** Delete the roughly 81,000 objects the abandoned upload
    left. Deletes are free; listing them costs about 82 Class A operations.
 7. **Publish and deploy.** Run the first publication, deploy the Worker, and

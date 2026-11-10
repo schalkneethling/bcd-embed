@@ -118,15 +118,8 @@ const validateIdentityInventory = async (
     return JSON.parse((await boundedFile(join(root, path), maximum)).toString("utf8"));
   };
   const current = meta.snapshots[0]!;
-  const envelopeMatches = (value: {
-    contract: string;
-    generated: string;
-    source: { package: string; version: string };
-  }): boolean =>
-    value.contract === meta.contract &&
-    value.generated === current.generated &&
-    value.source.package === current.source.package &&
-    value.source.version === current.source.version;
+  const envelopeMatches = (value: { contract: string }): boolean =>
+    value.contract === meta.contract;
   const browsersPath = `${prefix}browsers.json`;
   const indexPath = `${prefix}index.json`;
   const browsers = browsersResponseSchema.parse(await readIdentity(browsersPath));

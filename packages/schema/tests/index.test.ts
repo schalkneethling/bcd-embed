@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   CONTRACT_VERSION,
+  RELEASE_HEADERS,
   apiErrorResponseSchema,
   browsersResponseSchema,
   featureKeySchema,
   featureResponseSchema,
+  generatedTimestampSchema,
   indexResponseSchema,
   metaResponseSchema,
   supportBranchSchema,
@@ -56,8 +58,6 @@ const summary = {
 
 const featureResponse = {
   contract: CONTRACT_VERSION,
-  generated: "2026-08-28T12:00:00Z",
-  source,
   query: "css.properties.display",
   browsers: {
     chrome: {
@@ -145,8 +145,6 @@ describe("contract package", () => {
     expect(
       browsersResponseSchema.parse({
         contract: CONTRACT_VERSION,
-        generated: "2026-08-28T12:00:00Z",
-        source,
         browsers: {
           nodejs: {
             name: "Node.js",
@@ -167,8 +165,6 @@ describe("contract package", () => {
     expect(
       indexResponseSchema.parse({
         contract: CONTRACT_VERSION,
-        generated: "2026-08-28T12:00:00Z",
-        source,
         namespace: "css",
         keys: ["css.properties.display"],
       }).namespace,
@@ -223,6 +219,20 @@ describe("strict validation", () => {
     ).toBeNull();
   });
 
+  it("rejects the release fields that moved to response headers", () => {
+    // A body that named its release would differ between snapshots even when its data did not.
+    expect(
+      featureResponseSchema.safeParse({ ...featureResponse, generated: "2026-08-28T12:00:00Z" })
+        .success,
+    ).toBe(false);
+    expect(featureResponseSchema.safeParse({ ...featureResponse, source }).success).toBe(false);
+    expect(Object.values(RELEASE_HEADERS)).toEqual([
+      "bcd-embed-snapshot",
+      "bcd-embed-generated",
+      "bcd-embed-source-version",
+    ]);
+  });
+
   it("rejects unknown states, invalid keys, dates, and timestamps", () => {
     expect(supportStateSchema.safeParse("flagged").success).toBe(false);
     expect(
@@ -231,12 +241,7 @@ describe("strict validation", () => {
         query: "css/properties/display",
       }).success,
     ).toBe(false);
-    expect(
-      featureResponseSchema.safeParse({
-        ...featureResponse,
-        generated: "28 August 2026",
-      }).success,
-    ).toBe(false);
+    expect(generatedTimestampSchema.safeParse("28 August 2026").success).toBe(false);
     expect(
       featureResponseSchema.safeParse({
         ...featureResponse,

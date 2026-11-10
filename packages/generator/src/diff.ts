@@ -13,7 +13,6 @@ import {
   metaResponseSchema,
   namespaceSchema,
   type IndexResponse,
-  type MetaResponse,
   type ArtifactManifest,
 } from "@bcd-embed/schema";
 
@@ -121,26 +120,25 @@ const updateCanonical = (hash: Hash, value: unknown): void => {
   hash.update(json);
 };
 
+/**
+ * Replace the fields that name a release, so two snapshots with the same data hash the same.
+ * Only metadata has such fields: every other body is already identical when its data is.
+ */
 const normalizeProvenance = (kind: ArtifactKind, value: unknown): unknown => {
-  if (kind === "raw") return value;
+  if (kind !== "meta") return value;
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Artifact envelope must be an object.");
   }
   const copy = structuredClone(value) as Record<string, unknown>;
   copy.generated = "<generated>";
-  if (kind === "meta") {
-    copy.current = "<snapshot-id>";
-    const snapshots = copy.snapshots as Array<Record<string, unknown>>;
-    for (const snapshot of snapshots) {
-      snapshot.id = "<snapshot-id>";
-      snapshot.generatorVersion = "<generator-version>";
-      snapshot.generated = "<generated>";
-      snapshot.expires = "<expires>";
-      (snapshot.source as Record<string, unknown>).version = "<source-version>";
-    }
-  } else {
-    const source = copy.source as Record<string, unknown>;
-    source.version = "<source-version>";
+  copy.current = "<snapshot-id>";
+  const snapshots = copy.snapshots as Array<Record<string, unknown>>;
+  for (const snapshot of snapshots) {
+    snapshot.id = "<snapshot-id>";
+    snapshot.generatorVersion = "<generator-version>";
+    snapshot.generated = "<generated>";
+    snapshot.expires = "<expires>";
+    (snapshot.source as Record<string, unknown>).version = "<source-version>";
   }
   return copy;
 };
@@ -166,20 +164,9 @@ const parseArtifact = <T>(
   }
 };
 
-const assertEnvelope = (
-  value: { contract: string; generated: string; source: { package: string; version: string } },
-  meta: MetaResponse,
-  path: string,
-): void => {
-  const snapshot = meta.snapshots.find(({ id }) => id === meta.current);
-  if (
-    snapshot === undefined ||
-    value.contract !== CONTRACT_VERSION ||
-    value.generated !== meta.generated ||
-    value.source.package !== snapshot.source.package ||
-    value.source.version !== snapshot.source.version
-  ) {
-    throw new Error(`Inconsistent contract/provenance envelope in '${path}'.`);
+const assertEnvelope = (value: { contract: string }, path: string): void => {
+  if (value.contract !== CONTRACT_VERSION) {
+    throw new Error(`Unexpected contract version in '${path}'.`);
   }
 };
 
@@ -364,7 +351,7 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
     switch (identity.kind) {
       case "feature": {
         const response = parseArtifact(featureResponseSchema, value, artifact.relativePath);
-        assertEnvelope(response, meta, artifact.relativePath);
+        assertEnvelope(response, artifact.relativePath);
         if (response.query !== identity.key)
           throw new Error(`Query does not match '${artifact.relativePath}'.`);
         const digest = hashSemantic("feature", response);
@@ -384,7 +371,7 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
       }
       case "browsers": {
         const response = parseArtifact(browsersResponseSchema, value, artifact.relativePath);
-        assertEnvelope(response, meta, artifact.relativePath);
+        assertEnvelope(response, artifact.relativePath);
         const digest = hashSemantic("browsers", response);
         browsersDigest = digest;
         break;
@@ -395,7 +382,7 @@ const loadTree = async (path: string): Promise<SnapshotTree> => {
           value,
           artifact.relativePath,
         );
-        assertEnvelope(response, meta, artifact.relativePath);
+        assertEnvelope(response, artifact.relativePath);
         const expectedNamespace = identity.namespace === "*" ? null : identity.namespace;
         if (response.namespace !== expectedNamespace) {
           throw new Error(`Namespace does not match '${artifact.relativePath}'.`);

@@ -83,12 +83,7 @@ const assertArtifactPath = (artifact: GeneratedArtifact, snapshotId: string): vo
 
 const hasExpectedEnvelope = (
   artifact: Exclude<GeneratedArtifact, { kind: "raw" } | { kind: "meta" }>,
-  snapshot: Snapshot,
-): boolean =>
-  artifact.data.contract === CONTRACT_VERSION &&
-  artifact.data.generated === snapshot.generated &&
-  artifact.data.source.package === snapshot.source.package &&
-  artifact.data.source.version === snapshot.source.version;
+): boolean => artifact.data.contract === CONTRACT_VERSION;
 
 const hasExpectedSnapshot = (candidate: Snapshot, snapshot: Snapshot): boolean =>
   candidate.id === snapshot.id &&
@@ -119,7 +114,7 @@ const assertArtifactIdentity = (
     }
     return;
   }
-  if (!hasExpectedEnvelope(artifact, snapshot)) {
+  if (!hasExpectedEnvelope(artifact)) {
     throw new Error(`Artifact '${artifact.path}' has an unexpected contract envelope.`);
   }
   if (artifact.kind === "feature") {

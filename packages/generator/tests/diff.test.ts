@@ -153,17 +153,8 @@ const rewriteProvenance = async (
     snapshot.generated = next.generated;
     snapshot.source.version = next.version;
   }
+  // Only metadata names the release, so no other file needs rewriting.
   await writeFile(metaPath, `${JSON.stringify(meta)}\n`);
-  for (const path of await walkJsonFiles(join(root, "v1", newId))) {
-    if (!path.endsWith(".json") || path.includes("/raw/")) continue;
-    const value = JSON.parse(await readFile(path, "utf8")) as {
-      generated: string;
-      source: { version: string };
-    };
-    value.generated = next.generated;
-    value.source.version = next.version;
-    await writeFile(path, `${JSON.stringify(value)}\n`);
-  }
   await refreshRepresentations(root, newId);
 };
 
@@ -188,7 +179,7 @@ describe("compareOutputTrees", () => {
     ).toThrow("Approval must contain");
   });
 
-  it("normalizes generated/source version provenance but preserves data", async () => {
+  it("normalizes the release named in metadata but preserves data", async () => {
     const baseline = await output();
     const candidate = await output();
     const baselineId = await emit(baseline, "2026-09-01T00:00:00Z");

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { brotliCompressSync, brotliDecompressSync, gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { apiErrorResponseSchema, type MetaResponse } from "@bcd-embed/schema";
+import { apiErrorResponseSchema, RELEASE_HEADERS, type MetaResponse } from "@bcd-embed/schema";
 import {
   createArtifactHandler,
   MAX_METADATA_BYTES,
@@ -12,20 +12,17 @@ import {
 
 const snapshot = "bcd-8.1.3-gen-0.0.0";
 const older = "bcd-8.0.13-gen-0.0.0";
-const envelope = {
-  contract: "1.0.0",
-  generated: "2026-09-30T10:00:00Z",
-  source: { package: "@mdn/browser-compat-data", version: "8.1.3" },
-};
+const envelope = { contract: "1.0.0" };
+const generated = "2026-09-30T10:00:00Z";
 const metadata: MetaResponse = {
   contract: "1.0.0",
-  generated: envelope.generated,
+  generated,
   current: snapshot,
   snapshots: [snapshot, older].map((id) => ({
     id,
     source: { package: "@mdn/browser-compat-data", version: id === snapshot ? "8.1.3" : "8.0.13" },
     generatorVersion: "0.0.0",
-    generated: envelope.generated,
+    generated,
     expires: "2026-09-01",
   })),
   namespaces: ["css"],
@@ -45,7 +42,6 @@ function setup(extra: Record<string, unknown> = {}) {
     },
     [`v1/${older}/index/legacy.json`]: {
       ...envelope,
-      source: { ...envelope.source, version: "8.0.13" },
       namespace: "legacy",
       keys: ["legacy.group.feature"],
     },
@@ -294,12 +290,6 @@ describe("artifact routing", () => {
 
   it.each([
     { ...envelope, namespace: "api", keys: ["css.properties.display"] },
-    {
-      ...envelope,
-      source: { ...envelope.source, version: "9.0.0" },
-      namespace: "css",
-      keys: ["css.properties.display"],
-    },
     { ...envelope, namespace: "css", keys: [] },
   ])("does not classify misses using corrupt shards", async (shard) => {
     const { handler } = setup({ [`v1/${snapshot}/index/css.json`]: shard });
@@ -455,9 +445,48 @@ describe("HTTP transport", () => {
     const response = await handler(request("/v1/current/features/css..bad.json"));
     expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
-    expect(response.headers.get("access-control-expose-headers")).toBe("etag, retry-after");
+    expect(response.headers.get("access-control-expose-headers")).toBe(
+      "etag, retry-after, bcd-embed-snapshot, bcd-embed-generated, bcd-embed-source-version",
+    );
     expect(response.headers.get("etag")).toMatch(/^"[a-f0-9]{64}"$/);
     expect(response.headers.get("cache-control")).toBe("max-age=3600");
+  });
+
+  it.each([
+    ["current", snapshot, "8.1.3"],
+    [older, older, "8.0.13"],
+  ])("names the release of a /v1/%s response in headers", async (selector, id, version) => {
+    const path = `/v1/${selector}/browsers.json`;
+    const { handler } = setup({
+      [`v1/${id}/browsers.json`]: { ...envelope, browsers: {} },
+    });
+    const expected = {
+      "bcd-embed-snapshot": id,
+      "bcd-embed-generated": generated,
+      "bcd-embed-source-version": version,
+    };
+    const responses = [
+      await handler(request(path)),
+      await handler(request(path, { method: "HEAD" })),
+      // A revalidation needs them too: a 304 has no body to fall back on.
+      await handler(request(path, { headers: { "if-none-match": '"artifact"' } })),
+    ];
+    expect(responses.map(({ status }) => status)).toEqual([200, 200, 304]);
+    for (const response of responses) {
+      for (const [name, value] of Object.entries(expected)) {
+        expect(response.headers.get(name)).toBe(value);
+      }
+    }
+  });
+
+  it("leaves the release headers off metadata and errors, which belong to no one snapshot", async () => {
+    const { handler } = setup();
+    for (const path of ["/v1/meta.json", "/v1/current/features/css.unknown.json"]) {
+      const response = await handler(request(path));
+      for (const name of Object.values(RELEASE_HEADERS)) {
+        expect(response.headers.get(name)).toBeNull();
+      }
+    }
   });
 
   it("OPTIONS is bodyless and read-free; POST is 405 and read-free", async () => {

@@ -27,7 +27,7 @@ const snapshot = snapshotSchema.parse({
   generated,
   expires: "2026-12-26",
 });
-const envelope = { contract: CONTRACT_VERSION, generated, source: snapshot.source };
+const envelope = { contract: CONTRACT_VERSION };
 
 const fixtureArtifacts = ({ metaGenerated = generated } = {}): GeneratedArtifact[] => [
   {
