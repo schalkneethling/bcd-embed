@@ -20,8 +20,6 @@ export const sampleDocuments: Record<ContractKind, unknown> = {
   "feature-response": v1NormalizedFixture,
   "browsers-response": {
     contract: CONTRACT_VERSION,
-    generated,
-    source,
     browsers: {
       nodejs: {
         name: "Node.js",
@@ -33,8 +31,6 @@ export const sampleDocuments: Record<ContractKind, unknown> = {
   },
   "index-response": {
     contract: CONTRACT_VERSION,
-    generated,
-    source,
     namespace: "css",
     keys: ["css.properties.display"],
   },

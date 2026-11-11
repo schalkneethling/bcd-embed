@@ -4,6 +4,19 @@ import { z } from "zod";
 export const CONTRACT_VERSION = "1.0.0" as const;
 
 export const contractVersionSchema = z.literal(CONTRACT_VERSION);
+
+/**
+ * Response headers that say which release a snapshot response came from. They are headers and
+ * not body fields so that a body's bytes, and therefore its ETag, change only with its data.
+ */
+export const RELEASE_HEADERS = {
+  /** The snapshot's identifier, such as `bcd-8.1.8-gen-0.0.0`. */
+  snapshot: "bcd-embed-snapshot",
+  /** When the snapshot was generated, as an ISO 8601 UTC timestamp. */
+  generated: "bcd-embed-generated",
+  /** The `@mdn/browser-compat-data` version the snapshot was generated from. */
+  sourceVersion: "bcd-embed-source-version",
+} as const;
 export type ContractVersion = z.infer<typeof contractVersionSchema>;
 
 export const generatedTimestampSchema = z.iso.datetime();
@@ -407,10 +420,11 @@ export const featureSchema = z.strictObject({
 });
 export type Feature = z.infer<typeof featureSchema>;
 
+// A body carries nothing that changes from one release to the next unless its data changed, so
+// identical data has identical bytes across snapshots. The generation time and BCD version are
+// response headers, and `meta.json` lists them for every retained snapshot.
 const normalizedResponseEnvelope = {
   contract: contractVersionSchema,
-  generated: generatedTimestampSchema,
-  source: sourceSchema,
 };
 
 export const featureResponseSchema = z

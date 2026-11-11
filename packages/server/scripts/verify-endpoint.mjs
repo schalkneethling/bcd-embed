@@ -15,6 +15,13 @@ const PROBE_ORIGIN = "https://bcd-embed-verification.invalid";
 const FEATURE_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._$@-]*$/;
 const NAMESPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const SNAPSHOT_ID_PATTERN = /^bcd-[A-Za-z0-9.-]+-gen-[A-Za-z0-9.-]+$/;
+// The same names as RELEASE_HEADERS in @bcd-embed/schema. They are repeated here because this
+// script has no dependencies, so it can check an endpoint without a build.
+const RELEASE_HEADERS = {
+  snapshot: "bcd-embed-snapshot",
+  generated: "bcd-embed-generated",
+  sourceVersion: "bcd-embed-source-version",
+};
 
 export const usage = `Usage: node packages/server/scripts/verify-endpoint.mjs --base-url <http(s)://host[:port]> [--allow-remote] [--local-identity-only] [--timeout-ms <100..30000>]
 
@@ -279,6 +286,28 @@ const assertCors = (response, requestPath) => {
   }
 };
 
+/** A snapshot response names its release in headers, and a browser script must be able to read them. */
+const assertReleaseHeaders = (response, requestPath, snapshot) => {
+  const expected = {
+    [RELEASE_HEADERS.snapshot]: snapshot.id,
+    [RELEASE_HEADERS.generated]: snapshot.generated,
+    [RELEASE_HEADERS.sourceVersion]: snapshot.source?.version,
+  };
+  const exposed = (header(response, "access-control-expose-headers") ?? "")
+    .toLowerCase()
+    .split(/,\s*/);
+  for (const [name, value] of Object.entries(expected)) {
+    if (typeof value !== "string" || header(response, name) !== value) {
+      throw new Error(
+        `${requestPath} must send '${name}' matching the current snapshot in /v1/meta.json.`,
+      );
+    }
+    if (!exposed.includes(name)) {
+      throw new Error(`${requestPath} does not expose the '${name}' response header through CORS.`);
+    }
+  }
+};
+
 const cacheDirectives = (response) =>
   (header(response, "cache-control") ?? "")
     .split(",")
@@ -481,6 +510,7 @@ export const verifyEndpoint = async ({
   ) {
     throw new Error(`${featurePath} does not return the selected feature as its first entry.`);
   }
+  assertReleaseHeaders(featureResponse, featurePath, snapshot);
   record("current feature");
 
   const headResponse = await context.request(featurePath, { method: "HEAD" });
@@ -493,6 +523,7 @@ export const verifyEndpoint = async ({
   ) {
     throw new Error(`HEAD ${featurePath} must be bodyless and preserve the GET ETag.`);
   }
+  assertReleaseHeaders(headResponse, featurePath, snapshot);
   record("HEAD");
 
   const conditionalResponse = await context.request(featurePath, {
@@ -509,6 +540,7 @@ export const verifyEndpoint = async ({
       `Conditional GET ${featurePath} must return bodyless 304 with the matching strong ETag.`,
     );
   }
+  assertReleaseHeaders(conditionalResponse, featurePath, snapshot);
   record("If-None-Match");
 
   let contentEncoding = "identity";

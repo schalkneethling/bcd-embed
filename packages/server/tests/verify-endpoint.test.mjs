@@ -5,6 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseVerifyArguments, verifyEndpoint } from "../scripts/verify-endpoint.mjs";
 
 const snapshotId = "bcd-8.1.3-gen-0.0.0";
+const snapshot = {
+  id: snapshotId,
+  source: { package: "@mdn/browser-compat-data", version: "8.1.3" },
+  generated: "2026-09-30T00:00:00Z",
+};
+const exposedHeaders =
+  "etag, retry-after, bcd-embed-snapshot, bcd-embed-generated, bcd-embed-source-version";
 const key = "api.sampleFeature";
 const serverHandles = [];
 
@@ -14,6 +21,7 @@ const startFixtureServer = async (
     indexKeys = [key],
     sameCompressedEtag = false,
     errorCacheControl = "max-age=3600",
+    releaseHeaders = true,
     oversizedMetadata = false,
   } = {},
 ) => {
@@ -35,7 +43,7 @@ const startFixtureServer = async (
         "access-control-allow-methods": "GET, HEAD, OPTIONS",
         "access-control-allow-headers": "if-none-match",
         "access-control-allow-origin": "*",
-        "access-control-expose-headers": "etag, retry-after",
+        "access-control-expose-headers": exposedHeaders,
       });
       response.end();
       return;
@@ -73,7 +81,7 @@ const startFixtureServer = async (
         contract: "1.0.0",
         generated: "2026-09-30T00:00:00Z",
         current: snapshotId,
-        snapshots: [{ id: snapshotId }],
+        snapshots: [snapshot],
         namespaces: ["api"],
       };
     } else if (requestPath.endsWith("/index.json")) {
@@ -133,10 +141,16 @@ const startFixtureServer = async (
 
     const headers = {
       "access-control-allow-origin": "*",
-      "access-control-expose-headers": "etag, retry-after",
+      "access-control-expose-headers": exposedHeaders,
       "cache-control": status === 400 || status === 404 ? errorCacheControl : cacheControl,
       etag,
     };
+    // As the server does: on every response for a snapshot's file, including a 304.
+    if (releaseHeaders && (status === 200 || status === 304) && requestPath !== "/v1/meta.json") {
+      headers["bcd-embed-snapshot"] = snapshot.id;
+      headers["bcd-embed-generated"] = snapshot.generated;
+      headers["bcd-embed-source-version"] = snapshot.source.version;
+    }
     if (body !== undefined && Buffer.isBuffer(body)) {
       headers["content-type"] = "application/json; charset=utf-8";
       headers["content-encoding"] = "gzip";
@@ -340,6 +354,13 @@ describe("verify-endpoint CLI grammar", () => {
     });
     await expect(verifyEndpoint({ baseUrl: fixture.baseUrl, allowRemote: false })).rejects.toThrow(
       /unexpected error cache policy/,
+    );
+  });
+
+  it("rejects a snapshot response that does not name its release in headers", async () => {
+    const fixture = await startFixtureServer("127.0.0.1", { releaseHeaders: false });
+    await expect(verifyEndpoint({ baseUrl: fixture.baseUrl, allowRemote: false })).rejects.toThrow(
+      /must send 'bcd-embed-snapshot' matching the current snapshot/,
     );
   });
 

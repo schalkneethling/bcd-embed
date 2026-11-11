@@ -57,7 +57,7 @@ export const generateSnapshot = ({
   if (Date.parse(expires) <= Date.parse(generated)) {
     throw new BcdInputError("Expiry must be later than the generation timestamp.");
   }
-  const envelope = { contract: CONTRACT_VERSION, generated, source };
+  const envelope = { contract: CONTRACT_VERSION };
   const nodes: AddressableNode[] = [];
   const shards = new Map<string, string[]>();
   const keys = new Set<string>();

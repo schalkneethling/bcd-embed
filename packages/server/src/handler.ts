@@ -4,8 +4,10 @@ import {
   indexResponseSchema,
   metaResponseSchema,
   namespaceSchema,
+  RELEASE_HEADERS,
   snapshotIdentifierSchema,
   type ApiErrorCode,
+  type Snapshot,
 } from "@bcd-embed/schema";
 import { negotiateEncoding, representationPath, type ContentEncoding } from "./encoding.js";
 
@@ -149,12 +151,15 @@ export function matchesIfNoneMatch(value: string | null, etag: string): boolean 
   return count > 0 && matched;
 }
 
+// Without this list a browser script on another origin cannot read these response headers.
+const EXPOSED_HEADERS = ["etag", "retry-after", ...Object.values(RELEASE_HEADERS)].join(", ");
+
 function headers(etag: string, cache: string): Headers {
   return new Headers({
     "content-type": "application/json; charset=utf-8",
     "cache-control": cache,
     "access-control-allow-origin": "*",
-    "access-control-expose-headers": "etag, retry-after",
+    "access-control-expose-headers": EXPOSED_HEADERS,
     "x-content-type-options": "nosniff",
     vary: "Accept-Encoding",
     etag,
@@ -244,9 +249,16 @@ async function serveArtifact(
   artifact: Artifact,
   cache: string,
   encoding: ContentEncoding,
+  /** The snapshot the artifact belongs to; absent for `meta.json`, which describes them all. */
+  snapshot?: Snapshot,
 ): Promise<Response> {
   await assertArtifact(artifact);
   const responseHeaders = headers(artifact.etag, cache);
+  if (snapshot !== undefined) {
+    responseHeaders.set(RELEASE_HEADERS.snapshot, snapshot.id);
+    responseHeaders.set(RELEASE_HEADERS.generated, snapshot.generated);
+    responseHeaders.set(RELEASE_HEADERS.sourceVersion, snapshot.source.version);
+  }
   if (encoding !== "identity") responseHeaders.set("content-encoding", encoding);
   if (artifact.size !== undefined) responseHeaders.set("content-length", String(artifact.size));
   const notModified = matchesIfNoneMatch(request.headers.get("if-none-match"), artifact.etag);
@@ -405,6 +417,7 @@ export function createArtifactHandler(
           artifact,
           route.snapshot === "current" ? CURRENT_CACHE : PINNED_CACHE,
           encoding,
+          selectedSnapshot,
         );
       if (encoding !== "identity") {
         const identity = await options.store.get(logicalPath);
@@ -439,8 +452,6 @@ export function createArtifactHandler(
         await boundedJson(shardArtifact, MAX_INDEX_SHARD_BYTES),
       );
       if (shard.namespace !== namespace) throw new Error("Index shard namespace mismatch.");
-      if (shard.source.version !== selectedSnapshot.source.version)
-        throw new Error("Index shard source version mismatch.");
       let grouping = false;
       const prefix = `${route.key}.`;
       for (const key of shard.keys) {

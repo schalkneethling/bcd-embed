@@ -85,11 +85,6 @@ from that list (see the separate statement-ordering rule in §5.1):
 ```jsonc
 {
   "contract": "1.0.0",
-  "generated": "2026-08-28T12:00:00Z",
-  "source": {
-    "package": "@mdn/browser-compat-data",
-    "version": "8.0.13"
-  },
   "browsers": {
     "chrome": {
       "name": "Chrome",
@@ -125,11 +120,6 @@ document order.
 ```jsonc
 {
   "contract": "1.0.0",
-  "generated": "2026-08-28T12:00:00Z",
-  "source": {
-    "package": "@mdn/browser-compat-data",
-    "version": "8.0.13"
-  },
   "namespace": "css",
   "keys": ["css.at-rules.container", "css.properties.display"]
 }
@@ -187,11 +177,6 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 ```jsonc
 {
   "contract": "1.0.0",
-  "generated": "2026-07-11T02:14:07Z",
-  "source": {
-    "package": "@mdn/browser-compat-data",
-    "version": "8.0.13"
-  },
   "query": "css.properties.display",
 
   "browsers": {
@@ -346,7 +331,17 @@ Two independent axes.
 
 **Relationship between the two:** each contract version is pinned to a BCD major version. A breaking schema change in BCD itself is unlikely at this point — BCD has enough downstream consumers that such a change would be disruptive well beyond this project — but the policy exists as a safeguard regardless: if it happens, `v1` continues to be generated from the last compatible BCD major (frozen, and marked as such in `meta.json`), and `v2` is introduced for the new BCD major. `v1` is never silently reshaped. Deprecation of a contract version is announced in `meta.json` with a sunset date in advance.
 
-Every response carries `source.version`, so a consumer can determine which BCD release it is looking at even when querying `current`.
+Every successful response for a snapshot's file names its release in three response headers, so a consumer can determine which BCD release it is looking at even when querying `current`:
+
+| Header                     | Example                | Meaning                                                    |
+| -------------------------- | ---------------------- | ---------------------------------------------------------- |
+| `bcd-embed-snapshot`       | `bcd-8.1.8-gen-0.0.0`  | The snapshot that answered the request.                    |
+| `bcd-embed-generated`      | `2026-11-09T22:19:15Z` | When that snapshot was generated.                          |
+| `bcd-embed-source-version` | `8.1.8`                | The `@mdn/browser-compat-data` version it was built from.  |
+
+The headers are also sent with `HEAD` and with a `304 Not Modified`. They are not sent with `meta.json`, which describes every retained snapshot in its body, or with errors, which belong to no one snapshot.
+
+These values are headers and not body fields on purpose. A body contains only the contract version and data, so a feature whose data did not change has the same bytes, and therefore the same `ETag`, in every snapshot. A consumer's cached copy then stays valid across BCD releases, and a revalidation returns `304` with no body. It is also what lets a publication upload only the files that changed (Document 8). A consumer that wants the release information as data reads `meta.json`, which lists `source`, `generated` and `expires` for every retained snapshot.
 
 ---
 
@@ -395,7 +390,7 @@ Pinned snapshots are immutable, served with `max-age=31536000, immutable`. One c
 
 Error responses are cacheable: `invalid_key`, `feature_not_found`, and `namespace_not_queryable` carry `max-age=3600`, so a page embedding a typo'd key does not invoke the Worker on every load. `rate_limited` responses are `no-store` and carry `Retry-After`.
 
-Every response carries a strong `ETag` and supports conditional requests. Because `ETag` and `Retry-After` are not on the CORS-safelisted response-header list, every response also carries `access-control-expose-headers: etag, retry-after`; without it a cross-origin consumer could read neither header.
+Every response carries a strong `ETag` and supports conditional requests. Because `ETag`, `Retry-After` and the three release headers (§7) are not on the CORS-safelisted response-header list, every response also carries `access-control-expose-headers: etag, retry-after, bcd-embed-snapshot, bcd-embed-generated, bcd-embed-source-version`; without it a cross-origin consumer could read none of them.
 
 All responses are compressed, Brotli where the client supports it (falling back to gzip otherwise). Compatibility JSON is highly repetitive — a small vocabulary of field names and values (`versionAdded`, `partialImplementation`, browser identifiers) repeated across many entries — and compresses well under Brotli specifically; this affects the component's performance budget directly.
 

@@ -127,11 +127,6 @@ const selectedPrefix = statement({ versionAdded: "10", prefix: "webkit" });
 
 export const v1NormalizedFixture: FeatureResponse = {
   contract: CONTRACT_VERSION,
-  generated: "2026-08-28T12:00:00Z",
-  source: {
-    package: "@mdn/browser-compat-data",
-    version: "8.0.13",
-  },
   query: "fixture.adversarial-v1",
   browsers: {
     chrome: { name: "Chrome", type: "desktop", previewName: "Canary" },

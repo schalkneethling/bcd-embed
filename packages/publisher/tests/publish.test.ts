@@ -96,12 +96,6 @@ const emit = async (version: string, generated: string, expires: string, name?: 
       data.current = nextId;
       data.snapshots[0].id = nextId;
       data.snapshots[0].source.version = version;
-    } else if (
-      entry.logicalPath.includes("/features/") ||
-      entry.logicalPath.includes("/index") ||
-      entry.logicalPath.endsWith("/browsers.json")
-    ) {
-      data.source.version = version;
     }
     const bytes = Buffer.from(`${JSON.stringify(data)}\n`, "utf8");
     for (const representation of createRepresentations(logicalPath, bytes)) {

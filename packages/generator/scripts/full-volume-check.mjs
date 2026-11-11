@@ -193,13 +193,10 @@ const validateZodArtifact = (schema, value, path) => {
   return result.data;
 };
 
+// A body must not name its release: identical data must have identical bytes in every snapshot.
 const assertEnvelope = (value, path) => {
-  if (
-    value.generated !== GENERATED ||
-    value.source?.package !== "@mdn/browser-compat-data" ||
-    value.source?.version !== bcd.__meta.version
-  ) {
-    fail(`Artifact '${path}' has unexpected generation/source provenance.`);
+  if (Object.hasOwn(value, "generated") || Object.hasOwn(value, "source")) {
+    fail(`Artifact '${path}' names its release in the body.`);
   }
 };
 

@@ -10,8 +10,9 @@ hard errors; an approval cannot make an invalid tree pass.
 
 Object properties are hashed in sorted-key order; array order remains
 significant. The contract version and every data field remain significant.
-Only generation/source provenance is normalized: `generated`, source version,
-derived snapshot IDs and generator version, and snapshot expiry. This lets
+Only the fields in `meta.json` that name a release are normalized: `generated`,
+source version, derived snapshot IDs and generator version, and snapshot expiry.
+No other file carries such fields. This lets
 equivalent support output compare equal when release or generation metadata
 changes, without hiding contract or support-data changes. Raw BCD feature
 subtrees are included in each feature's semantic digest, so a raw-output change
