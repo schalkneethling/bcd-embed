@@ -52,6 +52,18 @@ Merged retained metadata must be re-encoded before publishing its variants and
 the canonical metadata CAS. Representation work is O(sum(Bi)) time and
 O(Bmax + K) auxiliary memory, processing one artifact at a time.
 
+`emitContentTree({ outputRoot, generatedSnapshot })` writes the same snapshot in
+the content-addressed layout of
+[Document 8](../../docs/planning/08-incremental-publication.md): blobs under
+`v1/blobs/<sha256>.json` with `.gz` and `.br` copies, 256 pointer shards under
+`v1/shards/`, and a root at `v1/snapshots/<snapshot>.json`. No file is named
+after a feature key, so it runs on a case-insensitive filesystem.
+`createPointerTree` builds the shards and the root, and `shardIndexOf(key)`
+returns a key's shard: the first byte of the SHA-256 hash of the key. The work
+is one pass, O(sum(Bi)) time and O(Bmax + K) memory, plus O(K log(K / 256)) to
+sort the keys inside each shard. The command line tool and the publisher do
+not use this layout yet.
+
 `generateSnapshot({ generated, expires, data? })` returns snapshot metadata,
 namespace names, and a single-use lazy `Iterable<GeneratedArtifact>`. The default
 input is the exact pinned BCD version; optional input must satisfy the same published schema
