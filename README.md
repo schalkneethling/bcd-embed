@@ -150,7 +150,7 @@ failures throw `BcdNormalizationError` with the failing BCD key.
 
 Requirements:
 
-- Node.js 26.13 or newer
+- Node.js 24 or newer. CI runs 26.13.0, so that is the tested version.
 - pnpm 11.24.0, managed through Corepack
 
 Install dependencies and run the complete repository check:
