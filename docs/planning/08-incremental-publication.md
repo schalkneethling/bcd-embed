@@ -312,8 +312,58 @@ enough to upload from memory as the design proposes.
 The script hashes in memory instead of reading two generated folders because
 the generator cannot write a snapshot to a case-insensitive filesystem, which
 is the default on macOS: `api.Crypto.json` and `api.crypto.json` are the same
-file there. Naming blobs by hash removes that collision for everything except
-the staging folder, which step 3 should take into account.
+file there. Naming blobs by hash removes that collision. Step 3's emitter also
+stages each file under a counter, not under its key, so it runs on macOS.
+
+## The generator's content tree
+
+Step 3 of the plan below is done. `emitContentTree` in `@bcd-embed/generator`
+writes a snapshot in the proposed layout, and `createPointerTree` builds the
+shards and the root from a list of pointers. The schemas and path rules for
+shards and roots are in `@bcd-embed/schema`.
+
+A shard file holds, for each of its feature keys, the hash of the normalized
+file and the hash of the raw file:
+
+```json
+{
+  "version": 1,
+  "pointers": {
+    "css.properties.gap": { "feature": "<sha256>", "raw": "<sha256>" }
+  }
+}
+```
+
+A root names its snapshot, lists the 256 shard hashes by shard number, and
+holds the pointers for `browsers.json`, `index.json` and each `index/<namespace>.json`.
+Keys are sorted in both files, so the bytes depend only on the pointers and
+not on the order in which the generator visited the features.
+
+Running the emitter on BCD 8.1.8 gave these figures on a laptop:
+
+| Measure                         | Result                                  |
+| ------------------------------- | --------------------------------------- |
+| Served files                    | 41,880                                  |
+| Distinct blobs                  | 40,612, the same as the measurement     |
+| Files written                   | 122,096: 121,836 blob files, 256 shards, a root, and `meta.json` with its two compressed copies |
+| Shard files, all 256 together   | 4.3 MB, about 17 KB each                |
+| Time, first run                 | 46 seconds                              |
+| Time, rerun into the same folder | 10 seconds, with nothing written       |
+| Peak memory                     | about 410 MB                            |
+
+**Big O behavior.** The emitter makes one pass over the N served files. It
+serializes, hashes and compresses each file once, so the time is proportional
+to the total bytes. It keeps one file's bytes in memory at a time plus one
+pointer per file, so memory grows with N and not with the total bytes.
+Building the tree hashes each key once to choose its shard, which is O(N), and
+sorts the keys inside each shard, which is O(N log(N / 256)).
+
+**What step 3 leaves for later steps.** The command line tool, the diff tool
+and the publisher still use the old emitter and its folder-per-snapshot
+layout. Each moves to the new layout in the step that changes it: the
+publisher in step 4, and the server in step 5. The old emitter is removed when
+its last user moves. Until then the new emitter is exported and tested, but
+nothing in the release pipeline calls it.
 
 ## Cost after the change
 
@@ -386,7 +436,8 @@ publisher should log its connection pool's state so a recurrence is visible.
    1. The server already sends the headers, taken from the snapshot's entry in
    `meta.json`, so the contract and the implementation did not disagree in
    between. That part of step 5 is therefore complete.
-3. **Generator.** Emit blobs, shards and a root. Document the Big O behavior of
+3. **Generator.** Done: see [the generator's content tree](#the-generators-content-tree).
+   Emit blobs, shards and a root. Document the Big O behavior of
    building the pointer tree, which is one pass over the artifacts.
 4. **Publisher.** Compare pointers, upload missing blobs from buffers with
    retries, report operation counts, and replace folder deletion with the

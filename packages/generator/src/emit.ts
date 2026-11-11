@@ -16,7 +16,7 @@ import {
 import type { GeneratedArtifact, GeneratedSnapshot } from "./generate.js";
 import { createRepresentations } from "./representations.js";
 
-const stagingPrefix = ".bcd-embed-stage-";
+export const stagingPrefix = ".bcd-embed-stage-";
 
 export type EmitGeneratedSnapshotOptions = {
   outputRoot: string;
@@ -31,7 +31,7 @@ export type EmissionResult = {
   manifest: ArtifactManifest;
 };
 
-const fileBytes = (value: unknown): Uint8Array => {
+export const fileBytes = (value: unknown): Uint8Array => {
   let json: string | undefined;
   try {
     json = JSON.stringify(value);
@@ -45,7 +45,7 @@ const fileBytes = (value: unknown): Uint8Array => {
 const isSchemaMatch = (schema: { safeParse(value: string): { success: boolean } }, value: string) =>
   schema.safeParse(value).success;
 
-const assertArtifactPath = (artifact: GeneratedArtifact, snapshotId: string): void => {
+export const assertArtifactPath = (artifact: GeneratedArtifact, snapshotId: string): void => {
   const { kind, path } = artifact;
   if (path.includes("\\") || posix.normalize(path) !== path || path.startsWith("/")) {
     throw new Error(`Unsafe generated artifact path '${path}'.`);
@@ -94,7 +94,7 @@ const hasExpectedSnapshot = (candidate: Snapshot, snapshot: Snapshot): boolean =
   candidate.source.version === snapshot.source.version;
 
 /** Guard trusted-generator orchestration without reparsing each already-validated payload. */
-const assertArtifactIdentity = (
+export const assertArtifactIdentity = (
   artifact: GeneratedArtifact,
   generatedSnapshot: GeneratedSnapshot,
 ): void => {
@@ -133,7 +133,7 @@ const assertArtifactIdentity = (
   }
 };
 
-const pathIn = (root: string, artifactPath: string): string => {
+export const pathIn = (root: string, artifactPath: string): string => {
   const destination = resolve(root, artifactPath);
   const pathRelativeToRoot = relative(root, destination);
   if (pathRelativeToRoot === ".." || pathRelativeToRoot.startsWith(`..${sep}`)) {
@@ -151,7 +151,13 @@ const lstatIfPresent = async (path: string) => {
   }
 };
 
-const acquireOutputLock = async (root: string): Promise<string> => {
+/** Whether a regular file is at the path; `undefined` when nothing exists there. */
+export const regularFileAt = async (path: string): Promise<boolean | undefined> => {
+  const info = await lstatIfPresent(path);
+  return info === undefined ? undefined : info.isFile() && !info.isSymbolicLink();
+};
+
+export const acquireOutputLock = async (root: string): Promise<string> => {
   const lockPath = join(root, ".bcd-embed-emission.lock");
   try {
     await writeFile(lockPath, `${process.pid}\n`, { encoding: "utf8", flag: "wx" });
@@ -221,7 +227,7 @@ const assertMatchingTree = async (
   }
 };
 
-const assertMatchingMeta = async (
+export const assertMatchingMeta = async (
   stagedMeta: string,
   existingMeta: string,
 ): Promise<"created" | "existing"> => {

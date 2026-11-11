@@ -19,6 +19,16 @@ export {
 } from "./emit.js";
 export { createRepresentations, type EncodedArtifact } from "./representations.js";
 export {
+  createPointerTree,
+  emitContentTree,
+  shardIndexOf,
+  type ContentPointer,
+  type ContentTreeEmission,
+  type EmitContentTreeOptions,
+  type PointerTree,
+  type PointerTreeFile,
+} from "./content-tree.js";
+export {
   compareOutputTrees,
   parseDiffApproval,
   DiffApprovalMismatchError,
