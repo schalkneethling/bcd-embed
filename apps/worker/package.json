@@ -18,7 +18,7 @@
   "devDependencies": {
     "@bcd-embed/generator": "workspace:*",
     "@bcd-embed/schema": "workspace:*",
-    "@cloudflare/workers-types": "5.20261104.1",
+    "@cloudflare/workers-types": "5.20261108.1",
     "@mdn/browser-compat-data": "8.1.8",
     "@varlock/cloudflare-integration": "1.6.3",
     "miniflare": "5.20260923.0-alpha",
