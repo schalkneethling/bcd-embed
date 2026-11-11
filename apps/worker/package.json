@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@bcd-embed/server": "workspace:*",
-    "@sentry/cloudflare": "11.10.0"
+    "@sentry/cloudflare": "11.11.0"
   },
   "devDependencies": {
     "@bcd-embed/generator": "workspace:*",
