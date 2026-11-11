@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { emitGeneratedSnapshot } from "./emit.js";
+import { emitContentTree } from "./content-tree.js";
 import { parseGenerateCommand, usage } from "./cli.js";
 import { generateSnapshot } from "./generate.js";
 
@@ -13,8 +13,10 @@ const main = async (): Promise<void> => {
     generated: command.generated,
     expires: command.expires,
   });
-  const result = await emitGeneratedSnapshot({ outputRoot: command.outputRoot, generatedSnapshot });
-  process.stdout.write(`Emitted ${result.files} artifacts for ${result.snapshotId}.\n`);
+  const result = await emitContentTree({ outputRoot: command.outputRoot, generatedSnapshot });
+  process.stdout.write(
+    `Emitted ${result.artifacts} artifacts as ${result.blobs} blobs for ${result.snapshotId}; root ${result.rootSha256}.\n`,
+  );
 };
 
 try {

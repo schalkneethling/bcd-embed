@@ -32,8 +32,8 @@ creates: no command here provisions a bucket or uploads objects as part of a
 deploy.
 
 An operator creates the bucket and then publishes a snapshot with
-`@bcd-embed/publisher`, which uploads the immutable snapshot objects and
-writes `v1/meta.json` last. [How publication works](/publication/) describes
+`@bcd-embed/publisher`, which uploads the immutable objects a snapshot needs
+and writes `v1/meta.json` last. [How publication works](/publication/) describes
 that process. Do not deploy against an empty bucket, and do not assume the
 metadata the generator writes to disk is already a safe remote publication.
 

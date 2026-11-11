@@ -1,30 +1,48 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 
-import { compareOutputTrees, createRepresentations, type DiffApproval } from "@bcd-embed/generator";
 import {
+  compareContentTrees,
+  createRepresentations,
+  type ContentTree,
+  type DiffApproval,
+  type DiffReport,
+} from "@bcd-embed/generator";
+import {
+  blobPath,
   generatedTimestampSchema,
   metaResponseSchema,
   releaseDateSchema,
+  shardPath,
   snapshotIdentifierSchema,
+  snapshotRootPath,
   type MetaResponse,
   type Snapshot,
 } from "@bcd-embed/schema";
 import { compare as compareVersions, valid as validVersion } from "semver";
 
-import type { PublicationStore, StoredObject } from "./store.js";
+import type { PublicationStore } from "./store.js";
 import { putAndVerify, readMetadata, readVerified } from "./objects.js";
-import { uploadCandidateControls } from "./archive.js";
 import { runBounded } from "./concurrency.js";
 import { PublisherError } from "./errors.js";
-import { MAX_META_BYTES, hashDecodedStream, validateCandidate } from "./validate.js";
+import { countOperations, type OperationCounts } from "./operations.js";
+import { readPublishedTree } from "./tree.js";
+import { putImmutable, realSleep, type Sleep } from "./upload.js";
+import { MAX_META_BYTES, validateCandidate, type ValidatedCandidate } from "./validate.js";
 
 const META_KEY = "v1/meta.json";
 const RETENTION_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const PRUNE_PAGE_SIZE = 500;
+const PRUNE_PAGE_SIZE = 1_000;
+/** An unreferenced object is kept this long, so a publication in progress never loses a blob. */
+const GRACE_DAYS = 7;
+/**
+ * Compressed copies of superseded metadata are deleted only once the current metadata has been
+ * in place this long. The server reads `meta.json` and then the copy named by its hash, so a copy
+ * must outlive every request that read the metadata it belongs to.
+ */
+const META_SETTLE_DAYS = 1;
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 export type PublicationClock = () => Date;
 const wallClock: PublicationClock = () => new Date();
@@ -93,57 +111,32 @@ const mergedMetadata = (candidate: MetaResponse, previous: MetaResponse | undefi
   return { body, bytes };
 };
 
-/**
- * Variants are addressed by identity digest, so a variant left by an earlier run may hold different
- * compressed bytes (another zlib or Brotli build) that decode to the same metadata. Accept it then.
- */
-const acceptExistingMetaVariant = async (
-  object: StoredObject,
-  encoding: "br" | "gzip",
-  identity: { size: number; sha256: string },
-): Promise<void> => {
-  try {
-    const decoded = await hashDecodedStream(Readable.from(object.body), encoding, identity.size);
-    if (decoded.size === identity.size && decoded.sha256 === identity.sha256) return;
-  } catch (error) {
-    if (error instanceof PublisherError) throw error;
-  } finally {
-    object.dispose();
-  }
-  throw new PublisherError("Existing metadata variant does not decode to the expected metadata.");
-};
-
-const uploadMetaVariants = async (store: PublicationStore, bytes: Uint8Array) => {
+/** Variants are named by the hash of the plain metadata, so an existing one is accepted if it decodes to it. */
+const uploadMetaVariants = async (store: PublicationStore, bytes: Uint8Array, sleep: Sleep) => {
   const representations = createRepresentations(META_KEY, bytes);
   const identity = representations.find((item) => item.encoding === "identity")!;
-  await runBounded(
-    representations.filter(
-      (item): item is typeof item & { encoding: "br" | "gzip" } => item.encoding !== "identity",
-    ),
-    async (item) => {
-      const result = await store.put({
+  for (const item of representations) {
+    if (item.encoding === "identity") continue;
+    await putImmutable(
+      store,
+      {
         key: item.path,
-        body: item.bytes,
-        size: item.size,
+        bytes: item.bytes,
         sha256: item.sha256,
-        contentType: "application/json; charset=utf-8",
-        contentEncoding: item.encoding,
-        ifNoneMatch: true,
-      });
-      const object = await store.get(item.path);
-      if (object === null) throw new PublisherError("Published object is missing after PUT.");
-      if (result.type === "stored") {
-        await readVerified(object, { size: item.size, sha256: item.sha256 });
-      } else {
-        await acceptExistingMetaVariant(object, item.encoding, identity);
-      }
-    },
-  );
+        encoded: { encoding: item.encoding, identity },
+      },
+      sleep,
+    );
+  }
   return identity;
 };
 
 /** Scheduled/no-change retention still needs a metadata CAS before physical cleanup. */
-const retireExpiredMembership = async (store: PublicationStore, now: Date): Promise<void> => {
+const retireExpiredMembership = async (
+  store: PublicationStore,
+  now: Date,
+  sleep: Sleep,
+): Promise<void> => {
   const remote = await readMetadata(store);
   if (remote === null) throw new PublisherError("Canonical metadata is required before pruning.");
   const treeDigest = remote.object.metadata["tree-digest"];
@@ -159,7 +152,7 @@ const retireExpiredMembership = async (store: PublicationStore, now: Date): Prom
   const bytes = Buffer.from(`${JSON.stringify(body)}\n`, "utf8");
   if (bytes.byteLength > MAX_META_BYTES)
     throw new PublisherError("Retired metadata exceeds server read cap.");
-  const identity = await uploadMetaVariants(store, bytes);
+  const identity = await uploadMetaVariants(store, bytes, sleep);
   const current = await readMetadata(store);
   if (
     current?.object.etag !== remote.object.etag ||
@@ -249,166 +242,229 @@ export const readPublicationReservation = async (
   return markerFor(store, `v1/_publication/${id}.json`);
 };
 
-const assertListingProgress = (
-  keys: readonly string[],
-  startAfter: string | undefined,
-  prefix: string,
-): void => {
-  let previous = startAfter;
-  for (const key of keys) {
-    if (!key.startsWith(prefix) || (previous !== undefined && key <= previous)) {
-      throw new PublisherError("R2 listing did not advance within its prefix.");
-    }
-    previous = key;
-  }
+const HASHED_NAME = /^([a-f0-9]{64})\.json(?:\.br|\.gz)?$/;
+
+export type CleanupResult = {
+  /** True when nothing was deleted and the counts say what a real run would delete. */
+  dryRun: boolean;
+  deleted: { blobs: number; shards: number; roots: number; metaCopies: number };
 };
 
-/** Reentrant cleanup: metadata membership is removed by CAS before any snapshot bytes are deleted. */
+export type CleanupOptions = {
+  clock?: PublicationClock;
+  /** Count what would be deleted without deleting it. */
+  dryRun?: boolean;
+  sleep?: Sleep;
+};
+
+/**
+ * Removes blobs, shards and roots that no retained snapshot uses, and compressed copies of
+ * metadata that is no longer current.
+ *
+ * 1. Drop expired snapshots from metadata, by compare-and-swap, before any bytes are deleted.
+ * 2. Read the root and shards of every snapshot metadata still lists. Their pointers are the live
+ *    set. Any failure here stops the run, so nothing is deleted on an incomplete picture.
+ * 3. List the prefixes and delete what is not live and is older than the grace period. The only
+ *    live metadata copies are the two named by the hash of the current `meta.json`. Their prefix
+ *    is skipped until that file is a day old, because a request that read the previous metadata
+ *    may still ask for the previous copy.
+ *
+ * Metadata is read again before each batch of deletes. If it changed, a publication ran at the
+ * same time and the live set is out of date, so the run stops.
+ *
+ * Cost: at most 257 reads per retained snapshot, one listing per 1,000 stored objects, and one
+ * read per batch. Memory is O(L) for L live hashes.
+ */
 export const pruneRetiredSnapshots = async (
   store: PublicationStore,
-  clock: PublicationClock = wallClock,
-): Promise<string[]> => {
-  await retireExpiredMembership(store, readClock(clock));
-  const pruned: string[] = [];
+  { clock = wallClock, dryRun = false, sleep = realSleep }: CleanupOptions = {},
+): Promise<CleanupResult> => {
+  await retireExpiredMembership(store, readClock(clock), sleep);
   const metadata = await readMetadata(store);
   if (metadata === null) throw new PublisherError("Canonical metadata disappeared during pruning.");
-  const referenced = new Set(metadata.body.snapshots.map((snapshot) => snapshot.id));
-  let markerStart: string | undefined;
-  for (;;) {
-    const page = await store.list("v1/_publication/", markerStart, PRUNE_PAGE_SIZE);
-    assertListingProgress(page.keys, markerStart, "v1/_publication/");
-    if (page.truncated && page.keys.length === 0)
-      throw new PublisherError("R2 marker listing did not advance.");
-    for (const key of page.keys) {
-      if (!key.startsWith("v1/_publication/"))
-        throw new PublisherError("R2 marker listing escaped its prefix.");
-      const marker = await markerFor(store, key);
-      if (marker === null) continue;
-      if (referenced.has(marker.snapshotId)) continue;
-      const now = readClock(clock);
-      // Old incomplete publishes are safe to retire too; a current publish can
-      // never reintroduce them because it must CAS newer metadata and be fresh.
-      if (
-        Date.parse(marker.generated) + RETENTION_DAYS * DAY_MS > now.getTime() ||
-        Date.parse(marker.expires) > now.getTime()
-      )
-        continue;
-      let deleted = 0;
-      for (const prefix of [`v1/${marker.snapshotId}/`, `v1/_candidates/${marker.snapshotId}/`]) {
-        let objectStart: string | undefined;
-        for (;;) {
-          const objects = await store.list(prefix, objectStart, PRUNE_PAGE_SIZE);
-          assertListingProgress(objects.keys, objectStart, prefix);
-          if (objects.truncated && objects.keys.length === 0) {
-            throw new PublisherError("R2 snapshot listing did not advance.");
-          }
-          if (objects.keys.some((objectKey) => !objectKey.startsWith(prefix))) {
-            throw new PublisherError("R2 snapshot listing escaped its prefix.");
-          }
+
+  const live = {
+    blobs: new Set<string>(),
+    shards: new Set<string>(),
+    roots: new Set<string>(),
+  };
+  for (const snapshot of metadata.body.snapshots) {
+    const tree = await readPublishedTree(store, snapshot);
+    live.roots.add(snapshot.id);
+    for (const sha256 of tree.root.shards) live.shards.add(sha256);
+    for (const sha256 of Object.values(tree.root.structural)) live.blobs.add(sha256);
+    for (const pointer of tree.features.values()) {
+      live.blobs.add(pointer.feature);
+      live.blobs.add(pointer.raw);
+    }
+  }
+
+  const deleted = { blobs: 0, shards: 0, roots: 0, metaCopies: 0 };
+  const now = readClock(clock).getTime();
+  const cutoff = now - GRACE_DAYS * DAY_MS;
+  if (!Number.isFinite(metadata.object.lastModified.getTime()))
+    throw new PublisherError("R2 returned metadata without a valid date.");
+  const metadataSettled = metadata.object.lastModified.getTime() < now - META_SETTLE_DAYS * DAY_MS;
+  for (const [kind, prefix] of [
+    ["blobs", "v1/blobs/"],
+    ["shards", "v1/shards/"],
+    ["roots", "v1/snapshots/"],
+    ["metaCopies", "v1/_meta/"],
+  ] as const) {
+    if (kind === "metaCopies" && !metadataSettled) continue;
+    let startAfter: string | undefined;
+    for (;;) {
+      const page = await store.list(prefix, startAfter, PRUNE_PAGE_SIZE);
+      let previous = startAfter;
+      const unreferenced: string[] = [];
+      for (const { key, lastModified } of page.objects) {
+        if (!key.startsWith(prefix) || (previous !== undefined && key <= previous))
+          throw new PublisherError("R2 listing did not advance within its prefix.");
+        previous = key;
+        const name = key.slice(prefix.length);
+        const hashed = HASHED_NAME.exec(name)?.[1];
+        const isLive =
+          kind === "roots"
+            ? name.endsWith(".json") && live.roots.has(name.slice(0, -".json".length))
+            : kind === "metaCopies"
+              ? hashed === metadata.object.sha256
+              : hashed !== undefined && live[kind].has(hashed);
+        if (!Number.isFinite(lastModified.getTime()))
+          throw new PublisherError("R2 listing returned an object without a valid date.");
+        if (!isLive && lastModified.getTime() < cutoff) unreferenced.push(key);
+      }
+      if (page.truncated && page.objects.length === 0)
+        throw new PublisherError("R2 listing did not advance.");
+      if (unreferenced.length > 0) {
+        if (!dryRun) {
           const latest = await readMetadata(store);
-          const deletionTime = readClock(clock).getTime();
-          if (
-            Date.parse(marker.generated) + RETENTION_DAYS * DAY_MS > deletionTime ||
-            Date.parse(marker.expires) > deletionTime
-          ) {
-            throw new PublisherError("Snapshot is no longer eligible for pruning.");
-          }
           if (
             latest === null ||
-            latest.body.snapshots.some((snapshot) => snapshot.id === marker.snapshotId)
-          ) {
-            throw new PublisherError("Snapshot became referenced while pruning.");
-          }
-          if (objects.keys.length > 0) {
-            await store.delete(objects.keys);
-            deleted += objects.keys.length;
-          }
-          if (!objects.truncated) break;
-          objectStart = objects.keys.at(-1);
+            latest.object.etag !== metadata.object.etag ||
+            latest.object.sha256 !== metadata.object.sha256
+          )
+            throw new PublisherError("Metadata changed while pruning; the live set is stale.");
+          await store.delete(unreferenced);
         }
+        deleted[kind] += unreferenced.length;
       }
-      if (deleted > 0) pruned.push(marker.snapshotId);
+      if (!page.truncated) break;
+      startAfter = previous;
     }
-    if (!page.truncated) break;
-    markerStart = page.keys.at(-1);
   }
-  return pruned;
+  return { dryRun, deleted };
 };
 
-/** How many of the snapshot's immutable objects are stored and verified in R2 so far. */
+/** How many of the objects this run must store are stored and verified in R2 so far. */
 export type PublicationProgress = { verified: number; total: number };
 
 export type PublishOptions = {
   approval?: DiffApproval;
-  baselineRoot: string;
   candidateRoot: string;
   clock?: PublicationClock;
   /** Called after each immutable object is stored and read back. Must not throw. */
   onProgress?: (progress: PublicationProgress) => void;
+  /** Waits between retries of a failed request. Tests replace it. */
+  sleep?: Sleep;
   store: PublicationStore;
 };
 
 export type PublishResult =
-  | { type: "unchanged"; candidateDigest: string; current: string; pruned: string[] }
+  | {
+      type: "unchanged";
+      candidateDigest: string;
+      current: string;
+      pruned: CleanupResult;
+      operations: OperationCounts;
+    }
   | {
       type: "published";
       candidateDigest: string;
       current: string;
       metaSha256: string;
-      pruned: string[];
+      /** Objects this run had to store: three per new blob, the new shards, and the root. */
+      uploaded: { blobs: number; shards: number; objects: number };
+      pruned: CleanupResult;
+      operations: OperationCounts;
     };
 
-/** Fail-closed publication: immutable verified objects, then one conditional canonical metadata PUT. */
+type RemoteMetadata = NonNullable<Awaited<ReturnType<typeof readMetadata>>>;
+
+/** Reads the live snapshot's pointers and checks them against the digest metadata records. */
+const readBaseline = async (
+  store: PublicationStore,
+  remote: RemoteMetadata | null,
+): Promise<{ tree: ContentTree; snapshot: Snapshot } | null> => {
+  if (remote === null) return null;
+  const snapshot = remote.body.snapshots.find((item) => item.id === remote.body.current);
+  if (snapshot === undefined) throw new PublisherError("Remote current snapshot is absent.");
+  const tree = await readPublishedTree(store, snapshot);
+  if (remote.object.metadata["tree-digest"] !== tree.digest)
+    throw new PublisherError("Remote metadata does not correspond to its snapshot's root.");
+  return { tree, snapshot };
+};
+
+export type PublicationComparison = { report: DiffReport; candidate: ValidatedCandidate };
+
+/**
+ * The review gate, read-only: checks the local candidate, reads the live snapshot's pointers from
+ * the store, and compares them. The report's digests are what an approval must name.
+ */
+export const comparePublication = async ({
+  approval,
+  candidateRoot,
+  store,
+}: Pick<
+  PublishOptions,
+  "approval" | "candidateRoot" | "store"
+>): Promise<PublicationComparison> => {
+  const candidate = await validateCandidate(candidateRoot);
+  const baseline = await readBaseline(store, await readMetadata(store));
+  return { candidate, report: compareContentTrees(baseline?.tree ?? null, candidate, approval) };
+};
+
+const readCandidateFile = async (candidate: ValidatedCandidate, path: string) => {
+  const bytes = await readFile(join(candidate.directory, path));
+  return { bytes, sha256: sha256(bytes) };
+};
+
+/**
+ * Fail-closed publication. Only what the live snapshot does not already have is uploaded, each
+ * object is read back and verified, and one conditional metadata write makes the snapshot current.
+ *
+ * Time: O(N) to compare N pointers, then one write and one read per missing object. An
+ * interrupted run leaves unreferenced objects that a rerun finds in place and verifies.
+ */
 export const publishCandidate = async ({
   approval,
-  baselineRoot,
   candidateRoot,
   clock = wallClock,
   onProgress,
-  store,
+  sleep = realSleep,
+  store: uncounted,
 }: PublishOptions): Promise<PublishResult> => {
+  const { store, counts } = countOperations(uncounted);
   const now = readClock(clock);
   const candidate = await validateCandidate(candidateRoot);
-  const diff = await compareOutputTrees({ baselineRoot, candidateRoot, approval });
+  const remote = await readMetadata(store);
+  const baseline = await readBaseline(store, remote);
+  const diff = compareContentTrees(baseline?.tree ?? null, candidate, approval);
   if (diff.blocked.length > 0 && !diff.approved) {
     throw new PublisherError(
       "Output diff blocked; review the local report and provide exact-digest approval.",
     );
   }
-  const remote = await readMetadata(store);
-  if (remote === null && !diff.bootstrap)
-    throw new PublisherError("Remote metadata missing for non-bootstrap baseline.");
-  if (
-    remote !== null &&
-    remote.object.metadata["tree-digest"] === diff.candidateDigest &&
-    remote.body.current === candidate.meta.current
-  ) {
-    const pruned = await pruneRetiredSnapshots(store, clock);
-    return {
-      type: "unchanged",
-      candidateDigest: diff.candidateDigest,
-      current: remote.body.current,
-      pruned,
-    };
-  }
-  if (
-    remote !== null &&
-    (diff.bootstrap || remote.object.metadata["tree-digest"] !== diff.baselineDigest)
-  ) {
-    throw new PublisherError("Remote metadata does not correspond to the reviewed baseline tree.");
-  }
-  const previous = remote?.body.snapshots.find((snapshot) => snapshot.id === remote.body.current);
-  if (remote !== null && previous === undefined)
-    throw new PublisherError("Remote current snapshot is absent.");
   if (remote !== null && !diff.semanticChanged) {
-    const pruned = await pruneRetiredSnapshots(store, clock);
+    const pruned = await pruneRetiredSnapshots(store, { clock, sleep });
     return {
       type: "unchanged",
       candidateDigest: diff.candidateDigest,
       current: remote.body.current,
       pruned,
+      operations: { ...counts },
     };
   }
+  const previous = baseline?.snapshot;
   const candidateSnapshot = candidate.meta.snapshots[0]!;
   if (previous?.id === candidateSnapshot.id) {
     throw new PublisherError("Snapshot ID already current but candidate semantic content differs.");
@@ -429,35 +485,69 @@ export const publishCandidate = async ({
     ifNoneMatch: true,
   });
 
-  const immutable = candidate.manifest.artifacts.filter((item) => item.logicalPath !== META_KEY);
-  await runBounded(
-    immutable,
-    async (item) => {
-      await putAndVerify(store, {
-        key: item.path,
-        body: createReadStream(join(candidate.root, item.path)),
-        size: item.size,
-        sha256: item.sha256,
-        contentType: "application/json; charset=utf-8",
-        contentEncoding: item.encoding === "identity" ? undefined : item.encoding,
-        ifNoneMatch: true,
-      });
-    },
-    onProgress && ((verified) => onProgress({ verified, total: immutable.length })),
-  );
+  // The upload list: what the candidate points to that the live snapshot does not.
+  const liveBlobs = new Set<string>();
+  if (baseline !== null) {
+    for (const hash of Object.values(baseline.tree.root.structural)) liveBlobs.add(hash);
+    for (const pointer of baseline.tree.features.values()) {
+      liveBlobs.add(pointer.feature);
+      liveBlobs.add(pointer.raw);
+    }
+  }
+  const liveShards = new Set(baseline?.tree.root.shards);
+  const blobs = [...candidate.blobs].filter((hash) => !liveBlobs.has(hash));
+  const shards = [...candidate.shards].filter((hash) => !liveShards.has(hash));
+  const total = blobs.length * 3 + shards.length + 1;
+  let verified = 0;
+  const settled = (): void => onProgress?.({ verified: (verified += 1), total });
 
-  await uploadCandidateControls(store, candidate);
+  await runBounded(blobs, async (hash) => {
+    const plain = await readCandidateFile(candidate, blobPath(hash, "identity"));
+    if (plain.sha256 !== hash) throw new PublisherError("Candidate blob changed after validation.");
+    const identity = { size: plain.bytes.byteLength, sha256: hash };
+    for (const encoding of ["br", "gzip"] as const) {
+      const key = blobPath(hash, encoding);
+      const encoded = await readCandidateFile(candidate, key);
+      await putImmutable(store, { key, ...encoded, encoded: { encoding, identity } }, sleep);
+      settled();
+    }
+    // The plain bytes go last, as on disk: their presence means all three encodings are stored.
+    await putImmutable(store, { key: blobPath(hash, "identity"), ...plain }, sleep);
+    settled();
+  });
+  await runBounded(shards, async (hash) => {
+    const shard = await readCandidateFile(candidate, shardPath(hash));
+    if (shard.sha256 !== hash)
+      throw new PublisherError("Candidate shard changed after validation.");
+    await putImmutable(store, { key: shardPath(hash), ...shard }, sleep);
+    settled();
+  });
+  if (sha256(candidate.rootBytes) !== diff.candidateDigest)
+    throw new PublisherError("Candidate root does not match the reviewed digest.");
+  await putImmutable(
+    store,
+    {
+      key: snapshotRootPath(candidateSnapshot.id),
+      bytes: candidate.rootBytes,
+      sha256: diff.candidateDigest,
+    },
+    sleep,
+  );
+  settled();
 
   const merged = mergedMetadata(candidate.meta, remote?.body, readClock(clock));
-  const identity = await uploadMetaVariants(store, merged.bytes);
+  const identity = await uploadMetaVariants(store, merged.bytes, sleep);
 
-  // Repeat the trusted gate immediately before the only mutable write. A changed
-  // file, approval, or baseline cannot silently inherit the preflight decision.
-  const finalDiff = await compareOutputTrees({ baselineRoot, candidateRoot, approval });
+  // Repeat the gate immediately before the only mutable write. A changed file or approval
+  // cannot silently inherit the first decision. The baseline is immutable once read, and the
+  // metadata check below proves the live snapshot is still the one it was read from.
+  const finalCandidate = await validateCandidate(candidateRoot);
+  const finalDiff = compareContentTrees(baseline?.tree ?? null, finalCandidate, approval);
   if (
     (finalDiff.blocked.length > 0 && !finalDiff.approved) ||
     finalDiff.baselineDigest !== diff.baselineDigest ||
-    finalDiff.candidateDigest !== diff.candidateDigest
+    finalDiff.candidateDigest !== diff.candidateDigest ||
+    !Buffer.from(finalCandidate.metaBytes).equals(candidate.metaBytes)
   ) {
     throw new PublisherError("Candidate or approval changed before metadata compare-and-swap.");
   }
@@ -489,19 +579,19 @@ export const publishCandidate = async ({
   if (result.type === "precondition-failed") {
     throw new PublisherError("Metadata compare-and-swap lost a concurrent publication race.");
   }
-  const verified = await readMetadata(store).catch(() => null);
+  const committed = await readMetadata(store).catch(() => null);
   if (
-    verified === null ||
-    verified.object.sha256 !== identity.sha256 ||
-    verified.object.metadata["tree-digest"] !== diff.candidateDigest
+    committed === null ||
+    committed.object.sha256 !== identity.sha256 ||
+    committed.object.metadata["tree-digest"] !== diff.candidateDigest
   ) {
     throw new PublisherError(
       "Metadata committed but readback verification failed; investigate before retry.",
     );
   }
-  let pruned: string[];
+  let pruned: CleanupResult;
   try {
-    pruned = await pruneRetiredSnapshots(store, clock);
+    pruned = await pruneRetiredSnapshots(store, { clock, sleep });
   } catch {
     throw new PublisherError(
       "Metadata committed but retention cleanup failed; investigate before retry.",
@@ -512,6 +602,8 @@ export const publishCandidate = async ({
     candidateDigest: diff.candidateDigest,
     current: merged.body.current,
     metaSha256: identity.sha256,
+    uploaded: { blobs: blobs.length, shards: shards.length, objects: total },
     pruned,
+    operations: { ...counts },
   };
 };

@@ -15,6 +15,10 @@ an immutable copy under `v1/_candidates/<snapshotId>/` for exact baseline recove
 alongside the original singleton metadata and its compressed variants. See
 `packages/publisher/README.md` for the verified publication and restoration contract.
 
+[Document 8](08-incremental-publication.md) supersedes this paragraph in part: since its
+step 4 the publisher reads its baseline from R2 and no longer writes `v1/_candidates/`.
+The manifest remains only for the server's tests until step 5 of that document.
+
 Identity public paths remain unchanged. Snapshot variants append `.br`/`.gz`.
 Metadata variants live at `v1/_meta/<identity-meta-sha256>.json.br`/`.json.gz`.
 Only canonical `v1/meta.json` is mutable. A publisher merging retained snapshots

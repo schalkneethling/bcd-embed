@@ -240,6 +240,16 @@ The grace period protects blobs that a publication in progress has uploaded
 but not yet pointed to. Listing costs about 130 Class A operations per pass,
 and deletes are free.
 
+The compressed copies of `meta.json` under `v1/_meta/` are cleaned up in the
+same pass. Each change to `meta.json` writes two copies, named by the hash of
+its plain bytes, and only the pair for the current `meta.json` is ever read.
+The others are deleted once they are older than seven days, with one extra
+condition: the current `meta.json` must have been in place for a day. The
+Worker reads `meta.json` first and then asks for the copy named by its hash, so
+a request that read the previous `meta.json` just before a switch still needs
+the previous copy. The publisher knows when the switch happened from the
+modification date R2 returns with `meta.json`.
+
 ## Changes to the API contract
 
 Response bodies lose two fields, and responses gain three headers.
@@ -358,12 +368,85 @@ pointer per file, so memory grows with N and not with the total bytes.
 Building the tree hashes each key once to choose its shard, which is O(N), and
 sorts the keys inside each shard, which is O(N log(N / 256)).
 
-**What step 3 leaves for later steps.** The command line tool, the diff tool
-and the publisher still use the old emitter and its folder-per-snapshot
-layout. Each moves to the new layout in the step that changes it: the
-publisher in step 4, and the server in step 5. The old emitter is removed when
-its last user moves. Until then the new emitter is exported and tested, but
-nothing in the release pipeline calls it.
+**What step 3 left for later steps.** Step 3 added the emitter without
+switching anything to it. Step 4 switched the command line tool, the diff tool
+and the publisher. The earlier emitter remains only for the server's tests and
+is removed in step 5.
+
+## The publisher's upload path
+
+Step 4 of the plan below is done. The command line tool now writes the new
+layout, and the diff tool and the publisher read it.
+
+```mermaid
+flowchart TD
+    A["Check the local candidate<br/>every pointer, blob and schema"] --> B["Read v1/meta.json, the live root<br/>and its shards: at most 258 reads"]
+    B --> C["Compare pointers<br/>diff report and review gate"]
+    C --> D["Upload blobs the live snapshot lacks<br/>write if unused, then read back"]
+    D --> E["Upload new shards and the root"]
+    E --> F["Repeat the gate, then switch<br/>v1/meta.json by compare-and-swap"]
+    F --> G["Delete what no retained<br/>snapshot uses, after 7 days"]
+```
+
+Four things changed from the earlier design.
+
+**The baseline is read from R2, not rebuilt on disk.** The publisher used to
+download a full copy of the live snapshot so that it could compare two folders.
+It now reads the live root and shards and compares pointers. The private copy
+it kept under `v1/_candidates/` for that download is no longer written, and
+`restorePublishedBaseline` is removed.
+
+**The approval names root hashes.** `baselineDigest` and `candidateDigest` in
+the diff report are the SHA-256 hashes of the two root files. A root holds its
+snapshot identifier and every pointer, and no timestamp. So an approval still
+binds the exact content and release, but generating the same data again later
+gives the same digest, where the earlier tree digest changed with the
+generation time. The times are still checked: a candidate must be newer than
+the live snapshot and must not have expired.
+
+**Uploads are retried.** Every object is sent as a buffer, so a request that
+fails in transit or times out is sent again with the same bytes, up to three
+attempts. An object that reads back with the wrong bytes is not retried.
+
+**Cleanup works on shared files.** It follows
+[Removing old data](#removing-old-data): build the live set from every retained
+snapshot, then delete what is not in it and is older than seven days. It stops
+without deleting if any retained snapshot cannot be read completely, or if
+`v1/meta.json` changes during the run. A dry-run option counts what a run would
+delete. The same pass removes compressed copies of `meta.json` that are no
+longer current.
+
+Each run reports its R2 operations, so a release that changes far more than
+expected is visible in the output:
+
+```json
+{
+  "type": "published",
+  "uploaded": { "blobs": 972, "shards": 241, "objects": 3158 },
+  "pruned": { "dryRun": false, "deleted": { "blobs": 0, "shards": 0, "roots": 0, "metaCopies": 0 } },
+  "operations": { "classA": 3300, "classB": 7200, "deletes": 0 }
+}
+```
+
+The `uploaded` figures in this example are the measurement for 8.1.7 to 8.1.8.
+The `operations` figures are an estimate, because no publication has run
+against R2 yet. They are higher than the cost table below because every run
+also cleans up, which reads the root and shards of each retained snapshot
+(about 257 reads each, for up to 14 snapshots) and lists the stored objects
+(about 130 listings).
+
+Measured on a laptop for BCD 8.1.8: checking the candidate takes 22 seconds,
+and comparing 20,933 keys takes 3 milliseconds.
+
+**Big O behavior.** Checking the candidate is O(total bytes), with one file in
+memory at a time. Comparing is O(N) for N feature keys. Uploading costs one
+write and one read per missing object. Cleanup costs O(S) reads for S retained
+snapshots, one listing per 1,000 stored objects, and memory for one hash per
+live object.
+
+**What step 4 leaves for later steps.** The Worker still reads the earlier
+layout, so nothing published in the new layout can be served until step 5. No
+publication has run against R2 in the new layout; that is step 7.
 
 ## Cost after the change
 
@@ -439,7 +522,8 @@ publisher should log its connection pool's state so a recurrence is visible.
 3. **Generator.** Done: see [the generator's content tree](#the-generators-content-tree).
    Emit blobs, shards and a root. Document the Big O behavior of
    building the pointer tree, which is one pass over the artifacts.
-4. **Publisher.** Compare pointers, upload missing blobs from buffers with
+4. **Publisher.** Done: see [the publisher's upload path](#the-publishers-upload-path).
+   Compare pointers, upload missing blobs from buffers with
    retries, report operation counts, and replace folder deletion with the
    cleanup described above.
 5. **Server and Worker.** Resolve requests through the root and shards, cache

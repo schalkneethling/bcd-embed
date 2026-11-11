@@ -8,7 +8,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 
-import { PublisherError } from "./errors.js";
+import { PublisherError, PublisherTimeoutError } from "./errors.js";
 import type { PublicationStore, PutObject, PutResult, StoredObject } from "./store.js";
 
 export type R2S3Options = {
@@ -32,7 +32,7 @@ const withDeadline = async <T>(action: (signal: AbortSignal) => Promise<T>): Pro
   try {
     return await action(controller.signal);
   } catch (error) {
-    if (timedOut) throw new PublisherError("R2 request exceeded its deadline.");
+    if (timedOut) throw new PublisherTimeoutError("R2 request exceeded its deadline.");
     throw error;
   } finally {
     clearTimeout(deadline);
@@ -53,10 +53,10 @@ const objectBody = async function* (
         yield chunk;
       }
     } catch (error) {
-      if (didTimeout()) throw new PublisherError("R2 object read exceeded its deadline.");
+      if (didTimeout()) throw new PublisherTimeoutError("R2 object read exceeded its deadline.");
       throw error;
     }
-    if (didTimeout()) throw new PublisherError("R2 object read exceeded its deadline.");
+    if (didTimeout()) throw new PublisherTimeoutError("R2 object read exceeded its deadline.");
   } finally {
     clearDeadline();
   }
@@ -115,17 +115,20 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
         ) {
           throw new PublisherError("R2 object has no length.");
         }
+        if (!(result.LastModified instanceof Date))
+          throw new PublisherError("R2 returned an object without a modification date.");
         return {
           body: objectBody(body, dispose, () => timedOut),
           dispose,
           etag: result.ETag,
+          lastModified: result.LastModified,
           metadata: result.Metadata ?? {},
           size: result.ContentLength,
           sha256: result.Metadata?.sha256,
         };
       } catch (error) {
         dispose();
-        if (timedOut) throw new PublisherError("R2 GET exceeded its deadline.");
+        if (timedOut) throw new PublisherTimeoutError("R2 GET exceeded its deadline.");
         if (isS3Error(error, "NoSuchKey") || isS3Error(error, "NotFound")) return null;
         throw error;
       }
@@ -175,12 +178,12 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
           { abortSignal },
         ),
       );
-      if ((result.Contents ?? []).some((item) => item.Key === undefined))
-        throw new PublisherError("R2 listing returned an object without a key.");
-      return {
-        keys: (result.Contents ?? []).flatMap((item) => (item.Key === undefined ? [] : [item.Key])),
-        truncated: result.IsTruncated === true,
-      };
+      const objects = (result.Contents ?? []).map((item) => {
+        if (item.Key === undefined || !(item.LastModified instanceof Date))
+          throw new PublisherError("R2 listing returned an object without a key or a date.");
+        return { key: item.Key, lastModified: item.LastModified };
+      });
+      return { objects, truncated: result.IsTruncated === true };
     },
     async delete(keys) {
       if (keys.length === 0) return;

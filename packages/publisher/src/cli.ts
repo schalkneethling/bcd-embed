@@ -1,15 +1,19 @@
 import { PublisherError } from "./errors.js";
-export const usage = `Usage: bcd-embed-publish --baseline-root <directory> --candidate-root <directory> [--approval-file <json>] [--execute-remote-write --account-id <id> --bucket <name>]
+export const usage = `Usage: bcd-embed-publish --candidate-root <directory> [--baseline-root <directory>] [--approval-file <json>] [--execute-remote-write --account-id <id> --bucket <name>]
 
-Without --execute-remote-write, validate and report locally without contacting R2.
+Without --execute-remote-write, compare the candidate with --baseline-root locally and report,
+without contacting R2. With it, the baseline is the live snapshot read from R2, so
+--baseline-root is not accepted.
 Remote writes require R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY environment variables.`;
 
-export type PublishCommand = {
-  baselineRoot: string;
-  candidateRoot: string;
-  approvalFile?: string;
-  remote?: { accountId: string; bucket: string };
-};
+export type PublishCommand =
+  | { candidateRoot: string; approvalFile?: string; baselineRoot: string; remote?: undefined }
+  | {
+      candidateRoot: string;
+      approvalFile?: string;
+      baselineRoot?: undefined;
+      remote: { accountId: string; bucket: string };
+    };
 
 const valueOptions = new Set([
   "--baseline-root",
@@ -42,23 +46,32 @@ export const parsePublishCommand = (args: readonly string[]): PublishCommand | {
   }
   const baselineRoot = values.get("--baseline-root");
   const candidateRoot = values.get("--candidate-root");
-  if (baselineRoot === undefined || candidateRoot === undefined) {
-    throw new PublisherError(`Baseline and candidate roots are required.\n${usage}`);
+  if (candidateRoot === undefined) {
+    throw new PublisherError(`A candidate root is required.\n${usage}`);
   }
   const accountId = values.get("--account-id");
   const bucket = values.get("--bucket");
-  if (
-    (execute && (accountId === undefined || bucket === undefined)) ||
-    (!execute && (accountId !== undefined || bucket !== undefined))
-  ) {
+  const approvalFile = values.get("--approval-file");
+  if (!execute) {
+    if (accountId !== undefined || bucket !== undefined) {
+      throw new PublisherError(
+        `Remote account and bucket require explicit --execute-remote-write.\n${usage}`,
+      );
+    }
+    if (baselineRoot === undefined) {
+      throw new PublisherError(`A local comparison requires --baseline-root.\n${usage}`);
+    }
+    return { baselineRoot, candidateRoot, approvalFile };
+  }
+  if (accountId === undefined || bucket === undefined) {
     throw new PublisherError(
       `Remote account and bucket require explicit --execute-remote-write.\n${usage}`,
     );
   }
-  return {
-    baselineRoot,
-    candidateRoot,
-    approvalFile: values.get("--approval-file"),
-    remote: execute ? { accountId: accountId!, bucket: bucket! } : undefined,
-  };
+  if (baselineRoot !== undefined) {
+    throw new PublisherError(
+      `--baseline-root is not accepted with --execute-remote-write.\n${usage}`,
+    );
+  }
+  return { candidateRoot, approvalFile, remote: { accountId, bucket } };
 };

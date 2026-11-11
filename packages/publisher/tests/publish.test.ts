@@ -1,148 +1,143 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-
-import publicSchema from "../../generator/src/upstream/public.schema.json" with { type: "json" };
-import {
-  BCD_VERSION,
-  compareOutputTrees,
-  createRepresentations,
-  DiffApprovalMismatchError,
-  emitGeneratedSnapshot,
-  generateSnapshot,
-  type DiffApproval,
-} from "@bcd-embed/generator";
-import { ARTIFACT_MANIFEST_PATH, type ArtifactRepresentation } from "@bcd-embed/schema";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-import { parsePublishCommand } from "../src/cli.js";
-import {
-  publishCandidate,
-  readPublicationReservation,
-  pruneRetiredSnapshots,
-} from "../src/publish.js";
-import { restorePublishedBaseline } from "../src/archive.js";
-import { formatPublisherError } from "../src/errors.js";
-import {
-  hashDecodedStream,
-  validateCandidate,
-  MAX_IDENTITY_BYTES,
-  MAX_TOTAL_BYTES,
-} from "../src/validate.js";
-import type { PublicationStore, PutObject, PutResult, StoredObject } from "../src/store.js";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { gunzipSync, gzipSync } from "node:zlib";
 
+import publicSchema from "../../generator/src/upstream/public.schema.json" with { type: "json" };
+import { withRelease } from "../../generator/tests/support/write-content-tree.js";
+import {
+  BCD_VERSION,
+  DiffApprovalMismatchError,
+  EMPTY_TREE_DIGEST,
+  emitContentTree,
+  generateSnapshot,
+  type DiffApproval,
+} from "@bcd-embed/generator";
+import { blobPath, shardPath, snapshotRootPath } from "@bcd-embed/schema";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { parsePublishCommand } from "../src/cli.js";
+import { formatPublisherError } from "../src/errors.js";
+import {
+  comparePublication,
+  publishCandidate,
+  pruneRetiredSnapshots,
+  readPublicationReservation,
+} from "../src/publish.js";
+import type { PublicationStore, PutObject, PutResult, StoredObject } from "../src/store.js";
+import { readPublishedTree } from "../src/tree.js";
+import { hashDecodedStream, validateCandidate } from "../src/validate.js";
+
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const directories: string[] = [];
-
-const temporary = async () => {
-  const root = await mkdtemp(join(tmpdir(), "bcd-embed-publish-"));
-  directories.push(root);
-  return root;
-};
+const noSleep = async (): Promise<void> => {};
 
 afterEach(async () => {
   for (const root of directories.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-const fixture = (version: string, name = "api.Test") => ({
+/** `features` maps a name below `api` to the Chrome version that added it. */
+const fixture = (features: Record<string, string>) => ({
   ...Object.fromEntries(
     publicSchema.required
       .filter((key) => key !== "__meta" && key !== "browsers")
       .map((key) => [key, {}]),
   ),
-  __meta: { version, timestamp: "2026-01-01T12:00:00Z" },
+  __meta: { version: BCD_VERSION, timestamp: "2026-01-01T12:00:00Z" },
   browsers: {
     chrome: {
       name: "Chrome",
       type: "desktop",
       accepts_flags: true,
       accepts_webextensions: true,
-      releases: { "1": { index: 0, status: "retired", release_date: "2008-12-11" } },
+      releases: {
+        "1": { index: 0, status: "retired", release_date: "2008-12-11" },
+        "2": { index: 1, status: "current" },
+      },
     },
   },
-  api: {
-    [name.slice(4)]: {
-      __compat: { source_file: "api/Test.json", support: { chrome: { version_added: "1" } } },
-    },
-  },
+  api: Object.fromEntries(
+    Object.entries(features).map(([name, versionAdded]) => [
+      name,
+      {
+        __compat: {
+          source_file: `api/${name}.json`,
+          support: { chrome: { version_added: versionAdded } },
+        },
+      },
+    ]),
+  ),
 });
 
-// A release after the pinned one, derived so a BCD update never invalidates it.
+// Releases after the pinned one, derived so a BCD update never invalidates them.
 const [major, minor, patch] = BCD_VERSION.split(".").map(Number);
-const LATER_VERSION = `${major}.${minor}.${patch! + 1}`;
+const laterVersion = (steps: number): string => `${major}.${minor}.${patch! + steps}`;
 
-const emit = async (version: string, generated: string, expires: string, name?: string) => {
-  const root = await temporary();
-  await emitGeneratedSnapshot({
+/** Twenty features, so that one change is 5% and stays inside the review policy's 10%. */
+const featuresWith = (changes: Record<string, string>): Record<string, string> => ({
+  ...Object.fromEntries(Array.from({ length: 18 }, (_, index) => [`Filler${index}`, "1"])),
+  Test: "1",
+  Other: "1",
+  ...changes,
+});
+
+type Release = {
+  version?: string;
+  generated: string;
+  expires: string;
+  features?: Record<string, string>;
+};
+const emit = async ({
+  version = BCD_VERSION,
+  generated,
+  expires,
+  features = featuresWith({}),
+}: Release): Promise<string> => {
+  const root = await mkdtemp(join(tmpdir(), "bcd-embed-publish-"));
+  directories.push(root);
+  const snapshot = generateSnapshot({ generated, expires, data: fixture(features) });
+  await emitContentTree({
     outputRoot: root,
-    generatedSnapshot: generateSnapshot({ generated, expires, data: fixture(BCD_VERSION, name) }),
+    // The generator pins one BCD release, so a later release is the same data renamed.
+    generatedSnapshot: version === BCD_VERSION ? snapshot : withRelease(snapshot, { version }),
   });
-  if (version === BCD_VERSION) return root;
-  // The generator deliberately pins one BCD release. Exercise later-version
-  // publication using transformed *real emitted* artifacts and its encoder.
-  const original = await validateCandidate(root);
-  const nextRoot = await temporary();
-  const oldId = original.meta.current;
-  const nextId = oldId.replace(`bcd-${BCD_VERSION}-`, `bcd-${version}-`);
-  const artifacts: ArtifactRepresentation[] = [];
-  for (const entry of original.manifest.artifacts) {
-    if (entry.encoding !== "identity") continue;
-    const logicalPath = entry.logicalPath.replace(oldId, nextId);
-    const data = JSON.parse(await readFile(join(root, entry.path), "utf8"));
-    if (entry.logicalPath === "v1/meta.json") {
-      data.current = nextId;
-      data.snapshots[0].id = nextId;
-      data.snapshots[0].source.version = version;
-    }
-    const bytes = Buffer.from(`${JSON.stringify(data)}\n`, "utf8");
-    for (const representation of createRepresentations(logicalPath, bytes)) {
-      artifacts.push({
-        logicalPath: representation.logicalPath,
-        encoding: representation.encoding,
-        path: representation.path,
-        size: representation.size,
-        sha256: representation.sha256,
-        etag: representation.etag,
-      });
-      const target = join(nextRoot, representation.path);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, representation.bytes);
-    }
-  }
-  await writeFile(
-    join(nextRoot, ARTIFACT_MANIFEST_PATH),
-    `${JSON.stringify({ version: 1, snapshotId: nextId, artifacts })}\n`,
-  );
-  return nextRoot;
+  return root;
 };
 
-const approvalFor = async (baselineRoot: string, candidateRoot: string): Promise<DiffApproval> => {
-  const report = await compareOutputTrees({ baselineRoot, candidateRoot });
-  return {
-    baselineDigest: report.baselineDigest,
-    candidateDigest: report.candidateDigest,
-    approved: true,
-    reason: "Reviewed exact test fixture output",
-  };
+const FIRST: Release = { generated: "2026-01-01T12:00:00Z", expires: "2026-04-01" };
+const SECOND: Release = {
+  version: laterVersion(1),
+  generated: "2026-01-08T12:00:00Z",
+  expires: "2026-04-08",
+  features: featuresWith({ Test: "2" }),
 };
+const at = (date: string) => () => new Date(date);
 
 class MemoryStore implements PublicationStore {
-  objects = new Map<string, { bytes: Buffer; etag: string; metadata: Record<string, string> }>();
+  objects = new Map<
+    string,
+    { bytes: Buffer; etag: string; metadata: Record<string, string>; modified: Date }
+  >();
   puts: string[] = [];
+  gets = 0;
+  lists = 0;
+  /** The date new objects are stamped with. */
+  now = new Date("2026-01-01T12:00:00Z");
   failAfter: number | undefined;
+  /** Throws this many times on PUT, as a dropped connection would, then works. */
+  transientPutFailures = 0;
   corruptKey: string | undefined;
   raceOnMeta = false;
   failDelete = false;
   throwOnMetaPutAfterWrite = false;
   throwOnMetaGetAfterPut = false;
   repeatedPage = false;
-  onPut: ((key: string) => void) | undefined;
-  disposed = 0;
+  onDelete: (() => void) | undefined;
 
   async get(key: string): Promise<StoredObject | null> {
+    this.gets += 1;
     if (this.throwOnMetaGetAfterPut && key === "v1/meta.json" && this.puts.includes(key)) {
       throw new Error("Simulated readback failure");
     }
@@ -150,10 +145,9 @@ class MemoryStore implements PublicationStore {
     if (object === undefined) return null;
     return {
       body: Readable.from([object.bytes]),
-      dispose: () => {
-        this.disposed++;
-      },
+      dispose: () => {},
       etag: object.etag,
+      lastModified: object.modified,
       metadata: object.metadata,
       sha256: object.metadata.sha256,
       size: object.bytes.byteLength,
@@ -161,6 +155,10 @@ class MemoryStore implements PublicationStore {
   }
 
   async put(input: PutObject): Promise<PutResult> {
+    if (this.transientPutFailures > 0) {
+      this.transientPutFailures -= 1;
+      throw new Error("Simulated dropped connection");
+    }
     if (this.failAfter !== undefined && this.puts.length >= this.failAfter) {
       throw new Error("Simulated interrupted upload");
     }
@@ -172,22 +170,17 @@ class MemoryStore implements PublicationStore {
     ) {
       return { type: "precondition-failed" };
     }
-    const chunks: Uint8Array[] = [];
-    if (input.body instanceof Uint8Array) {
-      chunks.push(input.body);
-    } else {
-      for await (const chunk of input.body) chunks.push(chunk);
-    }
-    const bytes = Buffer.concat(chunks);
+    if (!(input.body instanceof Uint8Array)) throw new Error("Test store expects buffers.");
+    const bytes = Buffer.from(input.body);
     if (this.corruptKey === input.key) bytes[0] = (bytes[0] ?? 0) ^ 1;
     const etag = `"${createHash("md5").update(bytes).digest("hex")}"`;
     this.objects.set(input.key, {
       bytes,
       etag,
       metadata: { ...input.metadata, sha256: input.sha256 },
+      modified: this.now,
     });
     this.puts.push(input.key);
-    this.onPut?.(input.key);
     if (this.throwOnMetaPutAfterWrite && input.key === "v1/meta.json") {
       throw new Error("Simulated connection loss after commit");
     }
@@ -195,223 +188,67 @@ class MemoryStore implements PublicationStore {
   }
 
   async list(prefix: string, startAfter: string | undefined, limit: number) {
-    const all = [...this.objects.keys()].filter((key) => key.startsWith(prefix)).sort();
-    if (this.repeatedPage && prefix === "v1/_publication/")
-      return { keys: all.slice(0, 1), truncated: true };
-    const remaining = all.filter((key) => startAfter === undefined || key > startAfter);
-    return { keys: remaining.slice(0, limit), truncated: remaining.length > limit };
+    this.lists += 1;
+    const all = [...this.objects.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .sort(([left], [right]) => (left < right ? -1 : 1))
+      .map(([key, { modified }]) => ({ key, lastModified: modified }));
+    if (this.repeatedPage) return { objects: all.slice(0, 1), truncated: true };
+    const remaining = all.filter(({ key }) => startAfter === undefined || key > startAfter);
+    return { objects: remaining.slice(0, limit), truncated: remaining.length > limit };
   }
 
   async delete(keys: readonly string[]) {
     if (this.failDelete) throw new Error("Simulated cleanup interruption");
+    this.onDelete?.();
     for (const key of keys) this.objects.delete(key);
+  }
+
+  keys(prefix: string): string[] {
+    return [...this.objects.keys()].filter((key) => key.startsWith(prefix)).sort();
   }
 }
 
-describe("publication state machine", () => {
-  it("resumes interrupted private control upload without relaxing candidate identity", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const store = new MemoryStore();
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    store.onPut = (key) => {
-      if (key.startsWith("v1/_candidates/")) throw new Error("control interruption");
-    };
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        store,
-        approval,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).rejects.toThrow("control interruption");
-    expect(store.objects.has("v1/meta.json")).toBe(false);
-    store.onPut = undefined;
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        store,
-        approval,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).resolves.toMatchObject({ type: "published" });
-    const candidate = await validateCandidate(candidateRoot);
-    const marker = store.objects.get(`v1/_publication/${candidate.meta.current}.json`)!;
-    const altered = { ...JSON.parse(marker.bytes.toString()), unexpected: true };
-    marker.bytes = Buffer.from(JSON.stringify(altered));
-    marker.metadata.sha256 = sha256(marker.bytes);
-    await expect(readPublicationReservation(store, candidate.meta.current)).rejects.toThrow(
-      "Invalid publication marker",
-    );
+const approvalFor = async (store: MemoryStore, candidateRoot: string): Promise<DiffApproval> => {
+  const { report } = await comparePublication({ store, candidateRoot });
+  return {
+    baselineDigest: report.baselineDigest,
+    candidateDigest: report.candidateDigest,
+    approved: true,
+    reason: "Reviewed exact test fixture output",
+  };
+};
+
+/** Publishes the first release, which needs a bootstrap approval, and returns its folder. */
+const publishFirst = async (store: MemoryStore, release: Release = FIRST): Promise<string> => {
+  const candidateRoot = await emit(release);
+  const result = await publishCandidate({
+    candidateRoot,
+    store,
+    approval: await approvalFor(store, candidateRoot),
+    clock: at("2026-01-02"),
+    sleep: noSleep,
+  });
+  expect(result.type).toBe("published");
+  return candidateRoot;
+};
+
+describe("command line grammar", () => {
+  it("compares locally against a baseline folder by default", () => {
+    expect(parsePublishCommand(["--baseline-root", "a", "--candidate-root", "b"])).toEqual({
+      baselineRoot: "a",
+      candidateRoot: "b",
+      approvalFile: undefined,
+    });
+    expect(() => parsePublishCommand(["--candidate-root", "b"])).toThrow("--baseline-root");
   });
 
-  it("rejects corrupt, oversized, and missing restoration bodies and remote-current races", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const store = new MemoryStore();
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot,
-      store,
-      approval: await approvalFor(baselineRoot, candidateRoot),
-      clock: () => new Date("2026-01-02"),
-    });
-    const candidate = await validateCandidate(candidateRoot);
-    const key = candidate.manifest.artifacts.find(
-      (item) => item.logicalPath !== "v1/meta.json",
-    )!.path;
-    const original = store.get.bind(store);
-    for (const mode of ["corrupt", "oversized", "missing", "race"] as const) {
-      const outputRoot = await temporary();
-      let metadataReads = 0;
-      const spy = vi.spyOn(store, "get").mockImplementation(async (requested) => {
-        const object = await original(requested);
-        if (
-          mode === "race" &&
-          requested === "v1/meta.json" &&
-          object !== null &&
-          ++metadataReads === 2
-        )
-          object.etag = '"different"';
-        if (requested !== key || object === null || mode === "race") return object;
-        if (mode === "missing") {
-          object.dispose();
-          return null;
-        }
-        return {
-          ...object,
-          body: Readable.from([
-            mode === "oversized" ? Buffer.alloc(object.size + 1) : Buffer.alloc(object.size),
-          ]),
-        };
-      });
-      await expect(restorePublishedBaseline({ store, outputRoot })).rejects.toThrow(
-        mode === "race"
-          ? "changed during restoration"
-          : mode === "missing"
-            ? "missing"
-            : mode === "oversized"
-              ? "exceeds"
-              : "byte verification",
-      );
-      spy.mockRestore();
-    }
-  });
-
-  it("restores the exact original candidate and reads the strict timestamp reservation", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const store = new MemoryStore();
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot,
-      store,
-      approval,
-      clock: () => new Date("2026-01-02"),
-    });
-    const candidate = await validateCandidate(candidateRoot);
-    const reservation = await readPublicationReservation(store, candidate.meta.current);
-    expect(reservation).toEqual({
-      version: 1,
-      snapshotId: candidate.meta.current,
-      candidateDigest: approval.candidateDigest,
-      generated: "2026-01-01T12:00:00Z",
-      expires: "2026-04-01",
-    });
-    const outputRoot = await temporary();
-    const result = await restorePublishedBaseline({ store, outputRoot });
-    expect(result).toMatchObject({
-      candidateDigest: approval.candidateDigest,
-      snapshotId: candidate.meta.current,
-    });
-    const report = await compareOutputTrees({
-      baselineRoot: candidateRoot,
-      candidateRoot: outputRoot,
-    });
-    expect(report.candidateDigest).toBe(report.baselineDigest);
-    await expect(restorePublishedBaseline({ store, outputRoot })).rejects.toThrow("empty");
-    await expect(readPublicationReservation(store, "../secret")).rejects.toThrow();
-    expect(await readPublicationReservation(store, `bcd-${LATER_VERSION}-gen-0.0.0`)).toBeNull();
-  });
-
-  it("rejects an invalid clock before any storage I/O and fresh expiry before final CAS", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const store = new MemoryStore();
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        store,
-        approval,
-        clock: () => new Date(Number.NaN),
-      }),
-    ).rejects.toThrow("finite Date");
-    expect(store.disposed).toBe(0);
-    expect(store.puts).toEqual([]);
-    let now = new Date("2026-01-02");
-    store.onPut = (key) => {
-      if (key.startsWith("v1/_candidates/")) now = new Date("2026-04-02");
-    };
-    await expect(
-      publishCandidate({ baselineRoot, candidateRoot, store, approval, clock: () => now }),
-    ).rejects.toThrow("publishable now");
-    expect(store.objects.has("v1/meta.json")).toBe(false);
-  });
-
-  it("fails closed on nonadvancing nonempty listing pages", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const store = new MemoryStore();
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot,
-      store,
-      approval: await approvalFor(baselineRoot, candidateRoot),
-      clock: () => new Date("2026-01-02"),
-    });
-    store.repeatedPage = true;
-    await expect(pruneRetiredSnapshots(store, () => new Date("2026-01-02"))).rejects.toThrow(
-      "did not advance",
-    );
-  });
-
-  it("enforces reviewed identity and aggregate caps before reading artifact bodies", async () => {
-    const root = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const path = join(root, ARTIFACT_MANIFEST_PATH);
-    const original = JSON.parse(await readFile(path, "utf8"));
-    const oversized = structuredClone(original);
-    const identity = oversized.artifacts.find(
-      (artifact: ArtifactRepresentation) => artifact.encoding === "identity",
-    );
-    identity.size = MAX_IDENTITY_BYTES + 1;
-    await writeFile(path, JSON.stringify(oversized));
-    await expect(validateCandidate(root)).rejects.toThrow("16 MiB");
-    const aggregate = structuredClone(original);
-    // Use an encoded entry so the independent aggregate gate is exercised.
-    const encoded = aggregate.artifacts.find(
-      (artifact: ArtifactRepresentation) => artifact.encoding !== "identity",
-    );
-    encoded.size = MAX_TOTAL_BYTES + 1;
-    await writeFile(path, JSON.stringify(aggregate));
-    await expect(validateCandidate(root)).rejects.toThrow("2 GiB");
-  });
-
-  it("requires explicit remote-write CLI opt-in", () => {
-    expect(parsePublishCommand(["--baseline-root", "a", "--candidate-root", "b"])).toMatchObject({
-      remote: undefined,
-    });
+  it("requires explicit remote-write opt-in with both account and bucket", () => {
     expect(() =>
       parsePublishCommand(["--baseline-root", "a", "--candidate-root", "b", "--bucket", "x"]),
     ).toThrow("explicit");
     expect(() =>
       parsePublishCommand([
-        "--baseline-root",
-        "a",
         "--candidate-root",
         "b",
         "--execute-remote-write",
@@ -421,476 +258,617 @@ describe("publication state machine", () => {
     ).toThrow("explicit");
   });
 
-  it("blocks unapproved bootstrap before any remote write", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
+  it("takes the remote baseline from R2, so it refuses a baseline folder", () => {
+    const remote = ["--execute-remote-write", "--account-id", "0".repeat(32), "--bucket", "x"];
+    expect(parsePublishCommand(["--candidate-root", "b", ...remote])).toEqual({
+      candidateRoot: "b",
+      approvalFile: undefined,
+      remote: { accountId: "0".repeat(32), bucket: "x" },
+    });
+    expect(() =>
+      parsePublishCommand(["--baseline-root", "a", "--candidate-root", "b", ...remote]),
+    ).toThrow("not accepted");
+  });
+});
+
+describe("first publication", () => {
+  it("blocks an unapproved bootstrap before any remote write", async () => {
     const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
     await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        store,
-        clock: () => new Date("2026-01-02"),
-      }),
+      publishCandidate({ candidateRoot, store, clock: at("2026-01-02"), sleep: noSleep }),
     ).rejects.toThrow("Output diff blocked");
     expect(store.puts).toEqual([]);
   });
 
-  // Exercise the complete filesystem pipeline without racing cleanup on slow CI disks.
-  it("publishes a complete generated tree, verifies bytes, then flips metadata once", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
+  it("reports the digests an approval must name without writing anything", async () => {
     const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const { report, candidate } = await comparePublication({ store, candidateRoot });
+    expect(report.bootstrap).toBe(true);
+    expect(report.baselineDigest).toBe(EMPTY_TREE_DIGEST);
+    expect(report.candidateDigest).toBe(sha256(candidate.rootBytes));
+    expect(store.puts).toEqual([]);
+  });
+
+  it("uploads every object, verifies it, then makes the snapshot current once", async () => {
+    const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const candidate = await validateCandidate(candidateRoot);
+    const approval = await approvalFor(store, candidateRoot);
+    const progress: number[] = [];
     const result = await publishCandidate({
-      baselineRoot,
       candidateRoot,
-      approval,
       store,
-      clock: () => new Date("2026-01-02T12:00:00Z"),
+      approval,
+      clock: at("2026-01-02"),
+      onProgress: ({ verified }) => progress.push(verified),
+      sleep: noSleep,
     });
-    expect(result.type).toBe("published");
+
+    if (result.type !== "published") throw new Error("Expected a publication.");
+    const objects = candidate.blobs.size * 3 + candidate.shards.size + 1;
+    expect(result.uploaded).toEqual({
+      blobs: candidate.blobs.size,
+      shards: candidate.shards.size,
+      objects,
+    });
+    expect(progress.at(-1)).toBe(objects);
+    expect(store.keys("v1/blobs/")).toHaveLength(candidate.blobs.size * 3);
+    expect(store.keys("v1/shards/")).toHaveLength(candidate.shards.size);
+    expect(store.keys("v1/snapshots/")).toEqual([snapshotRootPath(candidate.snapshotId)]);
+    expect(store.puts.filter((key) => key === "v1/meta.json")).toHaveLength(1);
     expect(store.puts.at(-1)).toBe("v1/meta.json");
-    expect(store.objects.get("v1/meta.json")?.metadata["tree-digest"]).toBe(
-      approval.candidateDigest,
-    );
-    const candidate = await validateCandidate(candidateRoot);
-    const feature = candidate.manifest.artifacts.find(
-      (item) => item.logicalPath.includes("features/") && item.encoding === "identity",
-    )!;
-    expect(store.objects.get(feature.path)?.metadata.sha256).toBe(feature.sha256);
-    expect(store.objects.get(feature.path)?.etag).not.toBe(feature.etag);
 
-    const originalPuts = store.puts.length;
-    const repeated = await publishCandidate({
-      baselineRoot,
-      candidateRoot,
-      approval,
-      store,
-      clock: () => new Date("2026-01-02T12:00:00Z"),
+    const meta = store.objects.get("v1/meta.json")!;
+    expect(meta.metadata["tree-digest"]).toBe(candidate.digest);
+    expect(result.candidateDigest).toBe(candidate.digest);
+    for (const [key, object] of store.objects) {
+      expect(sha256(object.bytes), key).toBe(object.metadata.sha256);
+    }
+    const published = await readPublishedTree(store, candidate.meta.snapshots[0]!);
+    expect(published.digest).toBe(candidate.digest);
+    expect(published.features.size).toBe(20);
+    expect(published.features.has("api.Test")).toBe(true);
+
+    // Writes and listings are Class A; reads are Class B. Every write is one put.
+    expect(result.operations.classA).toBe(store.puts.length + store.lists);
+    expect(result.operations.classB).toBeGreaterThan(objects);
+    expect(result.pruned).toEqual({
+      dryRun: false,
+      deleted: { blobs: 0, shards: 0, roots: 0, metaCopies: 0 },
     });
-    expect(repeated.type).toBe("unchanged");
-    expect(store.puts.length).toBe(originalPuts);
-  }, 30_000);
-
-  it("keeps canonical metadata absent after a partial immutable upload and resumes identical objects", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    const store = new MemoryStore();
-    store.failAfter = 3;
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).rejects.toThrow("Simulated");
-    expect(store.objects.has("v1/meta.json")).toBe(false);
-    expect(store.puts.length).toBeGreaterThan(0);
-    store.failAfter = undefined;
-    const progress: { verified: number; total: number }[] = [];
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-        onProgress: (step) => progress.push(step),
-      }),
-    ).resolves.toMatchObject({ type: "published" });
-    // A resumed run verifies every object again, including those stored before the failure.
-    const total = progress[0]!.total;
-    expect(progress.map((step) => step.verified)).toEqual(
-      Array.from({ length: total }, (_, index) => index + 1),
-    );
-  });
-
-  it("names a stale approval instead of reporting an unknown error", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = {
-      ...(await approvalFor(baselineRoot, candidateRoot)),
-      candidateDigest: "0".repeat(64),
-    };
-    const store = new MemoryStore();
-    const failure = await publishCandidate({
-      baselineRoot,
-      candidateRoot,
-      approval,
-      store,
-      clock: () => new Date("2026-01-02"),
-    }).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(DiffApprovalMismatchError);
-    expect(formatPublisherError(failure)).toBe(
-      "Approval digest does not match these exact baseline and candidate trees.",
-    );
-    expect(store.puts).toHaveLength(0);
-  });
-
-  it("resumes when a metadata variant exists with different compressed bytes", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    const publish = (store: MemoryStore) =>
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-      });
-    const reference = new MemoryStore();
-    await publish(reference);
-    const variantKey = [...reference.objects.keys()].find((key) =>
-      /^v1\/_meta\/[a-f0-9]{64}\.json\.gz$/.test(key),
-    )!;
-    const identity = gunzipSync(reference.objects.get(variantKey)!.bytes);
-    const recompressed = gzipSync(identity, { level: 0 });
-    expect(recompressed.equals(reference.objects.get(variantKey)!.bytes)).toBe(false);
-
-    const store = new MemoryStore();
-    store.objects.set(variantKey, {
-      bytes: recompressed,
-      etag: '"seeded"',
-      metadata: { sha256: sha256(recompressed) },
-    });
-    await expect(publish(store)).resolves.toMatchObject({ type: "published" });
-    expect(store.objects.get(variantKey)!.bytes.equals(recompressed)).toBe(true);
-  });
-
-  it("rejects an existing metadata variant that does not decode to the expected metadata", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    const reference = new MemoryStore();
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot,
-      approval,
-      store: reference,
-      clock: () => new Date("2026-01-02"),
-    });
-    const variantKey = [...reference.objects.keys()].find((key) =>
-      /^v1\/_meta\/[a-f0-9]{64}\.json\.gz$/.test(key),
-    )!;
-    const wrong = gzipSync(Buffer.from('{"not":"the metadata"}\n'));
-    const store = new MemoryStore();
-    store.objects.set(variantKey, {
-      bytes: wrong,
-      etag: '"seeded"',
-      metadata: { sha256: sha256(wrong) },
-    });
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).rejects.toThrow("Existing metadata variant does not decode to the expected metadata.");
-    expect(store.objects.has("v1/meta.json")).toBe(false);
-  });
-
-  it("rejects a remote baseline that differs from the exact reviewed tree", async () => {
-    const baselineRoot = await temporary();
-    const firstRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const secondRoot = await emit(
-      LATER_VERSION,
-      "2026-03-01T12:00:00Z",
-      "2026-05-30",
-      "api.Changed",
-    );
-    const store = new MemoryStore();
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot: firstRoot,
-      approval: await approvalFor(baselineRoot, firstRoot),
-      store,
-      clock: () => new Date("2026-01-02"),
-    });
-    store.objects.get("v1/meta.json")!.metadata["tree-digest"] = "0".repeat(64);
-    const putsBefore = store.puts.length;
-    await expect(
-      publishCandidate({
-        baselineRoot: firstRoot,
-        candidateRoot: secondRoot,
-        approval: await approvalFor(firstRoot, secondRoot),
-        store,
-        clock: () => new Date("2026-03-02"),
-      }),
-    ).rejects.toThrow("reviewed baseline");
-    expect(store.puts).toHaveLength(putsBefore);
-  });
-
-  it("rejects corrupted stored bytes and a conditional metadata race", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    const store = new MemoryStore();
-    const candidate = await validateCandidate(candidateRoot);
-    store.corruptKey = candidate.manifest.artifacts.find(
-      (item) => item.encoding === "identity" && item.logicalPath !== "v1/meta.json",
-    )!.path;
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).rejects.toThrow("checksum");
-    expect(store.objects.has("v1/meta.json")).toBe(false);
-    store.corruptKey = undefined;
-    store.objects.delete(
-      candidate.manifest.artifacts.find(
-        (item) => item.encoding === "identity" && item.logicalPath !== "v1/meta.json",
-      )!.path,
-    );
-    store.raceOnMeta = true;
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).rejects.toThrow("race");
-    expect(store.objects.has("v1/meta.json")).toBe(false);
-  });
-
-  it("reports an unknown compare-and-swap outcome, then a rerun reconciles as unchanged", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    const store = new MemoryStore();
-    store.throwOnMetaPutAfterWrite = true;
-    const options = {
-      baselineRoot,
-      candidateRoot,
-      approval,
-      store,
-      clock: () => new Date("2026-01-02"),
-    };
-    await expect(publishCandidate(options)).rejects.toThrow(
-      "Metadata compare-and-swap outcome is unknown; metadata may have committed. Rerun the same candidate to reconcile.",
-    );
-    expect(store.objects.has("v1/meta.json")).toBe(true);
-    store.throwOnMetaPutAfterWrite = false;
-    const current = (await validateCandidate(candidateRoot)).meta.current;
-    expect(await publishCandidate(options)).toMatchObject({ type: "unchanged", current });
-  });
-
-  it("reports failed readback verification when the post-compare-and-swap read throws", async () => {
-    const baselineRoot = await temporary();
-    const candidateRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const approval = await approvalFor(baselineRoot, candidateRoot);
-    const store = new MemoryStore();
-    store.throwOnMetaGetAfterPut = true;
-    await expect(
-      publishCandidate({
-        baselineRoot,
-        candidateRoot,
-        approval,
-        store,
-        clock: () => new Date("2026-01-02"),
-      }),
-    ).rejects.toThrow(
-      "Metadata committed but readback verification failed; investigate before retry.",
-    );
-  });
-
-  it("reports committed metadata after cleanup failure, then resumes retirement without repeated IDs", async () => {
-    const baselineRoot = await temporary();
-    const firstRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const secondRoot = await emit(
-      LATER_VERSION,
-      "2026-04-02T12:00:00Z",
-      "2026-07-01",
-      "api.Changed",
-    );
-    const store = new MemoryStore();
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot: firstRoot,
-      approval: await approvalFor(baselineRoot, firstRoot),
-      store,
-      clock: () => new Date("2026-01-02"),
-    });
-    const firstId = (await validateCandidate(firstRoot)).meta.current;
-    const secondId = (await validateCandidate(secondRoot)).meta.current;
-    const secondApproval = await approvalFor(firstRoot, secondRoot);
-    store.failDelete = true;
-    await expect(
-      publishCandidate({
-        baselineRoot: firstRoot,
-        candidateRoot: secondRoot,
-        approval: secondApproval,
-        store,
-        clock: () => new Date("2026-04-03"),
-      }),
-    ).rejects.toThrow("Metadata committed but retention cleanup failed; investigate before retry.");
-    expect(JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()).current).toBe(secondId);
-    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(true);
-    store.failDelete = false;
-    const second = await publishCandidate({
-      baselineRoot: firstRoot,
-      candidateRoot: secondRoot,
-      approval: secondApproval,
-      store,
-      clock: () => new Date("2026-04-03"),
-    });
-    expect(second).toMatchObject({ type: "unchanged", pruned: [firstId] });
-    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(false);
-    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${secondId}/`))).toBe(true);
-    expect(JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()).current).toBe(secondId);
-    expect(await pruneRetiredSnapshots(store, () => new Date("2026-04-03"))).toEqual([]);
-  });
-
-  it("retains snapshots during publish, then no-change cleanup CAS removes membership before retryable deletion", async () => {
-    const baselineRoot = await temporary();
-    const firstRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const secondRoot = await emit(
-      LATER_VERSION,
-      "2026-03-01T12:00:00Z",
-      "2026-05-30",
-      "api.Changed",
-    );
-    const store = new MemoryStore();
-    const firstApproval = await approvalFor(baselineRoot, firstRoot);
-    const secondApproval = await approvalFor(firstRoot, secondRoot);
-    await publishCandidate({
-      baselineRoot,
-      candidateRoot: firstRoot,
-      approval: firstApproval,
-      store,
-      clock: () => new Date("2026-01-02"),
-    });
-    await publishCandidate({
-      baselineRoot: firstRoot,
-      candidateRoot: secondRoot,
-      approval: secondApproval,
-      store,
-      clock: () => new Date("2026-03-02"),
-    });
-    const firstId = (await validateCandidate(firstRoot)).meta.current;
-    const before = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString());
-    expect(before.snapshots).toHaveLength(2);
-    const outputRoot = await temporary();
-    await restorePublishedBaseline({ store, outputRoot });
-    const restored = await compareOutputTrees({
-      baselineRoot: secondRoot,
-      candidateRoot: outputRoot,
-    });
-    expect(restored.candidateDigest).toBe(restored.baselineDigest);
-
-    store.failDelete = true;
-    await expect(
-      publishCandidate({
-        baselineRoot: firstRoot,
-        candidateRoot: secondRoot,
-        approval: secondApproval,
-        store,
-        clock: () => new Date("2026-04-03"),
-      }),
-    ).rejects.toThrow("cleanup interruption");
-    const retired = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString());
-    expect(retired.snapshots).toHaveLength(1);
-    expect(retired.current).not.toBe(firstId);
-    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(true);
-
-    store.failDelete = false;
-    const deleteObjects = store.delete.bind(store);
-    const interruptedControls = vi.spyOn(store, "delete").mockImplementation(async (keys) => {
-      if (keys.some((key) => key.startsWith(`v1/_candidates/${firstId}/`))) {
-        throw new Error("Simulated control cleanup interruption");
-      }
-      await deleteObjects(keys);
-    });
-    await expect(pruneRetiredSnapshots(store, () => new Date("2026-04-03"))).rejects.toThrow(
-      "control cleanup interruption",
-    );
-    interruptedControls.mockRestore();
-    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(false);
-    expect(
-      [...store.objects.keys()].some((key) => key.startsWith(`v1/_candidates/${firstId}/`)),
-    ).toBe(true);
-
-    const resumed = await publishCandidate({
-      baselineRoot: firstRoot,
-      candidateRoot: secondRoot,
-      approval: secondApproval,
-      store,
-      clock: () => new Date("2026-04-03"),
-    });
-    expect(resumed).toMatchObject({ type: "unchanged", pruned: [firstId] });
-    expect([...store.objects.keys()].some((key) => key.startsWith(`v1/${firstId}/`))).toBe(false);
-    expect(
-      [...store.objects.keys()].some((key) => key.startsWith(`v1/_candidates/${firstId}/`)),
-    ).toBe(false);
-    expect(store.objects.has(`v1/_publication/${firstId}.json`)).toBe(true);
-    expect(await pruneRetiredSnapshots(store, () => new Date("2026-04-03"))).toEqual([]);
   });
 });
 
-describe("candidate compression validation", () => {
-  it("rejects a decompression bomb without exceeding identity size", async () => {
-    const compressed = gzipSync(Buffer.alloc(100_000, 65));
-    await expect(hashDecodedStream(Readable.from([compressed]), "gzip", 16)).rejects.toThrow(
-      "exceeds",
-    );
-  });
+describe("a later publication", () => {
+  it("uploads only what the live snapshot does not have", async () => {
+    const store = new MemoryStore();
+    const first = await validateCandidate(await publishFirst(store));
+    const firstPuts = store.puts.length;
 
-  it("propagates malformed compressed data and source stream failures", async () => {
-    await expect(
-      hashDecodedStream(Readable.from([Buffer.from("bad")]), "gzip", 100),
-    ).rejects.toThrow();
-    const source = new Readable({
-      read() {
-        this.destroy(new Error("source failed"));
-      },
+    const candidateRoot = await emit(SECOND);
+    const second = await validateCandidate(candidateRoot);
+    const result = await publishCandidate({
+      candidateRoot,
+      store,
+      clock: at("2026-01-09"),
+      sleep: noSleep,
     });
-    await expect(hashDecodedStream(source, "gzip", 100)).rejects.toThrow("source failed");
-    expect(source.destroyed).toBe(true);
-  });
 
-  it("rejects missing manifest inventory and variant corruption", async () => {
-    const root = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const candidate = await validateCandidate(root);
-    const variant = candidate.manifest.artifacts.find((item) => item.encoding === "gzip")!;
-    const path = join(root, variant.path);
-    const bytes = await readFile(path);
-    await writeFile(path, Buffer.from("corrupt"));
-    await expect(validateCandidate(root)).rejects.toThrow("manifest");
-    await writeFile(path, bytes);
-    await mkdir(join(root, "extra"));
-    await writeFile(join(root, "extra", "unexpected.json"), "{}\n");
-    await expect(validateCandidate(root)).rejects.toThrow("inventory");
-    expect(sha256(bytes)).toBe(variant.sha256);
-  });
+    if (result.type !== "published") throw new Error("Expected a publication.");
+    const newBlobs = [...second.blobs].filter((hash) => !first.blobs.has(hash));
+    const newShards = [...second.shards].filter((hash) => !first.shards.has(hash));
+    // One feature changed: its normalized file and its raw file. Everything else is shared.
+    expect(newBlobs).toHaveLength(2);
+    expect(newShards).toHaveLength(1);
+    expect(result.uploaded).toEqual({ blobs: 2, shards: 1, objects: 2 * 3 + 1 + 1 });
 
-  it("rejects a self-consistent manifest that omits the generated snapshot", async () => {
-    const generatedRoot = await emit(BCD_VERSION, "2026-01-01T12:00:00Z", "2026-04-01");
-    const generated = await validateCandidate(generatedRoot);
-    const forgedRoot = await temporary();
-    const metaOnly = generated.manifest.artifacts.filter(
-      (item) => item.logicalPath === "v1/meta.json",
+    const puts = store.puts.slice(firstPuts);
+    expect(puts.filter((key) => key.startsWith("v1/blobs/")).sort()).toEqual(
+      newBlobs
+        .flatMap((hash) => [
+          blobPath(hash, "identity"),
+          blobPath(hash, "br"),
+          blobPath(hash, "gzip"),
+        ])
+        .sort(),
     );
-    for (const item of metaOnly) {
-      const target = join(forgedRoot, item.path);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, await readFile(join(generatedRoot, item.path)));
+    expect(puts.filter((key) => key.startsWith("v1/shards/"))).toEqual(newShards.map(shardPath));
+
+    const meta = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()) as {
+      current: string;
+      snapshots: Array<{ id: string }>;
+    };
+    expect(meta.current).toBe(second.snapshotId);
+    expect(meta.snapshots.map(({ id }) => id)).toEqual([second.snapshotId, first.snapshotId]);
+    // The first snapshot is still complete, so pinned URLs keep working.
+    expect((await readPublishedTree(store, first.meta.snapshots[0]!)).digest).toBe(first.digest);
+  });
+
+  it("is unchanged when the data is the same under a new release name", async () => {
+    const store = new MemoryStore();
+    await publishFirst(store);
+    const before = store.puts.length;
+    const candidateRoot = await emit({ ...SECOND, features: undefined });
+    const result = await publishCandidate({
+      candidateRoot,
+      store,
+      clock: at("2026-01-09"),
+      sleep: noSleep,
+    });
+    expect(result.type).toBe("unchanged");
+    expect(store.puts).toHaveLength(before);
+  });
+
+  it("names a stale approval instead of reporting an unknown error", async () => {
+    const store = new MemoryStore();
+    const firstRoot = await emit(FIRST);
+    const stale = await approvalFor(store, firstRoot);
+    await publishFirst(store);
+    const failure = publishCandidate({
+      candidateRoot: await emit(SECOND),
+      store,
+      approval: stale,
+      clock: at("2026-01-09"),
+      sleep: noSleep,
+    });
+    await expect(failure).rejects.toBeInstanceOf(DiffApprovalMismatchError);
+    expect(formatPublisherError(await failure.catch((error: unknown) => error))).toContain(
+      "does not match these exact",
+    );
+  });
+
+  it("rejects live metadata whose recorded digest is not its root's hash", async () => {
+    const store = new MemoryStore();
+    await publishFirst(store);
+    store.objects.get("v1/meta.json")!.metadata["tree-digest"] = "0".repeat(64);
+    await expect(
+      publishCandidate({
+        candidateRoot: await emit(SECOND),
+        store,
+        clock: at("2026-01-09"),
+        sleep: noSleep,
+      }),
+    ).rejects.toThrow("does not correspond to its snapshot's root");
+  });
+
+  it("rejects a live shard that does not hash to the name its root gives it", async () => {
+    const store = new MemoryStore();
+    await publishFirst(store);
+    const shard = store.objects.get(store.keys("v1/shards/")[0]!)!;
+    shard.bytes = Buffer.from('{"version":1,"pointers":{}}\n');
+    shard.metadata.sha256 = sha256(shard.bytes);
+    await expect(
+      publishCandidate({
+        candidateRoot: await emit(SECOND),
+        store,
+        clock: at("2026-01-09"),
+        sleep: noSleep,
+      }),
+    ).rejects.toThrow("root and shards do not agree");
+  });
+
+  it("refuses a candidate that is older than, or not newer than, the live snapshot", async () => {
+    const store = new MemoryStore();
+    await publishFirst(store);
+    await expect(
+      publishCandidate({
+        candidateRoot: await emit({
+          ...SECOND,
+          generated: FIRST.generated,
+          expires: FIRST.expires,
+        }),
+        store,
+        clock: at("2026-01-09"),
+        sleep: noSleep,
+      }),
+    ).rejects.toThrow("must be later than published current");
+    await expect(
+      publishCandidate({
+        candidateRoot: await emit(SECOND),
+        store,
+        clock: () => new Date(Number.NaN),
+        sleep: noSleep,
+      }),
+    ).rejects.toThrow("finite Date");
+  });
+});
+
+describe("interrupted and failing uploads", () => {
+  it("keeps metadata absent after a partial upload, then resumes and verifies what exists", async () => {
+    const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const approval = await approvalFor(store, candidateRoot);
+    const options = { candidateRoot, store, approval, clock: at("2026-01-02"), sleep: noSleep };
+    store.failAfter = 5;
+    await expect(publishCandidate(options)).rejects.toThrow("Simulated interrupted upload");
+    expect(store.objects.has("v1/meta.json")).toBe(false);
+    const stored = new Set(store.puts);
+    expect(stored.size).toBe(5);
+
+    store.failAfter = undefined;
+    await expect(publishCandidate(options)).resolves.toMatchObject({ type: "published" });
+    // Nothing that the first run stored was written again.
+    expect(store.puts.filter((key) => stored.has(key))).toHaveLength(5);
+
+    const reservation = await readPublicationReservation(
+      store,
+      (await validateCandidate(candidateRoot)).snapshotId,
+    );
+    expect(reservation).toMatchObject({ generated: FIRST.generated, expires: FIRST.expires });
+  });
+
+  it("retries a request that failed in transit, sending the same bytes", async () => {
+    const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const approval = await approvalFor(store, candidateRoot);
+    const waits: number[] = [];
+    // The reservation marker is not retried, so start failing after it is stored.
+    const put = store.put.bind(store);
+    let failures = 2;
+    store.put = async (input) => {
+      if (input.key.startsWith("v1/blobs/") && failures > 0) {
+        failures -= 1;
+        throw new Error("Simulated dropped connection");
+      }
+      return put(input);
+    };
+    await expect(
+      publishCandidate({
+        candidateRoot,
+        store,
+        approval,
+        clock: at("2026-01-02"),
+        sleep: async (milliseconds) => void waits.push(milliseconds),
+      }),
+    ).resolves.toMatchObject({ type: "published" });
+    expect(waits).toHaveLength(2);
+  });
+
+  it("does not retry an object that was stored with the wrong bytes", async () => {
+    const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const approval = await approvalFor(store, candidateRoot);
+    const candidate = await validateCandidate(candidateRoot);
+    store.corruptKey = blobPath([...candidate.blobs][0]!, "identity");
+    const waits: number[] = [];
+    await expect(
+      publishCandidate({
+        candidateRoot,
+        store,
+        approval,
+        clock: at("2026-01-02"),
+        sleep: async (milliseconds) => void waits.push(milliseconds),
+      }),
+    ).rejects.toThrow("do not match expected content");
+    expect(waits).toEqual([]);
+    expect(store.objects.has("v1/meta.json")).toBe(false);
+  });
+
+  it("accepts an existing compressed copy with other bytes only if it decodes to the blob", async () => {
+    const candidateRoot = await emit(FIRST);
+    const candidate = await validateCandidate(candidateRoot);
+    const hash = [...candidate.blobs][0]!;
+    const key = blobPath(hash, "gzip");
+    const plain = await readFile(join(candidateRoot, blobPath(hash, "identity")));
+    const preload = (store: MemoryStore, bytes: Buffer): void => {
+      store.objects.set(key, {
+        bytes,
+        etag: '"other"',
+        metadata: { sha256: sha256(bytes) },
+        modified: store.now,
+      });
+    };
+
+    const accepting = new MemoryStore();
+    // Another zlib build: different bytes, same content.
+    const otherBuild = gzipSync(plain, { level: 1 });
+    expect(gunzipSync(otherBuild).equals(plain)).toBe(true);
+    preload(accepting, otherBuild);
+    await expect(
+      publishCandidate({
+        candidateRoot,
+        store: accepting,
+        approval: await approvalFor(accepting, candidateRoot),
+        clock: at("2026-01-02"),
+        sleep: noSleep,
+      }),
+    ).resolves.toMatchObject({ type: "published" });
+    expect(accepting.objects.get(key)!.bytes.equals(otherBuild)).toBe(true);
+
+    const rejecting = new MemoryStore();
+    preload(rejecting, gzipSync(Buffer.from("something else")));
+    await expect(
+      publishCandidate({
+        candidateRoot,
+        store: rejecting,
+        approval: await approvalFor(rejecting, candidateRoot),
+        clock: at("2026-01-02"),
+        sleep: noSleep,
+      }),
+    ).rejects.toThrow("does not decode to the expected bytes");
+  });
+
+  it("stops when the candidate changes on disk after it was validated", async () => {
+    const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const approval = await approvalFor(store, candidateRoot);
+    const candidate = await validateCandidate(candidateRoot);
+    const put = store.put.bind(store);
+    let damaged = false;
+    store.put = async (input) => {
+      if (!damaged && input.key.startsWith("v1/snapshots/")) {
+        damaged = true;
+        await writeFile(
+          join(candidateRoot, blobPath([...candidate.blobs][0]!, "identity")),
+          "{}\n",
+        );
+      }
+      return put(input);
+    };
+    await expect(
+      publishCandidate({ candidateRoot, store, approval, clock: at("2026-01-02"), sleep: noSleep }),
+    ).rejects.toThrow("does not hash to its name");
+    expect(store.objects.has("v1/meta.json")).toBe(false);
+  });
+});
+
+describe("the metadata switch", () => {
+  const prepared = async () => {
+    const store = new MemoryStore();
+    const candidateRoot = await emit(FIRST);
+    const approval = await approvalFor(store, candidateRoot);
+    return {
+      store,
+      options: { candidateRoot, store, approval, clock: at("2026-01-02"), sleep: noSleep },
+    };
+  };
+
+  it("reports a lost compare-and-swap race", async () => {
+    const { store, options } = await prepared();
+    store.raceOnMeta = true;
+    await expect(publishCandidate(options)).rejects.toThrow("lost a concurrent publication race");
+  });
+
+  it("reports an unknown outcome, then a rerun reconciles as unchanged", async () => {
+    const { store, options } = await prepared();
+    store.throwOnMetaPutAfterWrite = true;
+    await expect(publishCandidate(options)).rejects.toThrow("outcome is unknown");
+    store.throwOnMetaPutAfterWrite = false;
+    await expect(publishCandidate({ ...options, approval: undefined })).resolves.toMatchObject({
+      type: "unchanged",
+    });
+  });
+
+  it("reports failed read-back verification when the read after the switch throws", async () => {
+    const { store, options } = await prepared();
+    store.throwOnMetaGetAfterPut = true;
+    await expect(publishCandidate(options)).rejects.toThrow("readback verification failed");
+  });
+
+  it("refuses a candidate that expires before the switch", async () => {
+    const { options } = await prepared();
+    let calls = 0;
+    await expect(
+      publishCandidate({
+        ...options,
+        clock: () => new Date((calls += 1) === 1 ? "2026-01-02" : "2026-05-01"),
+      }),
+    ).rejects.toThrow("not publishable now");
+  });
+});
+
+describe("cleanup of unreferenced files", () => {
+  /** Publishes two releases, then a third after the first has expired. */
+  const threeReleases = async () => {
+    const store = new MemoryStore();
+    const first = await validateCandidate(await publishFirst(store));
+    store.now = new Date("2026-01-08T12:00:00Z");
+    const secondRoot = await emit(SECOND);
+    await publishCandidate({
+      candidateRoot: secondRoot,
+      store,
+      clock: at("2026-01-09"),
+      sleep: noSleep,
+    });
+    const second = await validateCandidate(secondRoot);
+    return { store, first, second };
+  };
+  const THIRD: Release = {
+    version: laterVersion(2),
+    generated: "2026-04-02T12:00:00Z",
+    expires: "2026-06-30",
+    features: featuresWith({ Test: "2", Other: "2" }),
+  };
+
+  it("deletes what only an expired snapshot used and keeps what a live one shares", async () => {
+    const { store, first, second } = await threeReleases();
+    store.now = new Date("2026-04-02T12:00:00Z");
+    const thirdRoot = await emit(THIRD);
+    const result = await publishCandidate({
+      candidateRoot: thirdRoot,
+      store,
+      clock: at("2026-04-03"),
+      sleep: noSleep,
+    });
+    const third = await validateCandidate(thirdRoot);
+
+    // The first release expired on 2026-04-01; the second is retained until 2026-04-08.
+    const meta = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()) as {
+      snapshots: Array<{ id: string }>;
+    };
+    expect(meta.snapshots.map(({ id }) => id)).toEqual([third.snapshotId, second.snapshotId]);
+
+    const live = new Set([...second.blobs, ...third.blobs]);
+    const onlyFirst = [...first.blobs].filter((hash) => !live.has(hash));
+    expect(onlyFirst.length).toBeGreaterThan(0);
+    for (const hash of onlyFirst) expect(store.objects.has(blobPath(hash, "identity"))).toBe(false);
+    for (const hash of live) {
+      for (const encoding of ["identity", "br", "gzip"] as const)
+        expect(store.objects.has(blobPath(hash, encoding))).toBe(true);
     }
-    await writeFile(
-      join(forgedRoot, ARTIFACT_MANIFEST_PATH),
-      `${JSON.stringify({ version: 1, snapshotId: generated.meta.current, artifacts: metaOnly })}\n`,
-    );
-    await expect(validateCandidate(forgedRoot)).rejects.toThrow("missing required identity");
+    expect(store.objects.has(snapshotRootPath(first.snapshotId))).toBe(false);
+    expect(store.objects.has(snapshotRootPath(second.snapshotId))).toBe(true);
+    if (result.type !== "published") throw new Error("Expected a publication.");
+    expect(result.pruned.deleted).toEqual({
+      blobs: onlyFirst.length * 3,
+      shards: [...first.shards].filter(
+        (hash) => !second.shards.has(hash) && !third.shards.has(hash),
+      ).length,
+      roots: 1,
+      metaCopies: 0,
+    });
+    expect(result.operations.deletes).toBe(3);
+    // The reservation outlives the snapshot, so its identifier can never be reused.
+    expect(store.objects.has(`v1/_publication/${first.snapshotId}.json`)).toBe(true);
+  });
+
+  it("keeps an unreferenced file until the grace period has passed", async () => {
+    const { store } = await threeReleases();
+    const orphan = blobPath("f".repeat(64), "identity");
+    const put = (date: string): void => {
+      store.objects.set(orphan, {
+        bytes: Buffer.from("{}\n"),
+        etag: '"orphan"',
+        metadata: { sha256: sha256(Buffer.from("{}\n")) },
+        modified: new Date(date),
+      });
+    };
+    // Six days old: a publication in progress may still be about to point to it.
+    put("2026-01-14T12:00:00Z");
+    await pruneRetiredSnapshots(store, { clock: at("2026-01-20T11:00:00Z"), sleep: noSleep });
+    expect(store.objects.has(orphan)).toBe(true);
+
+    const dryRun = await pruneRetiredSnapshots(store, {
+      clock: at("2026-01-22"),
+      dryRun: true,
+      sleep: noSleep,
+    });
+    expect(dryRun).toEqual({
+      dryRun: true,
+      deleted: { blobs: 1, shards: 0, roots: 0, metaCopies: 0 },
+    });
+    expect(store.objects.has(orphan)).toBe(true);
+
+    const real = await pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep });
+    expect(real).toEqual({
+      dryRun: false,
+      deleted: { blobs: 1, shards: 0, roots: 0, metaCopies: 0 },
+    });
+    expect(store.objects.has(orphan)).toBe(false);
+  });
+
+  it("deletes copies of superseded metadata once the current metadata has settled", async () => {
+    const { store } = await threeReleases();
+    const current = store.objects.get("v1/meta.json")!.metadata.sha256!;
+    const copies = (): string[] => store.keys("v1/_meta/");
+    const isCurrent = (key: string): boolean => key.startsWith(`v1/_meta/${current}.json`);
+    // One pair per publication: written on 2026-01-01 and on 2026-01-08.
+    expect(copies()).toHaveLength(4);
+    expect(copies().filter(isCurrent)).toHaveLength(2);
+
+    // The switch was twelve hours ago: a request that read the first metadata may still be open.
+    const early = await pruneRetiredSnapshots(store, {
+      clock: at("2026-01-09"),
+      sleep: noSleep,
+    });
+    expect(early.deleted.metaCopies).toBe(0);
+    expect(copies()).toHaveLength(4);
+
+    const dryRun = await pruneRetiredSnapshots(store, {
+      clock: at("2026-01-10"),
+      dryRun: true,
+      sleep: noSleep,
+    });
+    expect(dryRun.deleted.metaCopies).toBe(2);
+    expect(copies()).toHaveLength(4);
+
+    const real = await pruneRetiredSnapshots(store, { clock: at("2026-01-10"), sleep: noSleep });
+    expect(real.deleted.metaCopies).toBe(2);
+    expect(copies().every(isCurrent)).toBe(true);
+    expect(copies()).toHaveLength(2);
+  });
+
+  it("deletes nothing when a retained snapshot cannot be read completely", async () => {
+    const { store, second } = await threeReleases();
+    const orphan = blobPath("f".repeat(64), "identity");
+    store.objects.set(orphan, {
+      bytes: Buffer.from("{}\n"),
+      etag: '"orphan"',
+      metadata: {},
+      modified: new Date("2025-01-01"),
+    });
+    store.objects.delete(shardPath([...second.shards][0]!));
+    await expect(
+      pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep }),
+    ).rejects.toThrow("missing a shard");
+    expect(store.objects.has(orphan)).toBe(true);
+  });
+
+  it("stops when metadata changes during the run, or a listing does not advance", async () => {
+    const { store } = await threeReleases();
+    const orphan = blobPath("f".repeat(64), "identity");
+    store.objects.set(orphan, {
+      bytes: Buffer.from("{}\n"),
+      etag: '"orphan"',
+      metadata: {},
+      modified: new Date("2025-01-01"),
+    });
+    const meta = store.objects.get("v1/meta.json")!;
+    const list = store.list.bind(store);
+    store.list = async (...args) => {
+      const page = await list(...args);
+      meta.etag = '"changed-by-another-publication"';
+      return page;
+    };
+    await expect(
+      pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep }),
+    ).rejects.toThrow("Metadata changed while pruning");
+    expect(store.objects.has(orphan)).toBe(true);
+
+    store.list = list;
+    store.repeatedPage = true;
+    await expect(
+      pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep }),
+    ).rejects.toThrow("did not advance");
+  });
+
+  it("reports committed metadata when cleanup fails after the switch", async () => {
+    const { store } = await threeReleases();
+    store.now = new Date("2026-04-02T12:00:00Z");
+    store.failDelete = true;
+    await expect(
+      publishCandidate({
+        candidateRoot: await emit(THIRD),
+        store,
+        clock: at("2026-04-03"),
+        sleep: noSleep,
+      }),
+    ).rejects.toThrow("Metadata committed but retention cleanup failed");
+  });
+});
+
+describe("candidate validation", () => {
+  it("rejects an empty folder and a folder with a file the snapshot does not name", async () => {
+    const empty = await mkdtemp(join(tmpdir(), "bcd-embed-publish-"));
+    directories.push(empty);
+    await expect(validateCandidate(empty)).rejects.toThrow("must not be empty");
+
+    const extra = await emit(FIRST);
+    await writeFile(join(extra, "v1/blobs/extra.json"), "{}\n");
+    await expect(validateCandidate(extra)).rejects.toThrow("unexpected file");
+  });
+
+  it("rejects a decompression bomb without exceeding identity size", async () => {
+    await expect(
+      hashDecodedStream(Readable.from([gzipSync(Buffer.alloc(1024 * 1024))]), "gzip", 16),
+    ).rejects.toThrow("exceeds its declared identity size");
+  });
+
+  it("propagates malformed compressed data", async () => {
+    await expect(
+      hashDecodedStream(Readable.from([Buffer.from("no")]), "gzip", 16),
+    ).rejects.toThrow();
   });
 });

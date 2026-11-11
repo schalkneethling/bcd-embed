@@ -125,6 +125,81 @@ export const createPointerTree = (
   };
 };
 
+/** What a comparison needs to know about one snapshot, whether it was read from disk or from R2. */
+export type ContentTree = {
+  snapshotId: string;
+  /** The BCD version the snapshot was generated from. */
+  sourceVersion: string;
+  /** The hash of the root file. It covers the snapshot's identifier and every pointer. */
+  digest: string;
+  /** The hash of the pointers alone, so two snapshots with the same data share it. */
+  semanticDigest: string;
+  root: SnapshotRoot;
+  features: ReadonlyMap<string, FeaturePointer>;
+  /** The namespaces that have an index file, in ascending order. */
+  namespaces: readonly string[];
+};
+
+export type DescribeContentTreeOptions = {
+  snapshotId: string;
+  sourceVersion: string;
+  rootBytes: Uint8Array;
+  /** The bytes of every shard the root names, by shard hash. */
+  shardBytes: ReadonlyMap<string, Uint8Array>;
+};
+
+/**
+ * Checks a root and its shards against each other and returns the snapshot's pointers.
+ *
+ * It verifies that each shard's bytes hash to the name the root gives it, and that every key is in
+ * the shard its hash selects. It does not read blobs. Time and space are O(N) for N feature keys.
+ */
+export const describeContentTree = ({
+  snapshotId,
+  sourceVersion,
+  rootBytes,
+  shardBytes,
+}: DescribeContentTreeOptions): ContentTree => {
+  const root = snapshotRootSchema.parse(JSON.parse(Buffer.from(rootBytes).toString("utf8")));
+  if (root.snapshot !== snapshotId)
+    throw new Error(`Root names snapshot '${root.snapshot}', not '${snapshotId}'.`);
+
+  const features = new Map<string, FeaturePointer>();
+  const verified = new Map<string, Record<string, FeaturePointer>>();
+  root.shards.forEach((sha256, index) => {
+    let pointers = verified.get(sha256);
+    if (pointers === undefined) {
+      const bytes = shardBytes.get(sha256);
+      if (bytes === undefined) throw new Error(`Shard '${sha256}' is missing.`);
+      if (sha256Hex(bytes) !== sha256)
+        throw new Error(`Shard '${sha256}' does not hash to its name.`);
+      pointers = shardSchema.parse(JSON.parse(Buffer.from(bytes).toString("utf8"))).pointers;
+      verified.set(sha256, pointers);
+    }
+    for (const [key, pointer] of Object.entries(pointers)) {
+      if (shardIndexOf(key) !== index)
+        throw new Error(
+          `Feature key '${key}' is in shard ${index}, which its hash does not select.`,
+        );
+      features.set(key, pointer);
+    }
+  });
+
+  const namespaces = Object.keys(root.structural).flatMap((path) => {
+    const match = /^index\/(.+)\.json$/.exec(path);
+    return match === null ? [] : [match[1]!];
+  });
+  return {
+    snapshotId,
+    sourceVersion,
+    digest: sha256Hex(rootBytes),
+    semanticDigest: sha256Hex(JSON.stringify({ shards: root.shards, structural: root.structural })),
+    root,
+    features,
+    namespaces,
+  };
+};
+
 export type EmitContentTreeOptions = {
   outputRoot: string;
   generatedSnapshot: GeneratedSnapshot;

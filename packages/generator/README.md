@@ -14,55 +14,61 @@ occur once; positional arguments and `--option=value` are rejected.
 `--generated` follows the contract's ISO 8601 UTC timestamp schema and
 `--expires` its ISO 8601 date schema. Explicit time makes reruns reproducible.
 
-The output filesystem must be case-sensitive. Published BCD keys include
-distinct addressable keys that differ only by case (for example, `api.Crypto`
-and `api.crypto`), and the contract maps each key directly to its filename.
-Typical Linux filesystems meet this requirement; default macOS APFS volumes are
-often case-insensitive, so use Linux or a case-sensitive APFS volume there.
+The command writes the content-addressed layout of
+[Document 8](../../docs/planning/08-incremental-publication.md):
 
-It emits compact JSON plus a trailing newline under `v1/meta.json` and
-`v1/<snapshot>/{browsers,index,features,raw}`. It is local generation only:
-no `v1/current` alias is created or changed. Existing unrelated output is
-preserved; byte-identical snapshot and metadata reruns are no-ops, while a
-difference fails safely. Files are staged first and an exclusive local lock
-prevents concurrent commits. An abrupt process kill can leave a staging
-directory or lock; remove either only after confirming no emission is active.
-If final metadata rename fails after snapshot rename, an unreferenced snapshot
-may remain, but no alias is changed.
+```
+v1/
+├─ meta.json                    names the snapshot; the only file that changes after publication
+├─ _meta/<sha256>.json.{gz,br}  compressed copies of meta.json, named by the hash of its plain bytes
+├─ blobs/<sha256>.json          a served file's plain bytes, with .gz and .br copies beside it
+├─ shards/<sha256>.json         the pointers for the feature keys of one shard
+└─ snapshots/<snapshot>.json    the root: 256 shard hashes and the pointers for browsers.json and the indexes
+```
 
-`emitGeneratedSnapshot` consumes a validated `generateSnapshot` result. It
-checks artifact paths, envelopes, and path-to-payload identity, but does not
-deep-parse every payload again; generation already performs those validations.
+A pointer says which blob answers a request path such as
+`features/css.properties.gap.json`. A feature key's shard is the first byte of
+the SHA-256 hash of the key, which `shardIndexOf(key)` returns. Files are
+compact JSON with a trailing newline.
 
-Emission additionally creates deterministic gzip (level 6) and Brotli (quality 4)
-variants. Snapshot variants append `.gz`/`.br`; metadata variants are immutable
-`v1/_meta/<identity-meta-sha256>.json.gz`/`.json.br`. Only `v1/meta.json` is mutable
-in publication. `createRepresentations(logicalPath, bytes)` exports these exact
-bytes and an inventory descriptor with logicalPath, path, encoding, size,
-sha256, and quoted SHA-256 etag. Gzip embeds no wall-clock timestamp and its
-header OS byte is fixed to 255 ("unknown", RFC 1952), so identical
-inputs/settings/toolchain produce identical bytes on any host OS.
+No file is named after a feature key, so the output folder may be on a
+case-insensitive filesystem, which is the default on macOS. Keys that differ
+only in case, such as `api.Crypto` and `api.crypto`, are separate entries
+inside a shard.
 
-The local control file `.bcd-embed-manifest.json` uses the schema package's
-`artifactManifestSchema` and is returned as `EmissionResult.manifest`. `files`
-counts representations plus this control file. Do not expose the control file as
-a public API artifact; the private publisher archives an immutable copy for exact
-baseline recovery. Publishers must verify actual bytes and complete logical inventory before use.
-Merged retained metadata must be re-encoded before publishing its variants and
-the canonical metadata CAS. Representation work is O(sum(Bi)) time and
-O(Bmax + K) auxiliary memory, processing one artifact at a time.
+`emitContentTree({ outputRoot, generatedSnapshot })` is the function behind the
+command. It checks artifact paths, envelopes and path-to-payload identity, but
+does not parse every payload again, because generation already validated them.
+A rerun into the same folder compares each existing file with the new bytes and
+writes nothing when they match; a difference fails. An output folder holds one
+candidate: existing metadata that names other content is refused, not replaced.
+Each file is written under a staging name and renamed into place, and an
+exclusive local lock prevents concurrent runs. A killed process can leave the
+staging folder or the lock; remove either only after confirming no run is
+active.
 
-`emitContentTree({ outputRoot, generatedSnapshot })` writes the same snapshot in
-the content-addressed layout of
-[Document 8](../../docs/planning/08-incremental-publication.md): blobs under
-`v1/blobs/<sha256>.json` with `.gz` and `.br` copies, 256 pointer shards under
-`v1/shards/`, and a root at `v1/snapshots/<snapshot>.json`. No file is named
-after a feature key, so it runs on a case-insensitive filesystem.
-`createPointerTree` builds the shards and the root, and `shardIndexOf(key)`
-returns a key's shard: the first byte of the SHA-256 hash of the key. The work
-is one pass, O(sum(Bi)) time and O(Bmax + K) memory, plus O(K log(K / 256)) to
-sort the keys inside each shard. The command line tool and the publisher do
-not use this layout yet.
+The compressed copies are deterministic gzip (level 6) and Brotli (quality 4).
+Gzip embeds no wall-clock timestamp and its header OS byte is fixed to 255
+("unknown", RFC 1952), so identical inputs, settings and toolchain produce
+identical bytes on any host. `createRepresentations(logicalPath, bytes)`
+exports these exact bytes.
+
+The work is one pass over the K served files: O(sum(Bi)) time for their bytes
+and O(Bmax + K) memory, plus O(K log(K / 256)) to sort the keys inside each
+shard, which `createPointerTree` does. For BCD 8.1.8 that is 41,880 files,
+40,612 distinct blobs, 46 seconds and about 410 MB.
+
+`loadContentTree(path)` reads such a folder back and checks all of it: every
+pointer resolves to a blob whose bytes hash to its name, both compressed copies
+decode to those bytes, every body matches its schema, the indexes cover exactly
+the feature keys, and the folder holds no other file. It returns `null` for an
+empty folder. It took 22 seconds for BCD 8.1.8. The diff tool and the publisher
+both use it.
+
+`emitGeneratedSnapshot` is the earlier emitter, which writes one folder per
+snapshot with a file per feature key and therefore needs a case-sensitive
+filesystem. Only the server's tests still use it. It is removed in step 5 of
+Document 8, when the server reads the new layout.
 
 `generateSnapshot({ generated, expires, data? })` returns snapshot metadata,
 namespace names, and a single-use lazy `Iterable<GeneratedArtifact>`. The default
@@ -135,11 +141,14 @@ node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate
 node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate artifacts-after --approval reviewed-approval.json
 ```
 
-The grammar is defined in `src/diff-cli.ts`. The gate validates schemas and
-index coverage, then compares output JSON with provenance-only normalization;
-contract and support data remain significant. It keeps feature/index keys and
-digests plus a sorted path inventory, but parses one artifact at a time; each
-artifact's exact-byte and semantic digests are derived from the same read. The
+The grammar is defined in `src/diff-cli.ts`. The tool loads both folders with
+`loadContentTree`, then `compareContentTrees` compares their pointers: a
+feature counts as changed when the hash of its normalized file or of its raw
+file differs. No file body is read for the comparison itself, which is O(K)
+and took 3 milliseconds for BCD 8.1.8. `baselineDigest` and `candidateDigest`
+are the hashes of the two root files, and the semantic digests are the hashes
+of the pointers without the snapshot identifier, so the same data under
+another release name has the same semantic digest. The
 default limits are 10%/2,500 changed, 2%/500 added, and 0.25%/50 removed
 features; crossing either bound blocks. Operators adjust these reviewed source
 constants in `src/diff.ts`, not with a command-line bypass. Bootstrap and

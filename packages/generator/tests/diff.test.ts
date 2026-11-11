@@ -1,6 +1,7 @@
-import { mkdtemp, opendir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 
 import bcd from "@mdn/browser-compat-data" with { type: "json" };
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,11 +27,13 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+import { blobPath, snapshotRootPath } from "@bcd-embed/schema";
+
+import { emitContentTree, shardIndexOf } from "../src/content-tree.js";
 import { compareOutputTrees, DiffApprovalMismatchError, parseDiffApproval } from "../src/diff.js";
-import { emitGeneratedSnapshot } from "../src/emit.js";
-import { generateSnapshot } from "../src/generate.js";
+import { generateSnapshot, type GeneratedArtifact } from "../src/generate.js";
 import { BCD_VERSION } from "../src/input.js";
-import { createRepresentations } from "../src/representations.js";
+import { withRelease, writeContentTree } from "./support/write-content-tree.js";
 
 const outputRoots: string[] = [];
 const output = async (): Promise<string> => {
@@ -80,82 +83,36 @@ const fixture = (
   ),
 });
 
-const emit = async (root: string, generated: string, data = fixture()) => {
-  const generatedSnapshot = generateSnapshot({
-    generated,
-    expires: "2026-12-31",
-    data,
-  });
-  await emitGeneratedSnapshot({ outputRoot: root, generatedSnapshot });
+const generate = (generated: string, data: unknown = fixture()) =>
+  generateSnapshot({ generated, expires: "2026-12-31", data });
+
+const emit = async (root: string, generated: string, data: unknown = fixture()) => {
+  const generatedSnapshot = generate(generated, data);
+  await emitContentTree({ outputRoot: root, generatedSnapshot });
   return generatedSnapshot.snapshot.id;
 };
 
-const walkJsonFiles = async (root: string): Promise<string[]> => {
-  const paths: string[] = [];
-  const visit = async (directory: string): Promise<void> => {
-    const entries = await opendir(directory);
-    for await (const entry of entries) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) await visit(path);
-      else paths.push(path);
-    }
-  };
-  await visit(root);
-  return paths;
-};
-
-const refreshRepresentations = async (root: string, snapshotId: string): Promise<void> => {
-  const paths = await walkJsonFiles(root);
-  for (const path of paths) {
-    if (path.endsWith(".json.br") || path.endsWith(".json.gz")) await rm(path);
-  }
-  const identities = paths.filter(
-    (path) => path.endsWith(".json") && !path.endsWith(".bcd-embed-manifest.json"),
-  );
-  const artifacts = [];
-  for (const path of identities) {
-    const logicalPath = relative(root, path).split("\\").join("/");
-    for (const artifact of createRepresentations(logicalPath, await readFile(path))) {
-      await writeFile(join(root, artifact.path), artifact.bytes);
-      const { bytes: _bytes, ...entry } = artifact;
-      artifacts.push(entry);
-    }
-  }
-  await writeFile(
-    join(root, ".bcd-embed-manifest.json"),
-    `${JSON.stringify({ version: 1, snapshotId, artifacts })}\n`,
-  );
-};
-
-const rewriteProvenance = async (
+/** Writes a tree after `change` has altered its artifacts, bypassing the emitter's checks. */
+const emitChanged = async (
   root: string,
-  originalId: string,
-  next: { version: string; generatorVersion: string; generated: string },
-): Promise<void> => {
-  const newId = `bcd-${next.version}-gen-${next.generatorVersion}`;
-  await rename(join(root, "v1", originalId), join(root, "v1", newId));
-  const metaPath = join(root, "v1/meta.json");
-  const meta = JSON.parse(await readFile(metaPath, "utf8")) as {
-    current: string;
-    generated: string;
-    snapshots: Array<{
-      id: string;
-      generatorVersion: string;
-      generated: string;
-      source: { version: string };
-    }>;
-  };
-  meta.current = newId;
-  meta.generated = next.generated;
-  for (const snapshot of meta.snapshots) {
-    snapshot.id = newId;
-    snapshot.generatorVersion = next.generatorVersion;
-    snapshot.generated = next.generated;
-    snapshot.source.version = next.version;
-  }
-  // Only metadata names the release, so no other file needs rewriting.
-  await writeFile(metaPath, `${JSON.stringify(meta)}\n`);
-  await refreshRepresentations(root, newId);
+  generated: string,
+  change: (artifacts: GeneratedArtifact[]) => void,
+): Promise<string> => {
+  const generatedSnapshot = generate(generated);
+  const artifacts = [...generatedSnapshot.artifacts];
+  change(artifacts);
+  await writeContentTree(root, generatedSnapshot.snapshot.id, artifacts);
+  return generatedSnapshot.snapshot.id;
+};
+
+const blobOf = (artifacts: Iterable<GeneratedArtifact>, suffix: string): string => {
+  const artifact = [...artifacts].find(({ path }) => path.endsWith(suffix))!;
+  return blobPath(
+    createHash("sha256")
+      .update(`${JSON.stringify(artifact.data)}\n`)
+      .digest("hex"),
+    "identity",
+  );
 };
 
 describe("compareOutputTrees", () => {
@@ -179,14 +136,15 @@ describe("compareOutputTrees", () => {
     ).toThrow("Approval must contain");
   });
 
-  it("normalizes the release named in metadata but preserves data", async () => {
+  it("ignores the release a snapshot belongs to when its data is the same", async () => {
     const baseline = await output();
     const candidate = await output();
-    const baselineId = await emit(baseline, "2026-09-01T00:00:00Z");
-    await rewriteProvenance(baseline, baselineId, {
-      version: "8.1.2",
-      generatorVersion: "0.0.1",
-      generated: "2026-09-01T00:00:00Z",
+    await emitContentTree({
+      outputRoot: baseline,
+      generatedSnapshot: withRelease(generate("2026-09-01T00:00:00Z"), {
+        version: "8.1.2",
+        generatorVersion: "0.0.1",
+      }),
     });
     await emit(candidate, "2026-09-02T00:00:00Z");
 
@@ -233,12 +191,15 @@ describe("compareOutputTrees", () => {
     const candidate = await output();
     const id = await emit(baseline, "2026-09-01T00:00:00Z");
     await emit(candidate, "2026-09-02T00:00:00Z");
-    const featurePath = join(candidate, "v1", id, "features/api.feature0.json");
-    const originalBytes = await readFile(featurePath);
-    const changedFeature = JSON.parse(originalBytes.toString("utf8")) as {
+    const featurePath = join(
+      candidate,
+      blobOf(generate("2026-09-02T00:00:00Z").artifacts, "features/api.feature0.json"),
+    );
+    const changedFeature = JSON.parse(await readFile(featurePath, "utf8")) as {
       features: Array<{ support: { chrome: { version_added: string } } }>;
     };
     changedFeature.features[0]!.support.chrome.version_added = "2";
+    expect(id).toContain(BCD_VERSION);
 
     const before = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
     readMutation.path = featurePath;
@@ -293,13 +254,11 @@ describe("compareOutputTrees", () => {
   it("fails closed on schema/contract errors", async () => {
     const baseline = await output();
     const candidate = await output();
-    const id = await emit(baseline, "2026-09-01T00:00:00Z");
-    await emit(candidate, "2026-09-02T00:00:00Z");
-    const featurePath = join(candidate, "v1", id, "features/api.feature0.json");
-    const feature = JSON.parse(await readFile(featurePath, "utf8")) as { contract: string };
-    feature.contract = "2.0.0";
-    await writeFile(featurePath, `${JSON.stringify(feature)}\n`);
-    await refreshRepresentations(candidate, id);
+    await emit(baseline, "2026-09-01T00:00:00Z");
+    await emitChanged(candidate, "2026-09-02T00:00:00Z", (artifacts) => {
+      const feature = artifacts.find(({ kind }) => kind === "feature")!;
+      (feature.data as { contract: string }).contract = "2.0.0";
+    });
     const approval = {
       baselineDigest: "a".repeat(64),
       candidateDigest: "b".repeat(64),
@@ -322,56 +281,54 @@ describe("compareOutputTrees", () => {
     ).rejects.toThrow(`Artifact tree '${baseline}' is missing 'v1/meta.json'.`);
   });
 
-  it("reports the offending path for invalid index and feature paths", async () => {
+  it("rejects a tree whose files and pointers disagree", async () => {
     const baseline = await output();
-    const badFeature = await output();
-    const badIndex = await output();
     await emit(baseline, "2026-09-01T00:00:00Z");
-    const featureId = await emit(badFeature, "2026-09-02T00:00:00Z");
-    const indexId = await emit(badIndex, "2026-09-03T00:00:00Z");
-    const featurePath = `v1/${featureId}/features/Bad Key.json`;
-    await writeFile(join(badFeature, featurePath), "{}\n");
-    const indexPath = `v1/${indexId}/index/Bad Namespace.json`;
-    await writeFile(join(badIndex, indexPath), "{}\n");
+    const artifacts = [...generate("2026-09-02T00:00:00Z").artifacts];
+    const feature = blobOf(artifacts, "features/api.feature0.json");
+    const damaged = async (damage: (root: string) => Promise<void>): Promise<string> => {
+      const root = await output();
+      await emit(root, "2026-09-02T00:00:00Z");
+      await damage(root);
+      return root;
+    };
+    const failure = (candidateRoot: string) =>
+      compareOutputTrees({ baselineRoot: baseline, candidateRoot });
+
     await expect(
-      compareOutputTrees({ baselineRoot: baseline, candidateRoot: badFeature }),
-    ).rejects.toThrow(`Invalid feature path '${featurePath}'.`);
+      failure(await damaged((root) => writeFile(join(root, "v1/blobs/extra.json"), "{}\n"))),
+    ).rejects.toThrow("holds unexpected file 'v1/blobs/extra.json'");
     await expect(
-      compareOutputTrees({ baselineRoot: baseline, candidateRoot: badIndex }),
-    ).rejects.toThrow(`Invalid index path '${indexPath}'.`);
+      failure(await damaged((root) => writeFile(join(root, feature), "{}\n"))),
+    ).rejects.toThrow(`'${feature}' does not hash to its name.`);
+    await expect(
+      failure(await damaged((root) => writeFile(join(root, `${feature}.gz`), "not gzip"))),
+    ).rejects.toThrow(`'${feature}.gz' does not decode.`);
+    await expect(failure(await damaged((root) => rm(join(root, `${feature}.br`))))).rejects.toThrow(
+      `is missing '${feature}.br'.`,
+    );
   });
 
-  it("rejects unlisted representation files and manifest byte mismatches", async () => {
+  it("rejects a key stored in a shard its hash does not select", async () => {
     const baseline = await output();
-    const extraRepresentation = await output();
-    const forgedManifest = await output();
+    const candidate = await output();
     await emit(baseline, "2026-09-01T00:00:00Z");
-    const extraId = await emit(extraRepresentation, "2026-09-02T00:00:00Z");
-    const manifestId = await emit(forgedManifest, "2026-09-03T00:00:00Z");
-
-    const extraPath = join(extraRepresentation, "v1", extraId, "features/api.extra.json.gz");
-    await writeFile(extraPath, "unlisted representation");
+    const id = await emit(candidate, "2026-09-02T00:00:00Z");
+    const rootPath = join(candidate, snapshotRootPath(id));
+    const root = JSON.parse(await readFile(rootPath, "utf8")) as { shards: string[] };
+    const index = shardIndexOf("api.feature0");
+    const other = (index + 1) % root.shards.length;
+    [root.shards[index], root.shards[other]] = [root.shards[other]!, root.shards[index]!];
+    await writeFile(rootPath, `${JSON.stringify(root)}\n`);
     await expect(
-      compareOutputTrees({ baselineRoot: baseline, candidateRoot: extraRepresentation }),
-    ).rejects.toThrow("Artifact manifest inventory does not match files");
-
-    const manifestPath = join(forgedManifest, ".bcd-embed-manifest.json");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-      artifacts: Array<{ path: string; size: number }>;
-      snapshotId: string;
-    };
-    expect(manifest.snapshotId).toBe(manifestId);
-    manifest.artifacts[0]!.size += 1;
-    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
-    await expect(
-      compareOutputTrees({ baselineRoot: baseline, candidateRoot: forgedManifest }),
-    ).rejects.toThrow("Artifact manifest does not match file");
+      compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate }),
+    ).rejects.toThrow("which its hash does not select");
   });
 
   it("requires digest-bound approval for bootstrap and rejects stale approvals", async () => {
     const baseline = await output();
     const candidate = await output();
-    const id = await emit(candidate, "2026-09-02T00:00:00Z");
+    await emit(candidate, "2026-09-02T00:00:00Z");
     const initial = await compareOutputTrees({ baselineRoot: baseline, candidateRoot: candidate });
     expect(initial.bootstrap).toBe(true);
     expect(initial.baselineSemanticDigest).toBeNull();
@@ -390,12 +347,11 @@ describe("compareOutputTrees", () => {
     expect(accepted.blocked).toEqual(["Bootstrap has no approved baseline."]);
     expect(accepted.semanticChanged).toBe(true);
     expect(accepted.approved).toBe(true);
-    const rawPath = join(candidate, "v1", id, "raw/api.feature0.json");
-    await writeFile(rawPath, `${await readFile(rawPath, "utf8")} `);
-    await refreshRepresentations(candidate, id);
+    const changedCandidate = await output();
+    await emit(changedCandidate, "2026-09-02T00:00:00Z", fixture(1, "2"));
     const stale = compareOutputTrees({
       baselineRoot: baseline,
-      candidateRoot: candidate,
+      candidateRoot: changedCandidate,
       approval,
     });
     await expect(stale).rejects.toThrow("does not match these exact");
