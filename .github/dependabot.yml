@@ -12,6 +12,12 @@ updates:
       semver-patch-days: 2
       include:
         - "*"
+    ignore:
+      # Guidepup 0.40.0 nests Orca keyboard commands under their service, but
+      # @guidepup/playwright 0.21.0 still reads them flat and throws in
+      # navigateOrcaToWebContent. Remove once a compatible playwright ships.
+      - dependency-name: "@guidepup/guidepup"
+        versions: [">=0.40.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
