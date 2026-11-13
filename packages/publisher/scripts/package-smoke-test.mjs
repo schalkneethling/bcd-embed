@@ -59,8 +59,8 @@ try {
   );
   await writeFile(
     join(temporary, "smoke.mjs"),
-    `import { createR2S3Store, publishCandidate, pruneRetiredSnapshots, readPublicationReservation, restorePublishedBaseline, validateCandidate, parsePublishCommand } from "@bcd-embed/publisher";
-for (const value of [createR2S3Store, publishCandidate, pruneRetiredSnapshots, readPublicationReservation, restorePublishedBaseline, validateCandidate]) if (typeof value !== "function") throw new Error("Missing runtime export");
+    `import { createR2S3Store, publishCandidate, pruneRetiredSnapshots, readPublicationReservation, comparePublication, readPublishedTree, validateCandidate, parsePublishCommand } from "@bcd-embed/publisher";
+for (const value of [createR2S3Store, publishCandidate, pruneRetiredSnapshots, readPublicationReservation, comparePublication, readPublishedTree, validateCandidate]) if (typeof value !== "function") throw new Error("Missing runtime export");
 if (parsePublishCommand(["--help"]).type !== "help") throw new Error("CLI grammar mismatch");
 createR2S3Store({ accountId: "0".repeat(32), bucket: "smoke-test", accessKeyId: "local-only", secretAccessKey: "local-only" });
 `,
@@ -69,10 +69,10 @@ createR2S3Store({ accountId: "0".repeat(32), bucket: "smoke-test", accessKeyId: 
   run(process.execPath, [join(scope, "publisher", "dist", "bin.js"), "--help"]);
   await writeFile(
     join(temporary, "smoke.ts"),
-    `import { readPublicationReservation, restorePublishedBaseline, type PublicationStore, type PublicationReservation, type RestoredBaseline } from "@bcd-embed/publisher";
+    `import { comparePublication, readPublicationReservation, type PublicationComparison, type PublicationStore, type PublicationReservation } from "@bcd-embed/publisher";
 declare const store: PublicationStore;
 const reservation: Promise<PublicationReservation | null> = readPublicationReservation(store, "bcd-8.1.3-gen-0.0.0");
-const baseline: Promise<RestoredBaseline | null> = restorePublishedBaseline({ store, outputRoot: "/trusted/empty" });
+const baseline: Promise<PublicationComparison> = comparePublication({ store, candidateRoot: "/trusted/candidate" });
 void reservation; void baseline;
 `,
   );

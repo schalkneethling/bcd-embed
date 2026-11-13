@@ -12,7 +12,7 @@ import { cpus, platform, release, tmpdir, totalmem } from "node:os";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { mkdtemp, opendir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, opendir, readFile, rm } from "node:fs/promises";
 import { basename, join, posix } from "node:path";
 
 import bcd from "@mdn/browser-compat-data" with { type: "json" };
@@ -23,8 +23,12 @@ import {
   featureResponseSchema,
   indexResponseSchema,
   metaResponseSchema,
-  ARTIFACT_MANIFEST_PATH,
-  artifactManifestSchema,
+  blobPath,
+  representationPath,
+  shardPath,
+  shardSchema,
+  snapshotRootPath,
+  snapshotRootSchema,
 } from "@bcd-embed/schema";
 import { normalizeFeatureSubtree } from "@bcd-embed/core";
 import publicSchema from "../src/upstream/public.schema.json" with { type: "json" };
@@ -47,25 +51,6 @@ const timeoutFromEnvironment = () => {
     throw new Error("BCD_EMBED_FULL_VOLUME_TIMEOUT_MS must be a positive integer.");
   }
   return value;
-};
-
-const assertCaseSensitiveFilesystem = async (directory) => {
-  const probe = `.bcd-embed-case-${process.pid}-${Math.random().toString(36).slice(2)}`;
-  const lowerPath = join(directory, `${probe}a`);
-  const upperPath = join(directory, `${probe}A`);
-  await writeFile(lowerPath, "", { flag: "wx" });
-  try {
-    await writeFile(upperPath, "", { flag: "wx" });
-  } catch (error) {
-    await Promise.all([rm(lowerPath, { force: true }), rm(upperPath, { force: true })]);
-    if (error?.code === "EEXIST") {
-      fail(
-        "Full-volume generation requires a case-sensitive output filesystem: BCD contains distinct keys that differ only by case, and the documented key-as-filename layout cannot represent both on a case-insensitive volume.",
-      );
-    }
-    throw error;
-  }
-  await Promise.all([rm(lowerPath, { force: true }), rm(upperPath, { force: true })]);
 };
 
 const upstreamAjv = new Ajv({ strict: true, strictRequired: false, allErrors: false });
@@ -112,8 +97,11 @@ for (const [namespace, tree] of Object.entries(bcd)) {
 
 const sourceKeys = [...expectedSource.keys()];
 const sourceNamespaces = [...expectedByNamespace.keys()];
-const snapshotArtifactCount = (keyCount, namespaceCount) =>
-  (keyCount * 2 + namespaceCount + 3) * 3 + 1;
+/** Served files in a snapshot: two per key, one index per namespace, index.json and browsers.json. */
+const servedFileCount = (keyCount, namespaceCount) => keyCount * 2 + namespaceCount + 2;
+const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");
+/** Computed here, not imported from the generator, so the check is independent of it. */
+const shardIndexOf = (key) => createHash("sha256").update(key, "utf8").digest()[0];
 
 const waitForCli = (outputRoot, timeoutMs) =>
   new Promise((resolve, reject) => {
@@ -245,42 +233,24 @@ const expectedFeatureKeys = (rootKey, rootNode) => {
 
 const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
   const snapshotPrefix = `v1/${snapshotId}/`;
-  const expectedPaths = new Set([
+  // The request paths the snapshot must answer, derived from BCD and not from the output.
+  const identityPaths = new Set([
     "v1/meta.json",
     `${snapshotPrefix}browsers.json`,
     `${snapshotPrefix}index.json`,
   ]);
   for (const key of sourceKeys) {
-    expectedPaths.add(`${snapshotPrefix}features/${key}.json`);
-    expectedPaths.add(`${snapshotPrefix}raw/${key}.json`);
+    identityPaths.add(`${snapshotPrefix}features/${key}.json`);
+    identityPaths.add(`${snapshotPrefix}raw/${key}.json`);
   }
   for (const namespace of sourceNamespaces) {
-    expectedPaths.add(`${snapshotPrefix}index/${namespace}.json`);
+    identityPaths.add(`${snapshotPrefix}index/${namespace}.json`);
   }
-  const identityPaths = new Set(expectedPaths);
-  const manifest = artifactManifestSchema.parse(
-    JSON.parse(await readFile(join(outputRoot, ARTIFACT_MANIFEST_PATH), "utf8")),
-  );
-  if (manifest.snapshotId !== snapshotId) fail("Manifest snapshot identity mismatch.");
-  const inventory = new Map(manifest.artifacts.map((artifact) => [artifact.path, artifact]));
-  const logicalPaths = new Set(manifest.artifacts.map((artifact) => artifact.logicalPath));
-  if (
-    logicalPaths.size !== identityPaths.size ||
-    [...logicalPaths].some((path) => !identityPaths.has(path))
-  )
-    fail("Manifest logical artifacts differ from BCD.");
-  for (const artifact of manifest.artifacts) expectedPaths.add(artifact.path);
-  expectedPaths.add(ARTIFACT_MANIFEST_PATH);
-  const expectedDirectories = new Set();
-  for (const path of expectedPaths) {
-    const segments = path.split("/");
-    for (let index = 1; index < segments.length; index += 1) {
-      expectedDirectories.add(segments.slice(0, index).join("/"));
-    }
-  }
+  // The files that must be on disk. Filled in as pointers are resolved.
+  const expectedPaths = new Set();
 
   const actualPaths = new Set();
-  const actualDirectories = new Set();
+  const consumedPaths = new Set();
   const totals = {
     artifacts: 0,
     compactBytes: 0,
@@ -301,29 +271,41 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
     );
   };
 
-  const consumeFile = async (absolutePath, relativePath) => {
-    if (actualPaths.has(relativePath)) fail(`Duplicate generated path '${relativePath}'.`);
-    actualPaths.add(relativePath);
-    const fileInfo = await stat(absolutePath);
-    if (!fileInfo.isFile()) fail(`Generated path '${relativePath}' is not a regular file.`);
-    const diskBuffer = await readFile(absolutePath);
-    if (relativePath === ARTIFACT_MANIFEST_PATH) return;
-    const representation = inventory.get(relativePath);
-    if (
-      representation === undefined ||
-      representation.size !== diskBuffer.length ||
-      representation.sha256 !== createHash("sha256").update(diskBuffer).digest("hex")
-    )
-      fail(`Representation checksum mismatch at '${relativePath}'.`);
-    if (representation.encoding !== "identity") {
-      const decoded =
-        representation.encoding === "br"
-          ? brotliDecompressSync(diskBuffer)
-          : gunzipSync(diskBuffer);
-      if (!decoded.equals(await readFile(join(outputRoot, representation.logicalPath))))
-        fail(`Representation contents mismatch at '${relativePath}'.`);
-      return;
+  /** Reads a file the snapshot names and records that it must exist. */
+  const readExpected = async (path) => {
+    expectedPaths.add(path);
+    try {
+      return await readFile(join(outputRoot, path));
+    } catch (cause) {
+      fail(`Generated file '${path}' is missing.`, cause);
     }
+  };
+  const assertEncodings = async (plain, pathFor) => {
+    for (const encoding of ["br", "gzip"]) {
+      const path = pathFor(encoding);
+      const encoded = await readExpected(path);
+      const decoded = encoding === "br" ? brotliDecompressSync(encoded) : gunzipSync(encoded);
+      if (!decoded.equals(plain)) fail(`Representation contents mismatch at '${path}'.`);
+    }
+  };
+  const verifiedBlobs = new Set();
+  /** Returns the plain bytes a pointer names, checking the blob's three files once. */
+  const readBlob = async (sha256, relativePath) => {
+    if (typeof sha256 !== "string") fail(`No pointer for '${relativePath}'.`);
+    const plain = await readExpected(blobPath(sha256, "identity"));
+    if (!verifiedBlobs.has(sha256)) {
+      verifiedBlobs.add(sha256);
+      if (sha256Hex(plain) !== sha256)
+        fail(`Blob for '${relativePath}' does not hash to its name.`);
+      await assertEncodings(plain, (encoding) => blobPath(sha256, encoding));
+    }
+    return plain;
+  };
+
+  /** Validates one served file. `relativePath` is its request path; `diskBuffer` its plain bytes. */
+  const consumeFile = async (relativePath, diskBuffer) => {
+    if (consumedPaths.has(relativePath)) fail(`Duplicate generated path '${relativePath}'.`);
+    consumedPaths.add(relativePath);
     const diskText = diskBuffer.toString("utf8");
     let value;
     const isArrayArtifact =
@@ -572,41 +554,78 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
     sampleRunnerRss();
   };
 
+  // Resolve every request path through metadata, the root and the shards, as the Worker will.
+  const metaBytes = await readExpected("v1/meta.json");
+  await assertEncodings(metaBytes, (encoding) =>
+    representationPath("v1/meta.json", encoding, sha256Hex(metaBytes)),
+  );
+  await consumeFile("v1/meta.json", metaBytes);
+
+  const root = snapshotRootSchema.parse(
+    JSON.parse((await readExpected(snapshotRootPath(snapshotId))).toString("utf8")),
+  );
+  if (root.snapshot !== snapshotId) fail("Root names another snapshot.");
+  const shards = new Map();
+  for (const sha256 of new Set(root.shards)) {
+    const bytes = await readExpected(shardPath(sha256));
+    if (sha256Hex(bytes) !== sha256) fail(`Shard '${sha256}' does not hash to its name.`);
+    shards.set(sha256, shardSchema.parse(JSON.parse(bytes.toString("utf8"))).pointers);
+  }
+  let pointedKeys = 0;
+  root.shards.forEach((sha256, index) => {
+    for (const key of Object.keys(shards.get(sha256))) {
+      if (shardIndexOf(key) !== index) fail(`Key '${key}' is in shard ${index}, not its own.`);
+      if (!expectedSource.has(key)) fail(`Shard ${index} points to unknown key '${key}'.`);
+      pointedKeys += 1;
+    }
+  });
+  if (pointedKeys !== sourceKeys.length)
+    fail(`Shards hold ${pointedKeys} keys; BCD has ${sourceKeys.length}.`);
+
+  const structuralPaths = [
+    "browsers.json",
+    "index.json",
+    ...sourceNamespaces.map((namespace) => `index/${namespace}.json`),
+  ];
+  assertExactArray(Object.keys(root.structural), structuralPaths.toSorted(), "root structural");
+  for (const path of structuralPaths) {
+    const relativePath = `${snapshotPrefix}${path}`;
+    await consumeFile(relativePath, await readBlob(root.structural[path], relativePath));
+  }
+  for (const key of sourceKeys) {
+    const pointer = shards.get(root.shards[shardIndexOf(key)])[key];
+    for (const [kind, directory] of [
+      ["feature", "features"],
+      ["raw", "raw"],
+    ]) {
+      const relativePath = `${snapshotPrefix}${directory}/${key}.json`;
+      await consumeFile(relativePath, await readBlob(pointer?.[kind], relativePath));
+    }
+  }
+
   const visitOutput = async (absoluteDirectory, prefix) => {
-    const directory = await opendir(absoluteDirectory);
-    for await (const entry of directory) {
-      const childPath = join(absoluteDirectory, entry.name);
+    for await (const entry of await opendir(absoluteDirectory)) {
       const childRelativePath = prefix === "" ? entry.name : posix.join(prefix, entry.name);
-      if (entry.isDirectory()) {
-        if (!expectedDirectories.has(childRelativePath))
-          fail(`Unexpected generated directory '${childRelativePath}'.`);
-        actualDirectories.add(childRelativePath);
-        await visitOutput(childPath, childRelativePath);
-      } else if (entry.isFile()) {
-        await consumeFile(childPath, childRelativePath);
-      } else {
-        fail(`Generated path '${childRelativePath}' is not a regular file or directory.`);
-      }
+      if (entry.isDirectory())
+        await visitOutput(join(absoluteDirectory, entry.name), childRelativePath);
+      else if (entry.isFile()) actualPaths.add(childRelativePath);
+      else fail(`Generated path '${childRelativePath}' is not a regular file or directory.`);
     }
   };
-
   await visitOutput(outputRoot, "");
 
-  const missing = [...expectedPaths].filter((path) => !actualPaths.has(path));
+  const missingLogical = [...identityPaths].filter((path) => !consumedPaths.has(path));
   const unexpected = [...actualPaths].filter((path) => !expectedPaths.has(path));
-  const missingDirectories = [...expectedDirectories].filter(
-    (path) => !actualDirectories.has(path),
-  );
-  if (missing.length > 0 || unexpected.length > 0 || missingDirectories.length > 0) {
+  if (missingLogical.length > 0 || unexpected.length > 0) {
     fail(
-      `Generated output tree differs from BCD: ${missing.length} files missing (${missing.slice(0, 5).join(", ")}); ${unexpected.length} files unexpected (${unexpected.slice(0, 5).join(", ")}); ${missingDirectories.length} directories missing (${missingDirectories.slice(0, 5).join(", ")}).`,
+      `Generated output differs from BCD: ${missingLogical.length} request paths unanswered (${missingLogical.slice(0, 5).join(", ")}); ${unexpected.length} files unexpected (${unexpected.slice(0, 5).join(", ")}).`,
     );
   }
 
-  const expectedArtifacts = snapshotArtifactCount(sourceKeys.length, sourceNamespaces.length);
-  if (actualPaths.size !== expectedArtifacts || cliResult.artifactCount !== expectedArtifacts) {
+  const expectedArtifacts = verifiedBlobs.size * 3 + shards.size + 1 + 3;
+  if (actualPaths.size !== expectedArtifacts || cliResult.blobs !== verifiedBlobs.size) {
     fail(
-      `Artifact count mismatch: disk=${actualPaths.size}, CLI=${cliResult.artifactCount}, expected=${expectedArtifacts}.`,
+      `File count mismatch: disk=${actualPaths.size}, expected=${expectedArtifacts}; blobs CLI=${cliResult.blobs}, resolved=${verifiedBlobs.size}.`,
     );
   }
   if (totals.array.normalized === undefined || totals.array.raw === undefined) {
@@ -625,6 +644,8 @@ const validateAndMeasureOutput = async (outputRoot, snapshotId, cliResult) => {
     maximumKeyLengthBytes: maximumKeyLength,
     expectedFileCount: expectedArtifacts,
     actualFileCount: actualPaths.size,
+    distinctBlobs: verifiedBlobs.size,
+    distinctShards: shards.size,
   };
 };
 
@@ -642,19 +663,18 @@ const run = async () => {
   const timeoutMs = timeoutFromEnvironment();
   const outputRoot = await mkdtemp(join(tmpdir(), "bcd-embed-full-volume-"));
   try {
-    await assertCaseSensitiveFilesystem(outputRoot);
     const cli = await waitForCli(outputRoot, timeoutMs);
-    const expectedCliSummary = `Emitted ${snapshotArtifactCount(sourceKeys.length, sourceNamespaces.length)} artifacts for bcd-${bcd.__meta.version}-gen-${generatorPackage.version}.`;
-    if (cli.stdout.trim() !== expectedCliSummary) {
-      fail(
-        `Unexpected generator CLI summary. Expected '${expectedCliSummary}', received '${cli.stdout.trim()}'.`,
-      );
+    const snapshotId = `bcd-${bcd.__meta.version}-gen-${generatorPackage.version}`;
+    const served = servedFileCount(sourceKeys.length, sourceNamespaces.length);
+    const summary = new RegExp(
+      `^Emitted ${served} artifacts as (\\d+) blobs for ${snapshotId.replaceAll(".", "\\.")}; root [a-f0-9]{64}\\.$`,
+    ).exec(cli.stdout.trim());
+    if (summary === null) {
+      fail(`Unexpected generator CLI summary for ${served} artifacts: '${cli.stdout.trim()}'.`);
     }
 
-    const snapshotId = `bcd-${bcd.__meta.version}-gen-${generatorPackage.version}`;
-
     const measured = await validateAndMeasureOutput(outputRoot, snapshotId, {
-      artifactCount: snapshotArtifactCount(sourceKeys.length, sourceNamespaces.length),
+      blobs: Number(summary[1]),
     });
     return {
       bcdVersion: bcd.__meta.version,

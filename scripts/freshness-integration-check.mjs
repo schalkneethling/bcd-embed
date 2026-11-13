@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { emitGeneratedSnapshot, generateSnapshot } from "../packages/generator/dist/index.js";
+import { emitContentTree, generateSnapshot } from "../packages/generator/dist/index.js";
 
 const require = createRequire(new URL("../packages/generator/package.json", import.meta.url));
 const bcd = require("@mdn/browser-compat-data");
@@ -50,7 +50,7 @@ try {
     // The same content generated later, as a rebased or rerun PR would produce it.
     ["blocked-rerun", 20, "2026-10-02T00:00:00Z"],
   ]) {
-    await emitGeneratedSnapshot({
+    await emitContentTree({
       outputRoot: join(root, name),
       generatedSnapshot: generateSnapshot({
         generated,
@@ -102,7 +102,8 @@ try {
   await writeFile(approvals, JSON.stringify([approval]));
   const approvedRerun = compare("blocked-rerun", approvals);
   assert.equal(approvedRerun.status, 0, approvedRerun.stderr);
-  assert.notEqual(approvedRerun.report.candidateDigest, blocked.candidateDigest);
+  // The digest is the hash of the root, which holds no timestamp, so a rerun keeps it.
+  assert.equal(approvedRerun.report.candidateDigest, blocked.candidateDigest);
   assert.deepEqual(approvedRerun.report.reviewApproval, approval);
   // A stale approval neither passes a different blocked diff nor fails a routine one.
   await writeFile(

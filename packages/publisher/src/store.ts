@@ -6,6 +6,8 @@ export type StoredObject = {
   /** Release the body and deadline, including when it is rejected before consumption. */
   dispose(): void;
   etag: string;
+  /** When the object was written. */
+  lastModified: Date;
   metadata: Readonly<Record<string, string>>;
   size: number;
   sha256: string | undefined;
@@ -23,15 +25,18 @@ export type PutObject = {
   size: number;
 };
 
+export type ListedObject = { key: string; lastModified: Date };
+
 export type PutResult = { type: "stored"; etag: string } | { type: "precondition-failed" };
 
 export interface PublicationStore {
   get(key: string): Promise<StoredObject | null>;
   put(input: PutObject): Promise<PutResult>;
+  /** Objects come back in ascending key order. `lastModified` is when the object was written. */
   list(
     prefix: string,
     startAfter: string | undefined,
     limit: number,
-  ): Promise<{ keys: readonly string[]; truncated: boolean }>;
+  ): Promise<{ objects: readonly ListedObject[]; truncated: boolean }>;
   delete(keys: readonly string[]): Promise<void>;
 }

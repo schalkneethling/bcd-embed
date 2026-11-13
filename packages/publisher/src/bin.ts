@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { lstat, readFile } from "node:fs/promises";
 
-import { compareOutputTrees, parseDiffApproval } from "@bcd-embed/generator";
+import { compareContentTrees, loadContentTree, parseDiffApproval } from "@bcd-embed/generator";
 
 import { parsePublishCommand, usage } from "./cli.js";
 import { PublisherError, formatPublisherError } from "./errors.js";
@@ -38,12 +38,9 @@ const main = async (): Promise<void> => {
   }
   const approval = await loadApproval(command.approvalFile);
   if (command.remote === undefined) {
-    await validateCandidate(command.candidateRoot);
-    const report = await compareOutputTrees({
-      baselineRoot: command.baselineRoot,
-      candidateRoot: command.candidateRoot,
-      approval,
-    });
+    const candidate = await validateCandidate(command.candidateRoot);
+    const baseline = await loadContentTree(command.baselineRoot);
+    const report = compareContentTrees(baseline, candidate, approval);
     process.stdout.write(`${JSON.stringify(report)}\n`);
     if (report.blocked.length > 0 && !report.approved) process.exitCode = 2;
     return;
@@ -61,7 +58,6 @@ const main = async (): Promise<void> => {
     secretAccessKey,
   });
   const result = await publishCandidate({
-    baselineRoot: command.baselineRoot,
     candidateRoot: command.candidateRoot,
     approval,
     onProgress: reportProgress,

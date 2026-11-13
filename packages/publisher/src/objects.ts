@@ -41,6 +41,29 @@ export const readVerified = async (
   }
 };
 
+/** Reads a small object whole, after checking its size and the SHA-256 stored with it. */
+export const readSmallObject = async (
+  store: PublicationStore,
+  key: string,
+  maxBytes: number,
+): Promise<Uint8Array | null> => {
+  const object = await store.get(key);
+  if (object === null) return null;
+  if (
+    !Number.isSafeInteger(object.size) ||
+    object.size < 0 ||
+    object.size > maxBytes ||
+    object.sha256 === undefined ||
+    !/^[a-f0-9]{64}$/.test(object.sha256)
+  ) {
+    object.dispose();
+    throw new PublisherError("Stored object has no bounded verified SHA-256.");
+  }
+  const bytes = await readVerified(object, { size: object.size, sha256: object.sha256 }, maxBytes);
+  if (bytes === undefined) throw new PublisherError("Stored object read returned no bytes.");
+  return bytes;
+};
+
 export const readMetadata = async (
   store: PublicationStore,
 ): Promise<{ body: MetaResponse; object: StoredObject } | null> => {

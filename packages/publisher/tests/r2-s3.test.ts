@@ -24,7 +24,7 @@ vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
   };
 });
 
-import { PublisherError } from "../src/errors.js";
+import { PublisherError, PublisherTimeoutError } from "../src/errors.js";
 import { createR2S3Store } from "../src/r2-s3.js";
 
 const options = {
@@ -38,6 +38,8 @@ afterEach(() => {
   mocks.send.mockReset();
   mocks.client.mockClear();
 });
+
+const written = new Date("2026-01-01T12:00:00Z");
 
 describe("R2 S3 adapter", () => {
   it("constructs only the scoped endpoint, without requests", () => {
@@ -62,10 +64,12 @@ describe("R2 S3 adapter", () => {
       Body: body,
       ETag: '"etag"',
       ContentLength: 3,
+      LastModified: written,
       Metadata: { sha256: "a".repeat(64) },
     });
     const object = await createR2S3Store(options).get("v1/meta.json");
     expect(object?.size).toBe(3);
+    expect(object?.lastModified).toBe(written);
     expect(vi.getTimerCount()).toBe(1);
     object?.dispose();
     expect(body.destroyed).toBe(true);
@@ -75,9 +79,10 @@ describe("R2 S3 adapter", () => {
   it("validates returned metadata and disposes malformed streams", async () => {
     vi.useFakeTimers();
     for (const metadata of [
-      { ETag: "weak", ContentLength: 3 },
-      { ETag: '"etag"', ContentLength: -1 },
-      { ETag: '"etag"', ContentLength: Number.NaN },
+      { ETag: "weak", ContentLength: 3, LastModified: written },
+      { ETag: '"etag"', ContentLength: -1, LastModified: written },
+      { ETag: '"etag"', ContentLength: Number.NaN, LastModified: written },
+      { ETag: '"etag"', ContentLength: 3 },
     ]) {
       const body = Readable.from([Buffer.from("abc")]);
       mocks.send.mockResolvedValue({ Body: body, ...metadata });
@@ -93,6 +98,7 @@ describe("R2 S3 adapter", () => {
       Body: Readable.from([Buffer.from("abc")]),
       ETag: '"etag"',
       ContentLength: 3,
+      LastModified: written,
     });
     const object = await createR2S3Store(options).get("key");
     const chunks = [];
@@ -103,6 +109,7 @@ describe("R2 S3 adapter", () => {
       Body: Readable.from(["not bytes"]),
       ETag: '"etag"',
       ContentLength: 9,
+      LastModified: written,
     });
     const invalid = await createR2S3Store(options).get("key");
     await expect(async () => {
@@ -121,7 +128,7 @@ describe("R2 S3 adapter", () => {
     );
     const pending = createR2S3Store(options).get("key");
     const assertion = expect(pending).rejects.toThrow(
-      new PublisherError("R2 GET exceeded its deadline."),
+      new PublisherTimeoutError("R2 GET exceeded its deadline."),
     );
     await vi.advanceTimersByTimeAsync(60_000);
     await assertion;
@@ -131,13 +138,18 @@ describe("R2 S3 adapter", () => {
   it("destroys a stalled response body at its total read deadline", async () => {
     vi.useFakeTimers();
     const body = new Readable({ read() {} });
-    mocks.send.mockResolvedValue({ Body: body, ETag: '"etag"', ContentLength: 3 });
+    mocks.send.mockResolvedValue({
+      Body: body,
+      ETag: '"etag"',
+      ContentLength: 3,
+      LastModified: written,
+    });
     const object = await createR2S3Store(options).get("key");
     const pending = (async () => {
       for await (const chunk of object!.body) void chunk;
     })();
     const assertion = expect(pending).rejects.toThrow(
-      new PublisherError("R2 object read exceeded its deadline."),
+      new PublisherTimeoutError("R2 object read exceeded its deadline."),
     );
     await vi.advanceTimersByTimeAsync(60_000);
     await assertion;
@@ -155,7 +167,7 @@ describe("R2 S3 adapter", () => {
     );
     const pending = createR2S3Store(options).list("v1/", undefined, 10);
     const assertion = expect(pending).rejects.toThrow(
-      new PublisherError("R2 request exceeded its deadline."),
+      new PublisherTimeoutError("R2 request exceeded its deadline."),
     );
     await vi.advanceTimersByTimeAsync(60_000);
     await assertion;
@@ -214,9 +226,13 @@ describe("R2 S3 adapter", () => {
   it("bounds paginated list and deletion operations", async () => {
     vi.useFakeTimers();
     const store = createR2S3Store(options);
-    mocks.send.mockResolvedValue({ Contents: [{ Key: "prefix/a" }], IsTruncated: true });
+    const lastModified = new Date("2026-01-01T12:00:00Z");
+    mocks.send.mockResolvedValue({
+      Contents: [{ Key: "prefix/a", LastModified: lastModified }],
+      IsTruncated: true,
+    });
     expect(await store.list("prefix/", "prefix/0", 500)).toEqual({
-      keys: ["prefix/a"],
+      objects: [{ key: "prefix/a", lastModified }],
       truncated: true,
     });
     expect(mocks.send.mock.calls[0]![0].input).toEqual({
@@ -227,8 +243,12 @@ describe("R2 S3 adapter", () => {
     });
     for (const limit of [0, 1001, 1.5])
       await expect(store.list("prefix/", undefined, limit)).rejects.toThrow("limit");
-    mocks.send.mockResolvedValue({ Contents: [{}] });
-    await expect(store.list("prefix/", undefined, 500)).rejects.toThrow("without a key");
+    for (const item of [{}, { Key: "prefix/a" }]) {
+      mocks.send.mockResolvedValue({ Contents: [item] });
+      await expect(store.list("prefix/", undefined, 500)).rejects.toThrow(
+        "without a key or a date",
+      );
+    }
     mocks.send.mockResolvedValue({});
     await store.delete(["a", "b"]);
     expect(mocks.send.mock.lastCall?.[0].input).toMatchObject({

@@ -102,7 +102,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --recursive --filter @bcd-embed/publisher... run build
 
-      - name: Restore durable baseline and reuse a persisted reservation
+      - name: Reuse a persisted reservation
         id: reservation
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -116,7 +116,7 @@ jobs:
           test -n "$R2_SECRET_ACCESS_KEY"
           test -n "$R2_ACCOUNT_ID"
           test -n "$R2_BUCKET"
-          node scripts/prepare-publication.mjs "$RUNNER_TEMP/baseline-output" > "$RUNNER_TEMP/publication.json"
+          node scripts/prepare-publication.mjs > "$RUNNER_TEMP/publication.json"
           node - <<'NODE' "$RUNNER_TEMP/publication.json" >> "$GITHUB_OUTPUT"
           const publication = JSON.parse(require("node:fs").readFileSync(process.argv[2], "utf8"));
           console.log(`generated=${publication.generated}`);
@@ -130,10 +130,16 @@ jobs:
         run: |
           node packages/generator/dist/bin.js --out "$RUNNER_TEMP/candidate-output" --generated "$GENERATED" --expires "$EXPIRES"
 
-      - name: Record exact output hashes for review without remote credentials
+      - name: Record exact output hashes for review against the live snapshot
+        # Reads the live snapshot's root and shards from R2; writes nothing.
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
         run: |
           status=0
-          node scripts/compare-freshness-output.mjs --baseline "$RUNNER_TEMP/baseline-output" --candidate "$RUNNER_TEMP/candidate-output" > "$RUNNER_TEMP/publication-diff.json" || status=$?
+          node scripts/report-publication-diff.mjs "$RUNNER_TEMP/candidate-output" > "$RUNNER_TEMP/publication-diff.json" || status=$?
           if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
             exit "$status"
           fi
@@ -159,7 +165,7 @@ jobs:
         run: |
           test -n "$APPROVAL"
           printf '%s' "$APPROVAL" > "$RUNNER_TEMP/approval.json"
-          node packages/publisher/dist/bin.js --baseline-root "$RUNNER_TEMP/baseline-output" --candidate-root "$RUNNER_TEMP/candidate-output" --approval-file "$RUNNER_TEMP/approval.json" --execute-remote-write --account-id "$R2_ACCOUNT_ID" --bucket "$R2_BUCKET"
+          node packages/publisher/dist/bin.js --candidate-root "$RUNNER_TEMP/candidate-output" --approval-file "$RUNNER_TEMP/approval.json" --execute-remote-write --account-id "$R2_ACCOUNT_ID" --bucket "$R2_BUCKET"
 
   notify-failure:
     needs:

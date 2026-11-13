@@ -37,7 +37,8 @@ Each box is one step, and each step has one job.
    release.
 3. **The publisher** compares the new snapshot with the one that is live. A
    person reviews that difference and approves it. The publisher then uploads
-   every file, and switches the live pointer only after the last one.
+   the files the live snapshot does not already have, and switches the live
+   pointer only after the last one.
 4. **R2** is Cloudflare's object storage. It holds the snapshots, and one small
    file, `v1/meta.json`, that names the current one.
 5. **The Worker** is a small program on Cloudflare's network. It turns a
