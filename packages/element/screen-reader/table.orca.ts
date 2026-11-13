@@ -5,7 +5,7 @@ import { variants, walkTable } from "./walk-table.js";
 
 for (const variant of variants) {
   test(`Orca walks ${variant.name}`, async ({ page, orca }, testInfo) => {
-    const { MoveDown, MoveRight } = orca.keyboardCommands;
+    const { MoveDown, MoveRight } = orca.keyboardCommands.TableNavigator;
     await walkTable(
       page,
       orca,
