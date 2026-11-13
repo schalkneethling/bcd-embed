@@ -1,21 +1,17 @@
 name: Screen readers
 
 # Screen reader tests for the web component's markup: VoiceOver on macOS and Orca on Linux,
-# driven by Guidepup (packages/element/README.md). Advisory: not a required check, because
-# screen reader automation is less reliable than the CI job, and because the tests record what
-# each screen reader says for a person to review.
+# driven by Guidepup (packages/element/README.md).
+#
+# The `screen-readers` job at the end is a required status check, so a failed or cancelled
+# screen reader run blocks the merge. A required check must report on every pull request, so the
+# workflow has no `paths` filter: the `changes` job decides whether the tests need to run, and
+# when they do not, `screen-readers` still reports success.
 on:
   pull_request:
     branches: [main]
-    paths: &screen-reader-paths
-      - "packages/element/**"
-      - "docs/planning/phase1-markup/**"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/screen-readers.yml"
   push:
     branches: [main]
-    paths: *screen-reader-paths
   workflow_dispatch:
 
 permissions:
@@ -26,7 +22,34 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decides whether anything a screen reader test depends on changed. Manual runs always test.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      screen-reader: ${{ steps.diff.outputs.screen-reader }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] ||
+            git diff --name-only "$BASE...$HEAD" | grep -qE \
+              '^(packages/element/|docs/planning/phase1-markup/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/screen-readers\.yml$)'
+          then
+            echo "screen-reader=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "screen-reader=false" >> "$GITHUB_OUTPUT"
+          fi
+
   screen-reader:
+    needs: changes
     # The job skips Dependabot's pull requests, which wait a long time for a macOS runner and
     # mostly update packages that change nothing a screen reader reads. The push to main after
     # the merge runs it, so a dependency that breaks a test is still caught there.
@@ -35,11 +58,13 @@ jobs:
     # @playwright packages. Dependabot puts a scoped package's name in the branch without the @,
     # as in dependabot/npm_and_yarn/guidepup/setup-0.29.4.
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.user.login != 'dependabot[bot]' ||
-      startsWith(github.head_ref, 'dependabot/github_actions/') ||
-      contains(github.head_ref, '/guidepup') ||
-      contains(github.head_ref, '/playwright/')
+      needs.changes.outputs.screen-reader == 'true' && (
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.user.login != 'dependabot[bot]' ||
+        startsWith(github.head_ref, 'dependabot/github_actions/') ||
+        contains(github.head_ref, '/guidepup') ||
+        contains(github.head_ref, '/playwright/')
+      )
     strategy:
       # One screen reader failing says nothing about the other, so both always finish.
       fail-fast: false
@@ -109,3 +134,20 @@ jobs:
           path: packages/element/test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  # The required status check. It passes when the screen readers passed or had nothing to test,
+  # and fails when either reader failed or was cancelled, or when `changes` itself failed.
+  screen-readers:
+    needs: [changes, screen-reader]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          READERS: ${{ needs.screen-reader.result }}
+        run: |
+          case "$CHANGES/$READERS" in
+            success/success | success/skipped) echo "Screen readers: $READERS" ;;
+            *) echo "::error::Screen reader tests did not pass (changes: $CHANGES, readers: $READERS)"; exit 1 ;;
+          esac
