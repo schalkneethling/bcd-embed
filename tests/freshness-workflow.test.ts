@@ -161,6 +161,52 @@ describe("freshness automation policy", () => {
     }
   });
 
+  it("passes the approval to the publisher only when the diff report is blocked", async () => {
+    const workflow = parse(await read("../.github/workflows/freshness-backstop.yml"));
+    const publication = workflow.jobs.publish.steps.at(-1);
+    const root = await mkdtemp(join(tmpdir(), "bcd-publish-approval-"));
+    // A stub publisher that records the arguments the step passes it.
+    await mkdir(join(root, "packages/publisher/dist"), { recursive: true });
+    await writeFile(
+      join(root, "packages/publisher/dist/bin.js"),
+      "process.stdout.write(JSON.stringify(process.argv.slice(2)));",
+    );
+    const publish = async (blocked: string[], approval: string) => {
+      await writeFile(join(root, "publication-diff.json"), JSON.stringify({ blocked }));
+      const stdout = execFileSync("bash", ["-e", "-c", publication.run], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          APPROVAL: approval,
+          RUNNER_TEMP: root,
+          R2_ACCOUNT_ID: "account",
+          R2_BUCKET: "bucket",
+        },
+      });
+      return JSON.parse(stdout) as string[];
+    };
+    try {
+      // An unblocked diff publishes without the secret, and ignores a stale one.
+      expect(await publish([], "")).not.toContain("--approval-file");
+      expect(await publish([], '{"stale":true}')).not.toContain("--approval-file");
+
+      const args = await publish(["Bootstrap has no approved baseline."], '{"approved":true}');
+      const file = args[args.indexOf("--approval-file") + 1];
+      expect(file).toBe(join(root, "approval.json"));
+      expect(await readFile(file, "utf8")).toBe('{"approved":true}');
+      expect(args).toContain("--execute-remote-write");
+
+      // A blocked diff with no approval stops before the publisher runs.
+      await expect(publish(["Bootstrap has no approved baseline."], "")).rejects.toThrow(
+        /The diff is blocked/,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("builds schema/core transitively on fresh generator and publisher runners", async () => {
     for (const path of [
       "../.github/workflows/freshness.yml",
