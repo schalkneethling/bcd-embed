@@ -92,8 +92,8 @@ importers:
         specifier: 5.20261110.1
         version: 5.20261110.1
       '@mdn/browser-compat-data':
-        specifier: 8.1.8
-        version: 8.1.8
+        specifier: 8.1.9
+        version: 8.1.9
       '@varlock/cloudflare-integration':
         specifier: 1.6.3
         version: 1.6.3(varlock@1.24.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(wrangler@4.158.0(@cloudflare/workers-types@5.20261110.1)(@types/node@26.6.6))
@@ -113,8 +113,8 @@ importers:
         specifier: workspace:*
         version: link:../schema
       '@mdn/browser-compat-data':
-        specifier: 8.1.8
-        version: 8.1.8
+        specifier: 8.1.9
+        version: 8.1.9
 
   packages/element:
     devDependencies:
@@ -137,8 +137,8 @@ importers:
         specifier: workspace:*
         version: link:../schema
       '@mdn/browser-compat-data':
-        specifier: 8.1.8
-        version: 8.1.8
+        specifier: 8.1.9
+        version: 8.1.9
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -172,8 +172,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@mdn/browser-compat-data':
-        specifier: 8.1.8
-        version: 8.1.8
+        specifier: 8.1.9
+        version: 8.1.9
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -1234,8 +1234,8 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@mdn/browser-compat-data@8.1.8':
-    resolution: {integrity: sha512-+RK7inkLeZ70kr9Mo+Y81JjZMpQIt0Sx40tHHU0hXGDSdf9YvlawH+4WlUpP3SE8rFLmjqGiTzL+qPPPnncWDw==}
+  '@mdn/browser-compat-data@8.1.9':
+    resolution: {integrity: sha512-7d8D9yzVS4ugLbt4clzc5DKU8dq85K0lRebjzpP43GxSr7vYKmczgfuEU+0beimjl5YmnHkcErtolg5t5ttb0A==}
 
   '@mermaid-js/parser@2.0.1':
     resolution: {integrity: sha512-j37dj/h6p6pots1L7pLPPNuABEEu9WP4OYg9pW1g+nYG331j0+3canE9OagtYdytYvdSAMG+2fKU5cxep6LgjA==}
@@ -4951,7 +4951,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@mdn/browser-compat-data@8.1.8': {}
+  '@mdn/browser-compat-data@8.1.9': {}
 
   '@mermaid-js/parser@2.0.1':
     dependencies:
