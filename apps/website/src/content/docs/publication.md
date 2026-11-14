@@ -294,10 +294,16 @@ Publication is manual. It runs in the `publish` job of
 [`freshness-backstop.yml`](https://github.com/schalkneethling/bcd-embed/blob/main/.github/workflows/freshness-backstop.yml), which
 uses the `bcd-embed-production` environment and only runs from `main`.
 
-Every publication through the workflow needs an approval, including one the
-diff gate would let through. The publish step refuses to start without the
-secret, and the publisher rejects an approval whose digests do not match the
-snapshots it is about to compare. A publication therefore takes two runs: the
+A publication needs an approval only when the diff gate blocks it, as it always
+does for the first publication. The publish step reads the diff report and
+passes the secret to the publisher only in that case. It does not pass it for
+an unblocked diff, because the publisher rejects any approval whose digests do
+not match the snapshots it is about to compare, so an approval left over from
+an earlier publication would otherwise fail a routine one. The publisher
+repeats the gate against the live snapshot itself, so an unblocked report never
+lets a blocked diff through.
+
+An unblocked publication finishes in one run. A blocked one takes two: the
 first produces the digests, and the second publishes them.
 
 1. Start the workflow on `main` with `publish` set to true:
@@ -306,8 +312,12 @@ first produces the digests, and the second publishes them.
    gh workflow run freshness-backstop.yml --ref main -f publish=true
    ```
 
-2. The run stops at the step named "Require reviewed exact-hash approval and
-   publish", because no approval matches yet. Download the run's
+   If the diff gate lets the change through, the run publishes and you can skip
+   to step 5.
+
+2. If the gate blocks the change, the run stops at the step named "Require
+   reviewed exact-hash approval when the diff is blocked, and publish", because
+   no approval matches yet. Download the run's
    `bcd-embed-publication-…` artifact and read `publication-diff.json`. The
    step before it wrote that file by comparing the candidate with the live
    snapshot in R2, without writing anything. It lists the two digests, the
@@ -340,7 +350,7 @@ first produces the digests, and the second publishes them.
 ### If a run fails or is cancelled
 
 Start the workflow again. The reservation makes the rerun produce the same
-candidate, the stored approval still matches, and the upload continues as
+candidate, a stored approval for a blocked diff still matches, and the upload continues as
 described in [What a second run does](#what-a-second-run-does).
 
 Three failures need a person before a rerun:

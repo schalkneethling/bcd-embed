@@ -201,8 +201,16 @@ Publication failures participate in Sentry notifications.
 
 Manual-only publication is the explicitly approved scope. Push and scheduled
 runs prepare local artifacts; only a dispatch from `main` with `publish=true`
-can enter protected publication. Required exact-hash approval remains in place
-for every manual publication. No automatic production publication is configured.
+can enter protected publication. No automatic production publication is
+configured.
+
+Update (14 November 2026): exact-hash approval was first required for every
+manual publication. It is now required only when the diff gate blocks the
+change, including bootstrap. The publish step passes `BCD_EMBED_DIFF_APPROVAL`
+only for a blocked report, because the publisher rejects any approval whose
+digests do not match, so a stored approval would otherwise fail every routine
+publication after the one it was written for. The publisher still repeats the
+gate against the live snapshot before writing.
 Non-main dispatches cannot run preparation or credentialed failure notification.
 Artifact names include the run attempt so rerun-all does not collide with an
 earlier immutable upload. Builds include workspace dependencies in topological
