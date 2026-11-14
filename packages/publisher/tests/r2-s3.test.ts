@@ -24,7 +24,7 @@ vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
   };
 });
 
-import { PublisherError, PublisherTimeoutError } from "../src/errors.js";
+import { PublisherTimeoutError } from "../src/errors.js";
 import { createR2S3Store } from "../src/r2-s3.js";
 
 const options = {
