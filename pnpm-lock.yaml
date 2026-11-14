@@ -119,11 +119,11 @@ importers:
   packages/element:
     devDependencies:
       '@guidepup/guidepup':
-        specifier: 0.40.0
-        version: 0.40.0(supports-color@10.2.2)
+        specifier: 0.38.0
+        version: 0.38.0(supports-color@10.2.2)
       '@guidepup/playwright':
         specifier: 0.21.0
-        version: 0.21.0(@guidepup/guidepup@0.40.0(supports-color@10.2.2))(@playwright/test@1.65.0)
+        version: 0.21.0(@guidepup/guidepup@0.38.0(supports-color@10.2.2))(@playwright/test@1.65.0)
       '@playwright/test':
         specifier: 1.65.0
         version: 1.65.0
@@ -877,8 +877,8 @@ packages:
   '@expressive-code/plugin-text-markers@0.44.3':
     resolution: {integrity: sha512-4Ae2xRSDV5kdWPsi40xWbOtoihbzM0zLVjQKkDAnD5KzFXl+6/kd+VhuWOlTRVaJ5cqGk++vCbAaf0MR1XbZlw==}
 
-  '@guidepup/guidepup@0.40.0':
-    resolution: {integrity: sha512-Rnrs6FCOa+v9q2jMyXeBTOHNIaMv3lCcE8Uq1HN8JIymbqpx59wct3VRyvhQYIStqW7uhmSjHiFE8ERCV3cc0w==}
+  '@guidepup/guidepup@0.38.0':
+    resolution: {integrity: sha512-BESjF92DTIaw451unpFxzIfd39WwfqY9x3UUs0f+0r20KotR7u5Q+s3B4IwWAsMKHc7e3G7X47JKjMes8sxMHw==}
 
   '@guidepup/playwright@0.21.0':
     resolution: {integrity: sha512-1sXOcSgfTz8pNEfGWcpeihmc6I+jr9CTbBnwypLlFHlHxDA5im3dJk6QJp8GBhh31K/VOtiwZ3/ZZy6hDYxi5w==}
@@ -4698,7 +4698,7 @@ snapshots:
     dependencies:
       '@expressive-code/core': 0.44.3
 
-  '@guidepup/guidepup@0.40.0(supports-color@10.2.2)':
+  '@guidepup/guidepup@0.38.0(supports-color@10.2.2)':
     dependencies:
       dbus-native: 0.15.2
       debug: 4.4.3(supports-color@10.2.2)
@@ -4706,9 +4706,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@guidepup/playwright@0.21.0(@guidepup/guidepup@0.40.0(supports-color@10.2.2))(@playwright/test@1.65.0)':
+  '@guidepup/playwright@0.21.0(@guidepup/guidepup@0.38.0(supports-color@10.2.2))(@playwright/test@1.65.0)':
     dependencies:
-      '@guidepup/guidepup': 0.40.0(supports-color@10.2.2)
+      '@guidepup/guidepup': 0.38.0(supports-color@10.2.2)
       '@playwright/test': 1.65.0
 
   '@iconify/types@2.0.0': {}
