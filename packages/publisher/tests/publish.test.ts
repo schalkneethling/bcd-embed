@@ -831,7 +831,41 @@ describe("cleanup of unreferenced files", () => {
     store.repeatedPage = true;
     await expect(
       pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep }),
-    ).rejects.toThrow("did not advance");
+    ).rejects.toThrow(
+      "Retention cleanup failed while listing v1/blobs/ (page 2): R2 repeated the start-after key at key 1 of 1.",
+    );
+  });
+
+  it("says which listing check failed, where, and never prints the key", async () => {
+    const { store } = await threeReleases();
+    const list = store.list.bind(store);
+    const prune = () => pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep });
+
+    store.list = async (prefix, startAfter, limit) => {
+      const page = await list(prefix, startAfter, limit);
+      return { ...page, objects: [...page.objects].reverse() };
+    };
+    await expect(prune()).rejects.toThrow(
+      /^Retention cleanup failed while listing v1\/blobs\/ \(page 1\): R2 returned key 2 of \d+ sorted before the key before it\.$/,
+    );
+
+    const secret = "outside/do-not-print";
+    store.list = async (prefix, startAfter, limit) => {
+      const page = await list(prefix, startAfter, limit);
+      return { ...page, objects: [{ key: secret, lastModified: new Date("2025-01-01") }] };
+    };
+    const outside = prune();
+    await expect(outside).rejects.toThrow(
+      "Retention cleanup failed while listing v1/blobs/ (page 1): R2 returned a key outside the prefix at key 1 of 1.",
+    );
+    await outside.catch((error: unknown) => {
+      expect(formatPublisherError(error)).not.toContain("do-not-print");
+    });
+
+    store.list = async () => ({ objects: [], truncated: true });
+    await expect(prune()).rejects.toThrow(
+      "Retention cleanup failed while listing v1/blobs/ (page 1): R2 said the listing continues but returned no keys.",
+    );
   });
 
   it("reports committed metadata when cleanup fails after the switch", async () => {
@@ -858,7 +892,7 @@ describe("cleanup of unreferenced files", () => {
     };
     const failure = pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep });
     await expect(failure).rejects.toThrow(
-      "Retention cleanup failed while listing v1/blobs/: R2 responded with HTTP 403.",
+      "Retention cleanup failed while listing v1/blobs/ (page 1): R2 responded with HTTP 403.",
     );
     await failure.catch((error: unknown) => {
       expect(formatPublisherError(error)).not.toContain("do-not-print");

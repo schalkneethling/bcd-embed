@@ -251,6 +251,27 @@ const duringCleanup = async <T>(step: string, task: () => Promise<T>): Promise<T
   }
 };
 
+/**
+ * Why a listed key cannot be trusted, or undefined when it can. Keys must stay inside the prefix
+ * and strictly increase, starting after `start-after`, or the listing may skip or repeat objects.
+ * The answer names the key's position but never the key, which R2 controls.
+ */
+const listingProblem = (
+  prefix: string,
+  key: string,
+  previous: string | undefined,
+  index: number,
+  count: number,
+): string | undefined => {
+  const position = `key ${index + 1} of ${count}`;
+  if (!key.startsWith(prefix)) return `R2 returned a key outside the prefix at ${position}.`;
+  if (previous === undefined || key > previous) return undefined;
+  const before = index === 0 ? "the start-after key" : "the key before it";
+  return key === previous
+    ? `R2 repeated ${before} at ${position}.`
+    : `R2 returned ${position} sorted before ${before}.`;
+};
+
 const HASHED_NAME = /^([a-f0-9]{64})\.json(?:\.br|\.gz)?$/;
 
 export type CleanupResult = {
@@ -326,15 +347,14 @@ export const pruneRetiredSnapshots = async (
   ] as const) {
     if (kind === "metaCopies" && !metadataSettled) continue;
     let startAfter: string | undefined;
-    for (;;) {
-      const page = await duringCleanup(`listing ${prefix}`, () =>
-        store.list(prefix, startAfter, PRUNE_PAGE_SIZE),
-      );
+    for (let pageNumber = 1; ; pageNumber += 1) {
+      const step = `listing ${prefix} (page ${pageNumber})`;
+      const page = await duringCleanup(step, () => store.list(prefix, startAfter, PRUNE_PAGE_SIZE));
       let previous = startAfter;
       const unreferenced: string[] = [];
-      for (const { key, lastModified } of page.objects) {
-        if (!key.startsWith(prefix) || (previous !== undefined && key <= previous))
-          throw new PublisherError("R2 listing did not advance within its prefix.");
+      for (const [index, { key, lastModified }] of page.objects.entries()) {
+        const problem = listingProblem(prefix, key, previous, index, page.objects.length);
+        if (problem !== undefined) throw new CleanupError(step, new PublisherError(problem));
         previous = key;
         const name = key.slice(prefix.length);
         const hashed = HASHED_NAME.exec(name)?.[1];
@@ -345,11 +365,17 @@ export const pruneRetiredSnapshots = async (
               ? hashed === metadata.object.sha256
               : hashed !== undefined && live[kind].has(hashed);
         if (!Number.isFinite(lastModified.getTime()))
-          throw new PublisherError("R2 listing returned an object without a valid date.");
+          throw new CleanupError(
+            step,
+            new PublisherError("R2 listing returned an object without a valid date."),
+          );
         if (!isLive && lastModified.getTime() < cutoff) unreferenced.push(key);
       }
       if (page.truncated && page.objects.length === 0)
-        throw new PublisherError("R2 listing did not advance.");
+        throw new CleanupError(
+          step,
+          new PublisherError("R2 said the listing continues but returned no keys."),
+        );
       if (unreferenced.length > 0) {
         if (!dryRun) {
           const latest = await duringCleanup("rereading metadata", () => readMetadata(store));

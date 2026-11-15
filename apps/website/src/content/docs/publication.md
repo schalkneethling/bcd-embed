@@ -361,9 +361,16 @@ Three failures need a person before a rerun:
 | `Metadata committed but readback verification failed; investigate before retry.`               | `v1/meta.json` was written but could not be read back and verified. Inspect the bucket first.   |
 | `Metadata committed. Retention cleanup failed while <step>: <cause> Investigate before retry.` | The new snapshot is live, but removing unused files failed. Inspect the bucket first.           |
 
-The cleanup message names the step that failed, such as `listing v1/blobs/` or
+The cleanup message names the step that failed, such as `listing v1/blobs/ (page 3)` or
 `deleting from v1/shards/`, and gives one of three causes: the publisher's own
 explanation, `R2 responded with HTTP <status>.` for an R2 request that failed, or
 `UnknownError`. It never prints an R2 error's name or message, because those can
 contain request details. A rerun after a cleanup failure uploads nothing,
 because the snapshot is already current, and it retries only the cleanup.
+
+Cleanup checks every listed key before it deletes anything from that page. A
+key must start with the prefix being listed and sort after the key before it,
+or after the key the page was asked to start after. Otherwise the listing could
+skip or repeat objects, so cleanup stops and says which check failed and at
+which position on the page, for example
+`R2 repeated the start-after key at key 1 of 1000.` It never prints the key.
