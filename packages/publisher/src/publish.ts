@@ -25,7 +25,7 @@ import { compare as compareVersions, valid as validVersion } from "semver";
 import type { PublicationStore } from "./store.js";
 import { putAndVerify, readMetadata, readVerified } from "./objects.js";
 import { runBounded } from "./concurrency.js";
-import { PublisherError } from "./errors.js";
+import { CleanupError, PublisherError, describeFailure } from "./errors.js";
 import { countOperations, type OperationCounts } from "./operations.js";
 import { readPublishedTree } from "./tree.js";
 import { putImmutable, realSleep, type Sleep } from "./upload.js";
@@ -242,6 +242,15 @@ export const readPublicationReservation = async (
   return markerFor(store, `v1/_publication/${id}.json`);
 };
 
+/** Runs one cleanup step, so a failure names the step and its safe cause instead of hiding both. */
+const duringCleanup = async <T>(step: string, task: () => Promise<T>): Promise<T> => {
+  try {
+    return await task();
+  } catch (error) {
+    throw error instanceof CleanupError ? error : new CleanupError(step, error);
+  }
+};
+
 const HASHED_NAME = /^([a-f0-9]{64})\.json(?:\.br|\.gz)?$/;
 
 export type CleanupResult = {
@@ -279,8 +288,10 @@ export const pruneRetiredSnapshots = async (
   store: PublicationStore,
   { clock = wallClock, dryRun = false, sleep = realSleep }: CleanupOptions = {},
 ): Promise<CleanupResult> => {
-  await retireExpiredMembership(store, readClock(clock), sleep);
-  const metadata = await readMetadata(store);
+  await duringCleanup("retiring expired snapshots", () =>
+    retireExpiredMembership(store, readClock(clock), sleep),
+  );
+  const metadata = await duringCleanup("reading metadata", () => readMetadata(store));
   if (metadata === null) throw new PublisherError("Canonical metadata disappeared during pruning.");
 
   const live = {
@@ -289,7 +300,9 @@ export const pruneRetiredSnapshots = async (
     roots: new Set<string>(),
   };
   for (const snapshot of metadata.body.snapshots) {
-    const tree = await readPublishedTree(store, snapshot);
+    const tree = await duringCleanup(`reading snapshot ${snapshot.id}`, () =>
+      readPublishedTree(store, snapshot),
+    );
     live.roots.add(snapshot.id);
     for (const sha256 of tree.root.shards) live.shards.add(sha256);
     for (const sha256 of Object.values(tree.root.structural)) live.blobs.add(sha256);
@@ -314,7 +327,9 @@ export const pruneRetiredSnapshots = async (
     if (kind === "metaCopies" && !metadataSettled) continue;
     let startAfter: string | undefined;
     for (;;) {
-      const page = await store.list(prefix, startAfter, PRUNE_PAGE_SIZE);
+      const page = await duringCleanup(`listing ${prefix}`, () =>
+        store.list(prefix, startAfter, PRUNE_PAGE_SIZE),
+      );
       let previous = startAfter;
       const unreferenced: string[] = [];
       for (const { key, lastModified } of page.objects) {
@@ -337,14 +352,14 @@ export const pruneRetiredSnapshots = async (
         throw new PublisherError("R2 listing did not advance.");
       if (unreferenced.length > 0) {
         if (!dryRun) {
-          const latest = await readMetadata(store);
+          const latest = await duringCleanup("rereading metadata", () => readMetadata(store));
           if (
             latest === null ||
             latest.object.etag !== metadata.object.etag ||
             latest.object.sha256 !== metadata.object.sha256
           )
             throw new PublisherError("Metadata changed while pruning; the live set is stale.");
-          await store.delete(unreferenced);
+          await duringCleanup(`deleting from ${prefix}`, () => store.delete(unreferenced));
         }
         deleted[kind] += unreferenced.length;
       }
@@ -592,10 +607,12 @@ export const publishCandidate = async ({
   let pruned: CleanupResult;
   try {
     pruned = await pruneRetiredSnapshots(store, { clock, sleep });
-  } catch {
-    throw new PublisherError(
-      "Metadata committed but retention cleanup failed; investigate before retry.",
-    );
+  } catch (error) {
+    const reason =
+      error instanceof CleanupError
+        ? error.message
+        : `Retention cleanup failed: ${describeFailure(error)}`;
+    throw new PublisherError(`Metadata committed. ${reason} Investigate before retry.`);
   }
   return {
     type: "published",
