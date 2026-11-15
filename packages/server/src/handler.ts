@@ -1,15 +1,25 @@
 import {
   apiErrorResponseSchema,
+  blobPath,
   featureKeySchema,
   indexResponseSchema,
+  MAX_ROOT_BYTES,
+  MAX_SHARD_BYTES,
   metaResponseSchema,
   namespaceSchema,
   RELEASE_HEADERS,
+  shardPath,
+  shardSchema,
   snapshotIdentifierSchema,
+  snapshotRootPath,
+  snapshotRootSchema,
   type ApiErrorCode,
+  type Shard,
   type Snapshot,
+  type SnapshotRoot,
 } from "@bcd-embed/schema";
 import { negotiateEncoding, representationPath, type ContentEncoding } from "./encoding.js";
+import type { TreeCache } from "./tree-cache.js";
 
 /** Storage paths are relative to the artifact root, never URL paths. */
 export interface ArtifactStore {
@@ -38,6 +48,11 @@ export interface ArtifactHandlerOptions {
   ) => Uint8Array | Promise<Uint8Array>;
   beforeRead?: (request: Request) => ReadDecision | Promise<ReadDecision>;
   onError?: (error: unknown) => void | Promise<void>;
+  /**
+   * Keeps parsed roots and shards between requests. They never change once written, so an entry
+   * never goes stale. The caller owns it, because only the caller knows how long it lives.
+   */
+  treeCache?: TreeCache;
 }
 
 export const MAX_KEY_LENGTH = 512;
@@ -53,9 +68,11 @@ const METHODS = "GET, HEAD, OPTIONS";
 // RFC 9110 §8.8.3: etagc = %x21 / %x23-7E / obs-text.
 const STRONG_ETAG = /^"[\x21\x23-\x7e\x80-\xff]*"$/;
 
+/** `suffix` is the path below the snapshot. Feature routes also name the pointer they need. */
 type Route =
   | { type: "meta" }
-  | { type: "artifact"; snapshot: string; suffix: string; key: string | null };
+  | { type: "structural"; snapshot: string; suffix: string }
+  | { type: "feature"; snapshot: string; suffix: string; key: string; pointer: "feature" | "raw" };
 
 class RequestError extends Error {
   constructor(
@@ -93,7 +110,7 @@ function parseRoute(url: string): Route | null {
     throw new RequestError("snapshot_not_found", snapshot);
   }
   if (suffix === "browsers.json" || suffix === "index.json") {
-    return { type: "artifact", snapshot, suffix, key: null };
+    return { type: "structural", snapshot, suffix };
   }
   if (suffix.startsWith("index/")) {
     const namespace = suffix.slice(6, -5);
@@ -104,7 +121,7 @@ function parseRoute(url: string): Route | null {
     ) {
       throw new RequestError("invalid_key", namespace || suffix);
     }
-    return { type: "artifact", snapshot, suffix: `index/${namespace}.json`, key: null };
+    return { type: "structural", snapshot, suffix: `index/${namespace}.json` };
   }
   const feature = /^(features|raw)\/(.*)$/.exec(suffix);
   if (!feature) return null;
@@ -119,7 +136,19 @@ function parseRoute(url: string): Route | null {
   ) {
     throw new RequestError("invalid_key", key || filename || path);
   }
-  return { type: "artifact", snapshot, suffix: `${resource}/${key}.json`, key };
+  return {
+    type: "feature",
+    snapshot,
+    suffix: `${resource}/${key}.json`,
+    key,
+    pointer: resource === "features" ? "feature" : "raw",
+  };
+}
+
+/** The shard of a feature key: the first byte of the SHA-256 hash of its UTF-8 bytes. */
+async function shardIndexOf(key: string): Promise<number> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+  return new Uint8Array(hash)[0]!;
 }
 
 /** RFC 9110 §13.1.2: weak comparison for GET/HEAD, including tag lists. */
@@ -302,6 +331,10 @@ async function boundedBytes(artifact: Artifact, limit: number): Promise<Uint8Arr
   return bytes;
 }
 
+/** A record lookup that ignores inherited properties, so a key such as `toString` finds nothing. */
+const ownValue = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
+  Object.hasOwn(record, key) ? record[key] : undefined;
+
 const parseJson = (bytes: Uint8Array): unknown =>
   JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
 const boundedJson = async (artifact: Artifact, limit: number): Promise<unknown> =>
@@ -360,6 +393,32 @@ export function createArtifactHandler(
     makeContractError(request, code, query, retryAfter, options.encodeJson).catch(
       (error: unknown) => encoderFailure(request, error),
     );
+  /**
+   * Reads one snapshot's root. A listed snapshot without a root, or with a root for another
+   * snapshot, is corruption. Roots never change, so a cached copy is always current.
+   */
+  const readRoot = async (snapshotId: string): Promise<SnapshotRoot> => {
+    const path = snapshotRootPath(snapshotId);
+    const cached = options.treeCache?.roots.get(path);
+    if (cached !== undefined) return cached;
+    const artifact = await options.store.get(path);
+    if (artifact === null) throw new Error("Snapshot root missing.");
+    const root = snapshotRootSchema.parse(await boundedJson(artifact, MAX_ROOT_BYTES));
+    if (root.snapshot !== snapshotId) throw new Error("Snapshot root names another snapshot.");
+    options.treeCache?.roots.set(path, root);
+    return root;
+  };
+  /** Reads the shard that holds a key's pointers. Shards are named by their hash and never change. */
+  const readShard = async (root: SnapshotRoot, key: string): Promise<Shard> => {
+    const path = shardPath(root.shards[await shardIndexOf(key)]!);
+    const cached = options.treeCache?.shards.get(path);
+    if (cached !== undefined) return cached;
+    const artifact = await options.store.get(path);
+    if (artifact === null) throw new Error("Snapshot shard missing.");
+    const shard = shardSchema.parse(await boundedJson(artifact, MAX_SHARD_BYTES));
+    options.treeCache?.shards.set(path, shard);
+    return shard;
+  };
   return async (request) => {
     try {
       const route = parseRoute(request.url);
@@ -409,9 +468,16 @@ export function createArtifactHandler(
       const selectedSnapshot = metadata.snapshots.find((snapshot) => snapshot.id === selected);
       if (selectedSnapshot === undefined)
         return contractError(request, "snapshot_not_found", route.snapshot);
-      const logicalPath = `v1/${selected}/${route.suffix}`;
-      const artifact = await options.store.get(representationPath(logicalPath, encoding));
-      if (artifact !== null)
+      const root = await readRoot(selected);
+      // A feature key's pointer is in one shard; browsers.json and the indexes are in the root.
+      const hash =
+        route.type === "structural"
+          ? ownValue(root.structural, route.suffix)
+          : ownValue((await readShard(root, route.key)).pointers, route.key)?.[route.pointer];
+      if (hash !== undefined) {
+        const artifact = await options.store.get(blobPath(hash, encoding));
+        // Every encoding of a blob is published before any pointer names it.
+        if (artifact === null) throw new Error("Required blob representation missing.");
         return await serveArtifact(
           request,
           artifact,
@@ -419,43 +485,36 @@ export function createArtifactHandler(
           encoding,
           selectedSnapshot,
         );
-      if (encoding !== "identity") {
-        const identity = await options.store.get(logicalPath);
-        if (identity !== null) {
-          await identity.body.cancel();
-          throw new Error("Required artifact representation missing.");
-        }
       }
-      if (route.key === null) {
-        // A missing optional shard is a transport 404; other structural artifacts are corrupt.
-        if (route.suffix.startsWith("index/")) {
-          const namespace = route.suffix.slice(6, -5);
-          if (selected === metadata.current && metadata.namespaces.includes(namespace))
-            throw new Error("Required current index shard missing.");
-          return jsonResponse(
-            request,
-            404,
-            { error: { message: "Index shard not found." } },
-            ERROR_CACHE,
-          );
-        }
-        throw new Error("Required snapshot artifact missing.");
+      if (route.type === "structural") {
+        // The root schema requires browsers.json and index.json, so only an index can be absent.
+        const namespace = route.suffix.slice(6, -5);
+        if (selected === metadata.current && metadata.namespaces.includes(namespace))
+          throw new Error("Required current index shard missing.");
+        return jsonResponse(
+          request,
+          404,
+          { error: { message: "Index shard not found." } },
+          ERROR_CACHE,
+        );
       }
       const namespace = route.key.split(".", 1)[0]!;
-      const shardArtifact = await options.store.get(`v1/${selected}/index/${namespace}.json`);
-      if (shardArtifact === null) {
+      const indexHash = ownValue(root.structural, `index/${namespace}.json`);
+      if (indexHash === undefined) {
         if (selected === metadata.current && metadata.namespaces.includes(namespace))
           throw new Error("Required current index shard missing.");
         return contractError(request, "feature_not_found", route.key);
       }
+      const indexArtifact = await options.store.get(blobPath(indexHash, "identity"));
+      if (indexArtifact === null) throw new Error("Required index blob missing.");
       const shard = indexResponseSchema.parse(
-        await boundedJson(shardArtifact, MAX_INDEX_SHARD_BYTES),
+        await boundedJson(indexArtifact, MAX_INDEX_SHARD_BYTES),
       );
       if (shard.namespace !== namespace) throw new Error("Index shard namespace mismatch.");
       let grouping = false;
       const prefix = `${route.key}.`;
       for (const key of shard.keys) {
-        if (key === route.key) throw new Error("Indexed artifact missing.");
+        if (key === route.key) throw new Error("Indexed feature has no pointer.");
         if (key.startsWith(prefix)) grouping = true;
       }
       return contractError(

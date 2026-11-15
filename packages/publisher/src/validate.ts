@@ -8,9 +8,6 @@ import { loadContentTree, MAX_META_BYTES, type LocalContentTree } from "@bcd-emb
 import { PublisherError } from "./errors.js";
 
 export { MAX_META_BYTES };
-/** A root lists 256 hashes; a shard holds about 82 keys. Both stay far below these caps. */
-export const MAX_ROOT_BYTES = 256 * 1024;
-export const MAX_SHARD_BYTES = 2 * 1024 * 1024;
 
 export const hashDecodedStream = async (
   input: NodeJS.ReadableStream,

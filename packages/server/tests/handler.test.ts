@@ -1,14 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { brotliCompressSync, brotliDecompressSync, gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { apiErrorResponseSchema, RELEASE_HEADERS, type MetaResponse } from "@bcd-embed/schema";
+import {
+  apiErrorResponseSchema,
+  MAX_ROOT_BYTES,
+  MAX_SHARD_BYTES,
+  RELEASE_HEADERS,
+  snapshotRootPath,
+  type MetaResponse,
+} from "@bcd-embed/schema";
 import {
   createArtifactHandler,
   MAX_METADATA_BYTES,
   MAX_INDEX_SHARD_BYTES,
+  createTreeCache,
   type Artifact,
   type ArtifactStore,
 } from "../src/index.js";
+import { contentStore } from "./support/content-store.js";
 
 const snapshot = "bcd-8.1.3-gen-0.0.0";
 const older = "bcd-8.0.13-gen-0.0.0";
@@ -33,7 +42,7 @@ function object(body: string, etag = '"artifact"'): Artifact {
 }
 
 function setup(extra: Record<string, unknown> = {}) {
-  const data: Record<string, unknown> = {
+  const store = contentStore({
     "v1/meta.json": metadata,
     [`v1/${snapshot}/index/css.json`]: {
       ...envelope,
@@ -46,13 +55,13 @@ function setup(extra: Record<string, unknown> = {}) {
       keys: ["legacy.group.feature"],
     },
     ...extra,
-  };
-  const get = vi.fn(async (path: string) =>
-    data[path] === undefined ? null : object(JSON.stringify(data[path])),
-  );
-  const store: ArtifactStore = { get };
-  const handler = createArtifactHandler({ store });
-  return { get, handler };
+  });
+  const get = vi.fn(async (path: string) => {
+    const body = store.files.get(path);
+    return body === undefined ? null : object(body);
+  });
+  const handler = createArtifactHandler({ store: { get } satisfies ArtifactStore });
+  return { get, handler, store };
 }
 
 const request = (path: string, init?: RequestInit) =>
@@ -118,9 +127,8 @@ describe("encoded representations", () => {
   it.each(["br", "gzip"])(
     "selects immutable %s paths before matching representation validators",
     async (encoding) => {
-      const path = `v1/${snapshot}/features/css.properties.display.json`;
-      const suffix = encoding === "br" ? ".br" : ".gz";
-      const { get } = setup({ [path + suffix]: { encoded: true } });
+      const suffix = "features/css.properties.display.json";
+      const { get, store } = setup({ [`v1/${snapshot}/${suffix}`]: { encoded: true } });
       const handler = createArtifactHandler({ store: { get }, encodeJson });
       const result = await handler(
         request("/v1/current/features/css.properties.display.json", {
@@ -130,7 +138,10 @@ describe("encoded representations", () => {
       expect(result.status).toBe(304);
       expect(result.headers.get("content-encoding")).toBe(encoding);
       expect(result.headers.get("vary")).toBe("Accept-Encoding");
-      expect(get.mock.calls.map(([key]) => key)).toEqual(["v1/meta.json", path + suffix]);
+      expect(get.mock.calls.map(([key]) => key)).toEqual([
+        "v1/meta.json",
+        ...store.reads(snapshot, suffix, encoding === "br" ? "br" : "gzip"),
+      ]);
     },
   );
   it("addresses compressed metadata from the exact bounded identity bytes", async () => {
@@ -150,7 +161,9 @@ describe("encoded representations", () => {
     expect(result.headers.get("etag")).toBe('"encoded"');
   });
   it("treats missing required compression as corruption, not feature absence", async () => {
-    const { get } = setup({ [`v1/${snapshot}/features/css.properties.display.json`]: {} });
+    const suffix = "features/css.properties.display.json";
+    const { get, store } = setup({ [`v1/${snapshot}/${suffix}`]: {} });
+    store.files.delete(store.reads(snapshot, suffix, "br").at(-1)!);
     const result = await createArtifactHandler({ store: { get }, encodeJson })(
       request("/v1/current/features/css.properties.display.json", {
         headers: { "accept-encoding": "br" },
@@ -199,12 +212,14 @@ describe("artifact routing", () => {
     "features/css.properties.display.json",
     "raw/css.properties.display.json",
   ])("streams %s from current's immutable path", async (suffix) => {
-    const path = `v1/${snapshot}/${suffix}`;
-    const { get, handler } = setup({ [path]: { untouched: true } });
+    const { get, handler, store } = setup({ [`v1/${snapshot}/${suffix}`]: { untouched: true } });
     const result = await handler(request(`/v1/current/${suffix}`));
     expect(result.status).toBe(200);
     expect(await result.json()).toEqual({ untouched: true });
-    expect(get.mock.calls.map(([key]) => key)).toEqual(["v1/meta.json", path]);
+    expect(get.mock.calls.map(([key]) => key)).toEqual([
+      "v1/meta.json",
+      ...store.reads(snapshot, suffix),
+    ]);
     expect(result.headers.get("cache-control")).toBe(
       "max-age=86400, stale-while-revalidate=604800",
     );
@@ -334,9 +349,10 @@ describe("public input safety", () => {
     "http.headers.Content-Type",
   ])("accepts published character vocabulary %s", async (key) => {
     const decoded = decodeURIComponent(key);
-    const { handler, get } = setup({ [`v1/${snapshot}/features/${decoded}.json`]: { good: true } });
+    const suffix = `features/${decoded}.json`;
+    const { handler, get, store } = setup({ [`v1/${snapshot}/${suffix}`]: { good: true } });
     expect((await handler(request(`/v1/current/features/${key}.json`))).status).toBe(200);
-    expect(get).toHaveBeenLastCalledWith(`v1/${snapshot}/features/${decoded}.json`);
+    expect(get).toHaveBeenLastCalledWith(store.reads(snapshot, suffix).at(-1));
   });
 
   it("fuzzes forbidden ASCII without allowing storage access", async () => {
@@ -596,19 +612,27 @@ describe("HTTP transport", () => {
     expect(cancel).toHaveBeenCalledOnce();
   });
 
-  it.each(["metadata", "shard"])("rejects known oversized %s before reading", async (kind) => {
+  it.each([
+    ["metadata", MAX_METADATA_BYTES],
+    ["root", MAX_ROOT_BYTES],
+    ["pointer shard", MAX_SHARD_BYTES],
+    ["index", MAX_INDEX_SHARD_BYTES],
+  ] as const)("rejects a known oversized %s before reading", async (kind, limit) => {
     const cancel = vi.fn();
     const pull = vi.fn();
     const oversized = {
       body: new ReadableStream<Uint8Array>({ pull, cancel }, { highWaterMark: 0 }),
       etag: '"oversized"',
-      size: (kind === "metadata" ? MAX_METADATA_BYTES : MAX_INDEX_SHARD_BYTES) + 1,
+      size: limit + 1,
     };
-    const get = vi.fn(async (path: string) => {
-      if (path === "v1/meta.json")
-        return kind === "metadata" ? oversized : object(JSON.stringify(metadata));
-      return path.endsWith("index/css.json") ? oversized : null;
-    });
+    const { get: read, store } = setup();
+    const target = {
+      metadata: "v1/meta.json",
+      root: snapshotRootPath(snapshot),
+      "pointer shard": store.shardFor(snapshot, "css.unknown"),
+      index: store.reads(snapshot, "index/css.json").at(-1)!,
+    }[kind];
+    const get = vi.fn(async (path: string) => (path === target ? oversized : read(path)));
     const response = await createArtifactHandler({ store: { get } })(
       request("/v1/current/features/css.unknown.json"),
     );
@@ -619,19 +643,21 @@ describe("HTTP transport", () => {
 
   it("bounds unknown-size index shards while streaming", async () => {
     const cancel = vi.fn();
-    const get = vi.fn(async (path: string) => {
-      if (path === "v1/meta.json") return object(JSON.stringify(metadata));
-      if (!path.endsWith("index/css.json")) return null;
-      return {
-        body: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new Uint8Array(MAX_INDEX_SHARD_BYTES + 1));
-          },
-          cancel,
-        }),
-        etag: '"shard"',
-      };
-    });
+    const { get: read, store } = setup();
+    const index = store.reads(snapshot, "index/css.json").at(-1)!;
+    const get = vi.fn(async (path: string) =>
+      path === index
+        ? {
+            body: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array(MAX_INDEX_SHARD_BYTES + 1));
+              },
+              cancel,
+            }),
+            etag: '"shard"',
+          }
+        : read(path),
+    );
     expect(
       (
         await createArtifactHandler({ store: { get } })(
@@ -640,5 +666,87 @@ describe("HTTP transport", () => {
       ).status,
     ).toBe(500);
     expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe("content-addressed resolution", () => {
+  const suffix = "features/css.properties.display.json";
+
+  it("reads the root and shard once when a tree cache is supplied", async () => {
+    const { get, store } = setup({ [`v1/${snapshot}/${suffix}`]: { cached: true } });
+    const handler = createArtifactHandler({ store: { get }, treeCache: createTreeCache() });
+    const [root, shard, blob] = store.reads(snapshot, suffix);
+    for (let round = 0; round < 2; round += 1) {
+      const response = await handler(request(`/v1/current/${suffix}`));
+      expect(await response.json()).toEqual({ cached: true });
+    }
+    expect(get.mock.calls.map(([key]) => key)).toEqual([
+      "v1/meta.json",
+      root,
+      shard,
+      blob,
+      "v1/meta.json",
+      blob,
+    ]);
+  });
+
+  it("still checks retirement against metadata when the tree is cached", async () => {
+    const treeCache = createTreeCache();
+    const first = setup({ [`v1/${older}/browsers.json`]: { old: true } });
+    const handler = createArtifactHandler({ store: { get: first.get }, treeCache });
+    expect((await handler(request(`/v1/${older}/browsers.json`))).status).toBe(200);
+
+    const retired = setup({
+      "v1/meta.json": { ...metadata, snapshots: metadata.snapshots.slice(0, 1) },
+    });
+    const later = createArtifactHandler({ store: { get: retired.get }, treeCache });
+    const response = await later(request(`/v1/${older}/browsers.json`));
+    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe(
+      "snapshot_not_found",
+    );
+  });
+
+  it("treats a missing root or pointer shard as corruption", async () => {
+    for (const missing of ["root", "shard"] as const) {
+      const { get, handler, store } = setup({ [`v1/${snapshot}/${suffix}`]: {} });
+      const [root, shard] = store.reads(snapshot, suffix);
+      store.files.delete(missing === "root" ? root! : shard!);
+      expect((await handler(request(`/v1/current/${suffix}`))).status).toBe(500);
+      expect(get).toHaveBeenCalledTimes(missing === "root" ? 2 : 3);
+    }
+  });
+
+  it("rejects a root that names another snapshot", async () => {
+    const { handler, store } = setup();
+    const root = JSON.parse(store.files.get(snapshotRootPath(snapshot))!) as { snapshot: string };
+    store.files.set(snapshotRootPath(snapshot), JSON.stringify({ ...root, snapshot: older }));
+    expect((await handler(request("/v1/current/browsers.json"))).status).toBe(500);
+  });
+
+  it.each(["toString", "constructor", "hasOwnProperty"])(
+    "finds no pointer for the inherited property name %s",
+    async (key) => {
+      const { handler } = setup();
+      const response = await handler(request(`/v1/current/features/${key}.json`));
+      expect(response.status).toBe(404);
+      expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe(
+        "feature_not_found",
+      );
+    },
+  );
+});
+
+describe("tree cache", () => {
+  it("forgets the least recently used entry beyond its limit", () => {
+    const cache = createTreeCache({ roots: 2, shards: 1 });
+    const root = (id: string) => ({ id }) as never;
+    cache.roots.set("a", root("a"));
+    cache.roots.set("b", root("b"));
+    expect(cache.roots.get("a")).toEqual({ id: "a" });
+    cache.roots.set("c", root("c"));
+    expect(cache.roots.get("b")).toBeUndefined();
+    expect(cache.roots.get("a")).toEqual({ id: "a" });
+    expect(cache.roots.size).toBe(2);
+    expect(() => createTreeCache({ shards: 0 })).toThrow("at least 1");
   });
 });

@@ -61,6 +61,12 @@ A private Cache API header preserves encoded length and is stripped on all
 public responses. Cached GET uses `FixedLengthStream` when needed to retain
 GET/HEAD wire length without buffering.
 
+The Worker creates one tree cache per isolate, at module scope, and passes it to
+the handler on every request. Requests that the same isolate serves then share
+parsed roots and shards, so a warm request reads only `meta.json` and the blob.
+The cache lives in memory only. It is not written to the Cache API, so a new
+isolate starts cold and reads the root and shard once.
+
 R2 objects require lowercase 64-digit `customMetadata.sha256`; wire ETags quote
 this digest. Missing/malformed metadata fails closed; native `checksums.sha256`,
 when available, must match. Uploads without a native checksum must establish

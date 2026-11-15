@@ -1,4 +1,7 @@
 import { execFile as execFileCallback } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { request as httpRequest } from "node:http";
@@ -6,8 +9,15 @@ import { createHash } from "node:crypto";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 
 import bcd from "@mdn/browser-compat-data" with { type: "json" };
-import { createRepresentations, generateSnapshot } from "@bcd-embed/generator";
-import { featureResponseSchema } from "@bcd-embed/schema";
+import { emitContentTree, generateSnapshot, shardIndexOf } from "@bcd-embed/generator";
+import {
+  blobPath,
+  featureResponseSchema,
+  shardPath,
+  shardSchema,
+  snapshotRootPath,
+  snapshotRootSchema,
+} from "@bcd-embed/schema";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -65,7 +75,9 @@ const generated = generateSnapshot({
 });
 const snapshotId = generated.snapshot.id;
 const url = (path: string): string => `https://api.example.test/${path}`;
-const featurePath = `v1/${snapshotId}/features/javascript.builtins.Array.json`;
+const featureKey = "javascript.builtins.Array";
+/** The blob that answers the Array feature, found through the emitted root and shard. */
+let featurePath: string;
 const verifierPath = fileURLToPath(
   new URL("../../../packages/server/scripts/verify-endpoint.mjs", import.meta.url),
 );
@@ -96,23 +108,42 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
     );
     runtime = createRuntime();
     const bucket = await runtime.getR2Bucket("ARTIFACTS");
-    // The candidate metadata is written last, just as publication must do.
-    for (const artifact of generated.artifacts) {
-      for (const representation of createRepresentations(
-        artifact.path,
-        Buffer.from(`${JSON.stringify(artifact.data)}\n`),
-      )) {
-        await bucket.put(representation.path, representation.bytes, {
+    // Serve the tree the real generator emits, so the Worker's shard rule is checked against it.
+    const outputRoot = await mkdtemp(join(tmpdir(), "bcd-embed-worker-"));
+    try {
+      await emitContentTree({ outputRoot, generatedSnapshot: generated });
+      const paths = (await readdir(outputRoot, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => join(entry.parentPath, entry.name).slice(outputRoot.length + 1))
+        // The metadata is written last, just as publication must do.
+        .sort((left, right) => Number(left === "v1/meta.json") - Number(right === "v1/meta.json"));
+      for (const path of paths) {
+        const bytes = await readFile(join(outputRoot, path));
+        const sha256 = createHash("sha256").update(bytes).digest("hex");
+        const encoding = path.endsWith(".br") ? "br" : path.endsWith(".gz") ? "gzip" : undefined;
+        await bucket.put(path, bytes, {
           httpMetadata: {
             contentType: "application/json",
-            ...(representation.encoding === "identity"
-              ? {}
-              : { contentEncoding: representation.encoding }),
+            ...(encoding === undefined ? {} : { contentEncoding: encoding }),
           },
-          customMetadata: { sha256: representation.sha256 },
-          sha256: representation.sha256,
+          customMetadata: { sha256 },
+          sha256,
         });
       }
+      const root = snapshotRootSchema.parse(
+        JSON.parse(await readFile(join(outputRoot, snapshotRootPath(snapshotId)), "utf8")),
+      );
+      const shard = shardSchema.parse(
+        JSON.parse(
+          await readFile(
+            join(outputRoot, shardPath(root.shards[shardIndexOf(featureKey)]!)),
+            "utf8",
+          ),
+        ),
+      );
+      featurePath = blobPath(shard.pointers[featureKey]!.feature, "identity");
+    } finally {
+      await rm(outputRoot, { recursive: true, force: true });
     }
   });
 
@@ -219,7 +250,7 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
         encoding === "br" ? brotliDecompressSync(compressedBytes) : gunzipSync(compressedBytes),
       ).toEqual(identityBytes);
       const bucket = await runtime.getR2Bucket("ARTIFACTS");
-      const stored = await bucket.get(`${featurePath}.${encoding === "br" ? "br" : "gz"}`);
+      const stored = await bucket.get(`${featurePath}${encoding === "br" ? ".br" : ".gz"}`);
       expect(compressedBytes).toEqual(Buffer.from(await stored!.arrayBuffer()));
       for (const method of ["GET", "HEAD"]) {
         const conditional = await rawFetch(runtime, path, {

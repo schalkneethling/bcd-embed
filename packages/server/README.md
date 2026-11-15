@@ -12,6 +12,35 @@ an `Artifact` object with `body`, `etag`, and optional `size` fields. Bodies are
 quoted strong entity tag for the exact bytes; `size` is the byte length when
 known. Storage adapters own these guarantees and byte-preserving delivery.
 
+## Storage layout
+
+The handler reads the content-addressed layout from Document 8. No storage path
+contains a feature key:
+
+```
+v1/meta.json                       names the current snapshot and the retained ones
+v1/snapshots/<snapshot>.json       the root: 256 shard hashes and the structural pointers
+v1/shards/<sha256>.json            the pointers for the feature keys of one shard
+v1/blobs/<sha256>.json{,.br,.gz}   a served file in each encoding, named by its plain bytes' hash
+```
+
+A request for `/v1/current/features/css.properties.gap.json` reads
+`v1/meta.json` to find the snapshot, reads that snapshot's root, reads the shard
+the root lists at index `SHA-256("css.properties.gap")[0]`, and serves the blob
+the shard's `feature` pointer names, in the negotiated encoding. `browsers.json`,
+`index.json`, and `index/<namespace>.json` are pointed to by the root directly,
+so they skip the shard. A pointer whose blob is missing in the selected encoding
+is corruption, because every encoding is published before any pointer names it.
+
+Roots and shards never change once written. Pass `treeCache` (from
+`createTreeCache()`) to keep parsed copies between requests. It holds 16 roots
+and 512 shards by default, which covers every shard of two snapshots, and forgets
+the least recently used entry beyond that. The cache never makes a retired
+snapshot servable, because snapshot membership is checked against `meta.json` on
+every request before the root is consulted.
+
+## Routes
+
 All Document 1 routes are supported: metadata, browsers, full/sharded indexes,
 features, and raw features. `current` resolves through metadata; pinned
 snapshots must remain enumerated in `meta.snapshots`. Retention dates do not
@@ -80,21 +109,25 @@ served. Security does not depend on recovering it: object paths are constructed
 only from validated route tokens, never arbitrary request paths. No input can
 select private files, leave the artifact tree, or introduce storage separators.
 
-Only resolution/compressed-route metadata (256 KiB) and miss-classification shards (2 MiB) are
-buffered and schema-validated. Known lengths are rejected before reading; unknown
+Only metadata (256 KiB), snapshot roots (256 KiB), pointer shards (2 MiB), and
+miss-classification index shards (2 MiB) are buffered and schema-validated. Known lengths are rejected before reading; unknown
 lengths are checked per chunk and cancelled on overflow. Zero-byte chunks are
 not retained. Full indexes and successful payloads are streamed, not parsed or
 capped. These bounds allow headroom above Phase 3's 368,237-byte largest shard.
 
 ## Complexity
 
-Successful snapshot routes use two storage reads (bounded metadata plus one
-artifact); identity metadata uses one, compressed metadata two. Streaming needs O(1) auxiliary payload
-space; delivery is O(B) for B bytes. Metadata validation/resolution takes O(M)
-time/space for bounded metadata size M, not dataset size. A feature miss uses at
-an additional shard read (plus an identity existence check for encoded misses)
-and scans its K entries: O(I + K × L) time and
-O(I) space for bounded shard bytes I and maximum key length L. No fuzzy search,
+Without a warm tree cache, a feature route makes four storage reads (metadata,
+root, pointer shard, blob) and a structural route makes three (metadata, root,
+blob). With the root and shard cached, both make two, the same as before
+Document 8. Identity metadata uses one read, compressed metadata two. Streaming
+needs O(1) auxiliary payload space; delivery is O(B) for B bytes. Metadata
+validation takes O(M) time and space for bounded metadata size M. Choosing the
+shard hashes the key once, O(L) for key length L. Parsing a root or a pointer
+shard is O(R) or O(S) for their bounded sizes, about 17 KB and 16 KB for BCD
+8.1.9, and a cached copy costs O(1). A feature miss reads one more blob, the
+namespace's index, and scans its K entries: O(I + K × L) time and O(I) space for
+bounded index bytes I. No fuzzy search,
 normalization, full-index parse, or dataset scan runs at request time.
 
 Build includes packed ESM runtime and public declaration smoke tests. Tests
