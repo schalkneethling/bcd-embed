@@ -22,7 +22,7 @@ import {
 } from "@bcd-embed/schema";
 import { compare as compareVersions, valid as validVersion } from "semver";
 
-import type { PublicationStore } from "./store.js";
+import type { ListPage, PublicationStore } from "./store.js";
 import { putAndVerify, readMetadata, readVerified } from "./objects.js";
 import { runBounded } from "./concurrency.js";
 import { CleanupError, PublisherError, describeFailure } from "./errors.js";
@@ -254,31 +254,29 @@ const duringCleanup = async <T>(step: string, task: () => Promise<T>): Promise<T
 const HASHED_NAME = /^([a-f0-9]{64})\.json(?:\.br|\.gz)?$/;
 
 /**
- * Why a listed key cannot be trusted, or undefined when it can. Keys must stay inside the prefix
- * and strictly increase, starting after `start-after`, or the listing may skip or repeat objects.
- * The answer names the key's position. It names the two keys only when both have the shape the
- * publisher writes (a 64-character hex hash plus a fixed suffix), because any other text comes
- * from R2 and could carry anything into the log.
+ * Why a listing page cannot be trusted, or undefined when it can. Every key must be inside the
+ * prefix and appear once on the page, and a page that continues must have keys and a cursor not
+ * seen before, or the listing could loop forever. None of this assumes an order, because R2 lists
+ * `<hash>.json.br` and `<hash>.json.gz` before `<hash>.json`. Answers name a position on the page,
+ * never a key, because R2 controls that text.
  */
 const listingProblem = (
   prefix: string,
-  key: string,
-  previous: string | undefined,
-  index: number,
-  count: number,
+  page: ListPage,
+  seenCursors: ReadonlySet<string>,
 ): string | undefined => {
-  const position = `key ${index + 1} of ${count}`;
-  if (!key.startsWith(prefix)) return `R2 returned a key outside the prefix at ${position}.`;
-  if (previous === undefined || key > previous) return undefined;
-  const before = index === 0 ? "the start-after key" : "the key before it";
-  const problem =
-    key === previous
-      ? `R2 repeated ${before} at ${position}.`
-      : `R2 returned ${position} sorted before ${before}.`;
-  const names = [previous, key].map((item) => item.slice(prefix.length));
-  return names.every((name) => HASHED_NAME.test(name))
-    ? `${problem} Keys: ${names[0]} then ${names[1]}.`
-    : problem;
+  const keys = new Set<string>();
+  for (const [index, { key }] of page.objects.entries()) {
+    const position = `key ${index + 1} of ${page.objects.length}`;
+    if (!key.startsWith(prefix)) return `R2 returned a key outside the prefix at ${position}.`;
+    if (keys.has(key)) return `R2 returned ${position} twice on the same page.`;
+    keys.add(key);
+  }
+  if (page.cursor === undefined) return undefined;
+  if (page.objects.length === 0) return "R2 said the listing continues but returned no keys.";
+  if (seenCursors.has(page.cursor))
+    return "R2 returned a continuation token it had already returned.";
+  return undefined;
 };
 
 export type CleanupResult = {
@@ -310,7 +308,7 @@ export type CleanupOptions = {
  * same time and the live set is out of date, so the run stops.
  *
  * Cost: at most 257 reads per retained snapshot, one listing per 1,000 stored objects, and one
- * read per batch. Memory is O(L) for L live hashes.
+ * read per batch. Memory is O(L) for L live hashes, plus one remembered cursor per listed page.
  */
 export const pruneRetiredSnapshots = async (
   store: PublicationStore,
@@ -353,16 +351,15 @@ export const pruneRetiredSnapshots = async (
     ["metaCopies", "v1/_meta/"],
   ] as const) {
     if (kind === "metaCopies" && !metadataSettled) continue;
-    let startAfter: string | undefined;
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
     for (let pageNumber = 1; ; pageNumber += 1) {
       const step = `listing ${prefix} (page ${pageNumber})`;
-      const page = await duringCleanup(step, () => store.list(prefix, startAfter, PRUNE_PAGE_SIZE));
-      let previous = startAfter;
+      const page = await duringCleanup(step, () => store.list(prefix, cursor, PRUNE_PAGE_SIZE));
+      const problem = listingProblem(prefix, page, seenCursors);
+      if (problem !== undefined) throw new CleanupError(step, new PublisherError(problem));
       const unreferenced: string[] = [];
-      for (const [index, { key, lastModified }] of page.objects.entries()) {
-        const problem = listingProblem(prefix, key, previous, index, page.objects.length);
-        if (problem !== undefined) throw new CleanupError(step, new PublisherError(problem));
-        previous = key;
+      for (const { key, lastModified } of page.objects) {
         const name = key.slice(prefix.length);
         const hashed = HASHED_NAME.exec(name)?.[1];
         const isLive =
@@ -378,11 +375,6 @@ export const pruneRetiredSnapshots = async (
           );
         if (!isLive && lastModified.getTime() < cutoff) unreferenced.push(key);
       }
-      if (page.truncated && page.objects.length === 0)
-        throw new CleanupError(
-          step,
-          new PublisherError("R2 said the listing continues but returned no keys."),
-        );
       if (unreferenced.length > 0) {
         if (!dryRun) {
           const latest = await duringCleanup("rereading metadata", () => readMetadata(store));
@@ -396,8 +388,9 @@ export const pruneRetiredSnapshots = async (
         }
         deleted[kind] += unreferenced.length;
       }
-      if (!page.truncated) break;
-      startAfter = previous;
+      if (page.cursor === undefined) break;
+      seenCursors.add(page.cursor);
+      cursor = page.cursor;
     }
   }
   return { dryRun, deleted };

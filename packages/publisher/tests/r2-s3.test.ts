@@ -230,17 +230,24 @@ describe("R2 S3 adapter", () => {
     mocks.send.mockResolvedValue({
       Contents: [{ Key: "prefix/a", LastModified: lastModified }],
       IsTruncated: true,
+      NextContinuationToken: "token-2",
     });
-    expect(await store.list("prefix/", "prefix/0", 500)).toEqual({
+    expect(await store.list("prefix/", "token-1", 500)).toEqual({
       objects: [{ key: "prefix/a", lastModified }],
-      truncated: true,
+      cursor: "token-2",
     });
     expect(mocks.send.mock.calls[0]![0].input).toEqual({
       Bucket: options.bucket,
       Prefix: "prefix/",
-      StartAfter: "prefix/0",
+      ContinuationToken: "token-1",
       MaxKeys: 500,
     });
+    mocks.send.mockResolvedValue({ Contents: [], IsTruncated: false, NextContinuationToken: "x" });
+    expect(await store.list("prefix/", undefined, 500)).toEqual({ objects: [], cursor: undefined });
+    mocks.send.mockResolvedValue({ Contents: [], IsTruncated: true });
+    await expect(store.list("prefix/", undefined, 500)).rejects.toThrow(
+      "R2 said the listing continues but returned no continuation token.",
+    );
     for (const limit of [0, 1001, 1.5])
       await expect(store.list("prefix/", undefined, limit)).rejects.toThrow("limit");
     for (const item of [{}, { Key: "prefix/a" }]) {

@@ -134,6 +134,8 @@ class MemoryStore implements PublicationStore {
   throwOnMetaPutAfterWrite = false;
   throwOnMetaGetAfterPut = false;
   repeatedPage = false;
+  /** The most keys one listing page returns, so tests can force several pages. */
+  maxPage = Number.POSITIVE_INFINITY;
   onDelete: (() => void) | undefined;
 
   async get(key: string): Promise<StoredObject | null> {
@@ -187,15 +189,29 @@ class MemoryStore implements PublicationStore {
     return { type: "stored", etag };
   }
 
-  async list(prefix: string, startAfter: string | undefined, limit: number) {
+  /**
+   * Lists in the order R2 was seen to use, which puts `<hash>.json.br` and `<hash>.json.gz` before
+   * `<hash>.json`, unlike a byte-wise sort. The cursor is opaque to callers. Here it holds the last
+   * key returned, so deleting keys that were already listed does not shift the next page.
+   */
+  async list(prefix: string, cursor: string | undefined, limit: number) {
     this.lists += 1;
+    const r2Order = (key: string) => `${key}\uffff`;
     const all = [...this.objects.entries()]
       .filter(([key]) => key.startsWith(prefix))
-      .sort(([left], [right]) => (left < right ? -1 : 1))
+      .sort(([left], [right]) => (r2Order(left) < r2Order(right) ? -1 : 1))
       .map(([key, { modified }]) => ({ key, lastModified: modified }));
-    if (this.repeatedPage) return { objects: all.slice(0, 1), truncated: true };
-    const remaining = all.filter(({ key }) => startAfter === undefined || key > startAfter);
-    return { objects: remaining.slice(0, limit), truncated: remaining.length > limit };
+    if (this.repeatedPage) return { objects: all.slice(0, 1), cursor: "same-cursor" };
+    const after = cursor === undefined ? undefined : Buffer.from(cursor, "base64url").toString();
+    const remaining = all.filter(({ key }) => after === undefined || r2Order(key) > r2Order(after));
+    const objects = remaining.slice(0, Math.min(limit, this.maxPage));
+    return {
+      objects,
+      cursor:
+        remaining.length > objects.length
+          ? Buffer.from(objects.at(-1)!.key).toString("base64url")
+          : undefined,
+    };
   }
 
   async delete(keys: readonly string[]) {
@@ -832,7 +848,41 @@ describe("cleanup of unreferenced files", () => {
     await expect(
       pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep }),
     ).rejects.toThrow(
-      "Retention cleanup failed while listing v1/blobs/ (page 2): R2 repeated the start-after key at key 1 of 1.",
+      "Retention cleanup failed while listing v1/blobs/ (page 2): R2 returned a continuation token it had already returned.",
+    );
+  });
+
+  it("pages through R2's key order with its cursor and deletes every orphan", async () => {
+    const { store } = await threeReleases();
+    const hash = "0".repeat(64);
+    const orphans = (["identity", "br", "gzip"] as const).map((encoding) =>
+      blobPath(hash, encoding),
+    );
+    for (const key of orphans)
+      store.objects.set(key, {
+        bytes: Buffer.from("{}\n"),
+        etag: `"${key}"`,
+        metadata: {},
+        modified: new Date("2025-01-01"),
+      });
+    const listed = await store.list("v1/blobs/", undefined, 3);
+    expect(listed.objects.map(({ key }) => key)).toEqual([orphans[1], orphans[2], orphans[0]]);
+
+    const kept = [...store.objects.keys()].filter((key) => !orphans.includes(key));
+    store.maxPage = 2;
+    const result = await pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep });
+    expect(result.deleted.blobs).toBeGreaterThanOrEqual(3);
+    for (const key of orphans) expect(store.objects.has(key)).toBe(false);
+    const survivors = [...store.objects.keys()];
+    const onePage = await threeReleases();
+    await pruneRetiredSnapshots(onePage.store, { clock: at("2026-01-22"), sleep: noSleep });
+    expect(survivors.sort()).toEqual([...onePage.store.objects.keys()].sort());
+    expect(kept.filter((key) => !store.objects.has(key)).length).toBe(
+      result.deleted.blobs -
+        3 +
+        result.deleted.shards +
+        result.deleted.roots +
+        result.deleted.metaCopies,
     );
   });
 
@@ -841,32 +891,17 @@ describe("cleanup of unreferenced files", () => {
     const list = store.list.bind(store);
     const prune = () => pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep });
 
-    store.list = async (prefix, startAfter, limit) => {
-      const page = await list(prefix, startAfter, limit);
-      return { ...page, objects: [...page.objects].reverse() };
+    store.list = async (prefix, cursor, limit) => {
+      const page = await list(prefix, cursor, limit);
+      return { ...page, objects: [page.objects[0]!, page.objects[0]!] };
     };
     await expect(prune()).rejects.toThrow(
-      /^Retention cleanup failed while listing v1\/blobs\/ \(page 1\): R2 returned key 2 of \d+ sorted before the key before it\. Keys: [a-f0-9]{64}\.json(\.br|\.gz)? then [a-f0-9]{64}\.json(\.br|\.gz)?\.$/,
+      "Retention cleanup failed while listing v1/blobs/ (page 1): R2 returned key 2 of 2 twice on the same page.",
     );
-
-    store.list = async () => ({
-      objects: ["v1/blobs/zz-do-not-print", "v1/blobs/aa-do-not-print"].map((key) => ({
-        key,
-        lastModified: new Date("2025-01-01"),
-      })),
-      truncated: false,
-    });
-    const unshaped = prune();
-    await expect(unshaped).rejects.toThrow(
-      "Retention cleanup failed while listing v1/blobs/ (page 1): R2 returned key 2 of 2 sorted before the key before it.",
-    );
-    await unshaped.catch((error: unknown) => {
-      expect(formatPublisherError(error)).not.toContain("do-not-print");
-    });
 
     const secret = "outside/do-not-print";
-    store.list = async (prefix, startAfter, limit) => {
-      const page = await list(prefix, startAfter, limit);
+    store.list = async (prefix, cursor, limit) => {
+      const page = await list(prefix, cursor, limit);
       return { ...page, objects: [{ key: secret, lastModified: new Date("2025-01-01") }] };
     };
     const outside = prune();
@@ -877,7 +912,7 @@ describe("cleanup of unreferenced files", () => {
       expect(formatPublisherError(error)).not.toContain("do-not-print");
     });
 
-    store.list = async () => ({ objects: [], truncated: true });
+    store.list = async () => ({ objects: [], cursor: "next" });
     await expect(prune()).rejects.toThrow(
       "Retention cleanup failed while listing v1/blobs/ (page 1): R2 said the listing continues but returned no keys.",
     );

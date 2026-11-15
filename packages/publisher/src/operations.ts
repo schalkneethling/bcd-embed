@@ -22,9 +22,9 @@ export const countOperations = (
         counts.classA += 1;
         return store.put(input);
       },
-      list(prefix, startAfter, limit) {
+      list(prefix, cursor, limit) {
         counts.classA += 1;
-        return store.list(prefix, startAfter, limit);
+        return store.list(prefix, cursor, limit);
       },
       delete(keys) {
         if (keys.length > 0) counts.deletes += 1;

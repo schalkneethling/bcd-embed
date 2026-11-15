@@ -368,13 +368,13 @@ explanation, `R2 responded with HTTP <status>.` for an R2 request that failed, o
 contain request details. A rerun after a cleanup failure uploads nothing,
 because the snapshot is already current, and it retries only the cleanup.
 
-Cleanup checks every listed key before it deletes anything from that page. A
-key must start with the prefix being listed and sort after the key before it,
-or after the key the page was asked to start after. Otherwise the listing could
-skip or repeat objects, so cleanup stops and says which check failed and at
-which position on the page, for example
-`R2 repeated the start-after key at key 1 of 1000.` For a repeated or
-out-of-order key, it also prints both names when both have the shape the
-publisher writes, a 64-character hex hash with a `.json`, `.json.br`, or
-`.json.gz` suffix. It never prints any other key, because R2 controls that
-text.
+Cleanup pages through each prefix with the continuation token R2 returns, not
+by asking for keys after the last one it saw. R2 does not list keys in byte
+order: it returns `<hash>.json.br` and `<hash>.json.gz` before `<hash>.json`, so
+a key-based position would skip or repeat objects. Before it deletes anything
+from a page, cleanup checks that every key starts with the prefix and appears
+once on the page, and that a page that continues has keys and a token it has
+not seen before. If a check fails, cleanup stops and says which check failed
+and at which position on the page, for example
+`R2 returned key 2 of 1000 twice on the same page.` It never prints the key,
+because R2 controls that text.
