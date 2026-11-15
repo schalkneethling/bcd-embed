@@ -845,7 +845,24 @@ describe("cleanup of unreferenced files", () => {
         clock: at("2026-04-03"),
         sleep: noSleep,
       }),
-    ).rejects.toThrow("Metadata committed but retention cleanup failed");
+    ).rejects.toThrow(
+      "Metadata committed. Retention cleanup failed while deleting from v1/blobs/: UnknownError Investigate before retry.",
+    );
+  });
+
+  it("names the failing step and the HTTP status of an R2 failure, without its message", async () => {
+    const { store } = await threeReleases();
+    const secret = "https://account.r2.cloudflarestorage.com/bucket?X-Amz-Signature=do-not-print";
+    store.list = async () => {
+      throw Object.assign(new Error(secret), { name: secret, $metadata: { httpStatusCode: 403 } });
+    };
+    const failure = pruneRetiredSnapshots(store, { clock: at("2026-01-22"), sleep: noSleep });
+    await expect(failure).rejects.toThrow(
+      "Retention cleanup failed while listing v1/blobs/: R2 responded with HTTP 403.",
+    );
+    await failure.catch((error: unknown) => {
+      expect(formatPublisherError(error)).not.toContain("do-not-print");
+    });
   });
 });
 
