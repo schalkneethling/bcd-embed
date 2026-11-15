@@ -251,10 +251,14 @@ const duringCleanup = async <T>(step: string, task: () => Promise<T>): Promise<T
   }
 };
 
+const HASHED_NAME = /^([a-f0-9]{64})\.json(?:\.br|\.gz)?$/;
+
 /**
  * Why a listed key cannot be trusted, or undefined when it can. Keys must stay inside the prefix
  * and strictly increase, starting after `start-after`, or the listing may skip or repeat objects.
- * The answer names the key's position but never the key, which R2 controls.
+ * The answer names the key's position. It names the two keys only when both have the shape the
+ * publisher writes (a 64-character hex hash plus a fixed suffix), because any other text comes
+ * from R2 and could carry anything into the log.
  */
 const listingProblem = (
   prefix: string,
@@ -267,12 +271,15 @@ const listingProblem = (
   if (!key.startsWith(prefix)) return `R2 returned a key outside the prefix at ${position}.`;
   if (previous === undefined || key > previous) return undefined;
   const before = index === 0 ? "the start-after key" : "the key before it";
-  return key === previous
-    ? `R2 repeated ${before} at ${position}.`
-    : `R2 returned ${position} sorted before ${before}.`;
+  const problem =
+    key === previous
+      ? `R2 repeated ${before} at ${position}.`
+      : `R2 returned ${position} sorted before ${before}.`;
+  const names = [previous, key].map((item) => item.slice(prefix.length));
+  return names.every((name) => HASHED_NAME.test(name))
+    ? `${problem} Keys: ${names[0]} then ${names[1]}.`
+    : problem;
 };
-
-const HASHED_NAME = /^([a-f0-9]{64})\.json(?:\.br|\.gz)?$/;
 
 export type CleanupResult = {
   /** True when nothing was deleted and the counts say what a real run would delete. */

@@ -373,4 +373,8 @@ key must start with the prefix being listed and sort after the key before it,
 or after the key the page was asked to start after. Otherwise the listing could
 skip or repeat objects, so cleanup stops and says which check failed and at
 which position on the page, for example
-`R2 repeated the start-after key at key 1 of 1000.` It never prints the key.
+`R2 repeated the start-after key at key 1 of 1000.` For a repeated or
+out-of-order key, it also prints both names when both have the shape the
+publisher writes, a 64-character hex hash with a `.json`, `.json.br`, or
+`.json.gz` suffix. It never prints any other key, because R2 controls that
+text.

@@ -846,8 +846,23 @@ describe("cleanup of unreferenced files", () => {
       return { ...page, objects: [...page.objects].reverse() };
     };
     await expect(prune()).rejects.toThrow(
-      /^Retention cleanup failed while listing v1\/blobs\/ \(page 1\): R2 returned key 2 of \d+ sorted before the key before it\.$/,
+      /^Retention cleanup failed while listing v1\/blobs\/ \(page 1\): R2 returned key 2 of \d+ sorted before the key before it\. Keys: [a-f0-9]{64}\.json(\.br|\.gz)? then [a-f0-9]{64}\.json(\.br|\.gz)?\.$/,
     );
+
+    store.list = async () => ({
+      objects: ["v1/blobs/zz-do-not-print", "v1/blobs/aa-do-not-print"].map((key) => ({
+        key,
+        lastModified: new Date("2025-01-01"),
+      })),
+      truncated: false,
+    });
+    const unshaped = prune();
+    await expect(unshaped).rejects.toThrow(
+      "Retention cleanup failed while listing v1/blobs/ (page 1): R2 returned key 2 of 2 sorted before the key before it.",
+    );
+    await unshaped.catch((error: unknown) => {
+      expect(formatPublisherError(error)).not.toContain("do-not-print");
+    });
 
     const secret = "outside/do-not-print";
     store.list = async (prefix, startAfter, limit) => {
