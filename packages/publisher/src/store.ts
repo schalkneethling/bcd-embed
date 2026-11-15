@@ -27,16 +27,19 @@ export type PutObject = {
 
 export type ListedObject = { key: string; lastModified: Date };
 
+/**
+ * One page of a listing. `cursor` is the store's own opaque token for the next page, and is
+ * undefined on the last page. Callers pass it back unchanged and never derive one from a key,
+ * because R2 does not order keys the way a byte-wise comparison does.
+ */
+export type ListPage = { objects: readonly ListedObject[]; cursor: string | undefined };
+
 export type PutResult = { type: "stored"; etag: string } | { type: "precondition-failed" };
 
 export interface PublicationStore {
   get(key: string): Promise<StoredObject | null>;
   put(input: PutObject): Promise<PutResult>;
-  /** Objects come back in ascending key order. `lastModified` is when the object was written. */
-  list(
-    prefix: string,
-    startAfter: string | undefined,
-    limit: number,
-  ): Promise<{ objects: readonly ListedObject[]; truncated: boolean }>;
+  /** Lists keys under `prefix`, in the store's own order. `lastModified` is when the object was written. */
+  list(prefix: string, cursor: string | undefined, limit: number): Promise<ListPage>;
   delete(keys: readonly string[]): Promise<void>;
 }

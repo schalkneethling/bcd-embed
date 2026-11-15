@@ -163,7 +163,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
         throw error;
       }
     },
-    async list(prefix, startAfter, limit) {
+    async list(prefix, cursor, limit) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) {
         throw new PublisherError("R2 list limit must be 1..1000.");
       }
@@ -172,7 +172,7 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
           new ListObjectsV2Command({
             Bucket,
             Prefix: prefix,
-            StartAfter: startAfter,
+            ContinuationToken: cursor,
             MaxKeys: limit,
           }),
           { abortSignal },
@@ -183,7 +183,12 @@ export const createR2S3Store = (options: R2S3Options): PublicationStore => {
           throw new PublisherError("R2 listing returned an object without a key or a date.");
         return { key: item.Key, lastModified: item.LastModified };
       });
-      return { objects, truncated: result.IsTruncated === true };
+      if (result.IsTruncated !== true) return { objects, cursor: undefined };
+      if (!result.NextContinuationToken)
+        throw new PublisherError(
+          "R2 said the listing continues but returned no continuation token.",
+        );
+      return { objects, cursor: result.NextContinuationToken };
     },
     async delete(keys) {
       if (keys.length === 0) return;
