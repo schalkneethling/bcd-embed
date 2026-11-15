@@ -47,7 +47,7 @@ Each package and app has its own README with the details of its behavior.
 
 ## Automation
 
-Five GitHub Actions workflows live in `.github/workflows/`, and the scripts they
+Six GitHub Actions workflows live in `.github/workflows/`, and the scripts they
 call live in `scripts/`:
 
 - `ci.yml` runs `pnpm check`, a generation check at full BCD volume, and the
@@ -73,6 +73,11 @@ call live in `scripts/`:
   generated types and fail CI's `wrangler types --check`. The commit starts a CI
   run that someone with write access must approve once. The manual steps for
   when it fails are in [`apps/worker/README.md`](./apps/worker/README.md).
+- `legacy-cleanup.yml` deletes one folder, `v1/<snapshot>/`, that the publisher
+  wrote before the content-addressed layout. It runs only on manual dispatch from
+  `main`, behind the protected environment, and counts without deleting unless
+  **execute** is checked. [How publication works](./apps/website/src/content/docs/publication.md#folders-left-by-the-old-layout)
+  explains it.
 - `screen-readers.yml` runs the web component's screen reader tests with
   VoiceOver on macOS and Orca on Linux, on pull requests that change
   `packages/element` or the Phase 1 markup. Its `screen-readers` job is a

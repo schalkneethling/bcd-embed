@@ -259,6 +259,24 @@ still needs the previous copy.
 another publication ran at the same time, the live set is out of date, and the
 run stops.
 
+### Folders left by the old layout
+
+Before the content-addressed layout, each snapshot was uploaded into its own
+folder, `v1/<snapshot>/`. The BCD 8.1.8 upload abandoned on 10 November 2026
+left objects in `v1/bcd-8.1.8-gen-0.0.0/`. Cleanup lists only `v1/blobs/`, `v1/shards/`,
+`v1/snapshots/` and `v1/_meta/`, so it never removes such a folder.
+
+The `Legacy snapshot cleanup` workflow deletes one. Dispatch it from `main` with
+the snapshot identifier, and leave **execute** unchecked the first time. That
+run prints how many keys the bucket holds under each top-level group of `v1/`
+and how many are in the folder, and deletes nothing. Run it again with
+**execute** checked to delete the folder. It deletes one page of up to 1,000
+keys at a time, lists the folder again at the end, and fails if anything is
+left. It refuses a snapshot that `meta.json` lists, and a snapshot identifier
+always starts with `bcd-` and contains no slash, so the folder cannot overlap
+the content-addressed prefixes. It runs in the `bcd-embed-production`
+environment, which holds the R2 credentials.
+
 ## What a publication costs
 
 R2 bills writes and listings as Class A operations and reads as Class B. The

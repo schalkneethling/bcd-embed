@@ -24,3 +24,9 @@ export type {
   StoredObject,
 } from "./store.js";
 export { validateCandidate, type ValidatedCandidate } from "./validate.js";
+export {
+  deleteLegacySnapshot,
+  summarizeBucket,
+  type BucketSummary,
+  type LegacyDeletion,
+} from "./legacy.js";

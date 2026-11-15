@@ -535,7 +535,9 @@ publisher should log its connection pool's state so a recurrence is visible.
    repeat, and latency is only meaningful against the deployed Worker, so it
    moves to step 7. The headers were added in step 2.
 6. **Clean the bucket.** Delete the roughly 81,000 objects the abandoned upload
-   left. Deletes are free; listing them costs about 82 Class A operations.
+   left. Deletes are free; listing them costs about 82 Class A operations. The
+   `Legacy snapshot cleanup` workflow does this for one `v1/<snapshot>/` folder,
+   with a counting run first.
 7. **Publish and deploy.** Run the first publication, deploy the Worker, and
    run the live endpoint verifier. Measure cold and warm response times, because
    a request that misses the tree cache makes two more R2 reads. The first

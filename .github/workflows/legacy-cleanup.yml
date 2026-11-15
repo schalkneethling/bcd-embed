@@ -1,0 +1,60 @@
+name: Legacy snapshot cleanup
+
+# Deletes one folder the pre-Document 8 publisher wrote, v1/<snapshot>/, from the production
+# bucket. Run it first with execute unchecked: that lists and counts and deletes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: "Snapshot folder to delete, for example bcd-8.1.8-gen-0.0.0"
+        required: true
+        type: string
+      execute:
+        description: "Delete the objects. Unchecked, the run only counts them."
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: bcd-embed-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.13.0
+
+      - name: Install and build the publisher without remote credentials
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --recursive --filter @bcd-embed/publisher... run build
+
+      - name: Count, and delete only when execute is checked
+        env:
+          SNAPSHOT: ${{ inputs.snapshot }}
+          EXECUTE: ${{ inputs.execute }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          mode=()
+          if [ "$EXECUTE" = "true" ]; then mode=(--execute); fi
+          node scripts/delete-legacy-snapshot.mjs "$SNAPSHOT" "${mode[@]}"
