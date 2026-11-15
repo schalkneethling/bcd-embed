@@ -1,11 +1,17 @@
 import { describeContentTree, type ContentTree } from "@bcd-embed/generator";
-import { shardPath, snapshotRootPath, snapshotRootSchema, type Snapshot } from "@bcd-embed/schema";
+import {
+  MAX_ROOT_BYTES,
+  MAX_SHARD_BYTES,
+  shardPath,
+  snapshotRootPath,
+  snapshotRootSchema,
+  type Snapshot,
+} from "@bcd-embed/schema";
 
 import { runBounded } from "./concurrency.js";
 import { PublisherError } from "./errors.js";
 import { readSmallObject } from "./objects.js";
 import type { PublicationStore } from "./store.js";
-import { MAX_ROOT_BYTES, MAX_SHARD_BYTES } from "./validate.js";
 
 /**
  * Reads a published snapshot's pointers: its root and the shards the root names, which is at most

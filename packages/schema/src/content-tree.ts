@@ -15,6 +15,10 @@ import { featureKeySchema, namespaceSchema, snapshotIdentifierSchema } from "./s
 export const SHARD_COUNT = 256;
 export const CONTENT_TREE_VERSION = 1 as const;
 
+/** A root lists 256 hashes; a shard holds about 82 keys. Both stay far below these read caps. */
+export const MAX_ROOT_BYTES = 256 * 1024;
+export const MAX_SHARD_BYTES = 2 * 1024 * 1024;
+
 export const contentHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export type ContentHash = z.infer<typeof contentHashSchema>;
 

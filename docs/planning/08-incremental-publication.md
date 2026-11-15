@@ -526,13 +526,21 @@ publisher should log its connection pool's state so a recurrence is visible.
    Compare pointers, upload missing blobs from buffers with
    retries, report operation counts, and replace folder deletion with the
    cleanup described above.
-5. **Server and Worker.** Resolve requests through the root and shards, cache
-   the immutable lookups, and repeat the latency checks. The headers were added
-   in step 2.
+5. **Server and Worker.** Done, except the latency check. The handler resolves
+   a request through `meta.json`, the root, the pointer shard, and the blob, and
+   the Worker keeps parsed roots and shards in a bounded per-isolate cache, so a
+   warm request makes the same two reads as before. The Worker tests serve a tree
+   the real generator emitted, which checks that the server and the generator
+   choose the same shard for a key. Phase 4 recorded no latency measurements to
+   repeat, and latency is only meaningful against the deployed Worker, so it
+   moves to step 7. The headers were added in step 2.
 6. **Clean the bucket.** Delete the roughly 81,000 objects the abandoned upload
    left. Deletes are free; listing them costs about 82 Class A operations.
 7. **Publish and deploy.** Run the first publication, deploy the Worker, and
-   run the live endpoint verifier.
+   run the live endpoint verifier. Measure cold and warm response times, because
+   a request that misses the tree cache makes two more R2 reads. The first
+   publication ran on 14 November 2026 (BCD 8.1.9), and its cleanup first
+   completed on 15 November.
 8. **Documentation.** Rewrite the documentation site's page
    [How publication works](../../apps/website/src/content/docs/publication.md), which describes
    the flow this proposal replaces, and update the package READMEs.

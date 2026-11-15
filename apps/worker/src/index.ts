@@ -1,11 +1,20 @@
 import { withSentry } from "@sentry/cloudflare";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
-import { createArtifactHandler, matchesIfNoneMatch, negotiateEncoding } from "@bcd-embed/server";
+import {
+  createArtifactHandler,
+  createTreeCache,
+  matchesIfNoneMatch,
+  negotiateEncoding,
+} from "@bcd-embed/server";
 import { reportError } from "./logging.js";
 import { sentryOptions } from "./sentry.js";
 
 type WorkerEnv = Env & { SENTRY_DSN?: string };
 const CACHE_LENGTH_HEADER = "x-bcd-cache-representation-length";
+
+// Lives as long as the isolate, so requests it serves share parsed roots and shards. Both are
+// immutable, and retirement is still checked against meta.json on every request.
+const treeCache = createTreeCache();
 
 const cacheable = (response: Response): boolean => {
   const policy = response.headers.get("cache-control") ?? "";
@@ -111,6 +120,7 @@ const worker = {
           : gzipSync(bytes, { level: 6 });
       },
       onError: reportError,
+      treeCache,
     });
 
     if (request.method !== "GET" && request.method !== "HEAD")

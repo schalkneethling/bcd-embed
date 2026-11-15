@@ -75,8 +75,10 @@ call live in `scripts/`:
   when it fails are in [`apps/worker/README.md`](./apps/worker/README.md).
 - `screen-readers.yml` runs the web component's screen reader tests with
   VoiceOver on macOS and Orca on Linux, on pull requests that change
-  `packages/element` or the Phase 1 markup. It is advisory, not a required check,
-  and each run records what the screen reader said. The details are in
+  `packages/element` or the Phase 1 markup. Its `screen-readers` job is a
+  required check: it reports on every pull request, passes when the tests pass
+  or were not needed, and fails when they fail. Each run records what the screen
+  reader said. The details are in
   [`packages/element/README.md`](./packages/element/README.md).
 
 The design behind the freshness workflows is in

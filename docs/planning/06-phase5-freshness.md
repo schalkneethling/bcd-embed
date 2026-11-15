@@ -140,7 +140,7 @@ Auto-merge defaults off. Prerequisites before turning it on:
 
 - The repository setting "Allow auto-merge" must be enabled; without it
   `gh pr merge --auto` fails.
-- The `protect-default-branch` ruleset exists, but it requires only `check`.
+- The `protect-default-branch` ruleset requires `check` and `screen-readers`.
   `Freshness / freshness` must be added as a required check before setting
   `BCD_EMBED_AUTO_MERGE_ENABLED`.
 
