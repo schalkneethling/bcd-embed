@@ -534,11 +534,14 @@ publisher should log its connection pool's state so a recurrence is visible.
    choose the same shard for a key. Phase 4 recorded no latency measurements to
    repeat, and latency is only meaningful against the deployed Worker, so it
    moves to step 7. The headers were added in step 2.
-6. **Clean the bucket.** Delete the roughly 81,000 objects the abandoned upload
+6. **Clean the bucket.** Done: run 43771175429 on 15 November 2026 deleted all
+   81,468 objects under `v1/bcd-8.1.8-gen-0.0.0/`, and a second listing found
+   none left. Delete the roughly 81,000 objects the abandoned upload
    left. Deletes are free; listing them costs about 82 Class A operations. The
    `Legacy snapshot cleanup` workflow does this for one `v1/<snapshot>/` folder,
    with a counting run first.
-7. **Publish and deploy.** Run the first publication, deploy the Worker, and
+7. **Publish and deploy.** Done: see [Latency after deployment](#latency-after-deployment).
+   Run the first publication, deploy the Worker, and
    run the live endpoint verifier. Measure cold and warm response times, because
    a request that misses the tree cache makes two more R2 reads. The first
    publication ran on 14 November 2026 (BCD 8.1.9), and its cleanup first
@@ -548,7 +551,32 @@ publisher should log its connection pool's state so a recurrence is visible.
    reproduce this. A minimal test Worker reproduced it on 16 November whenever
    the stored copy carried `Content-Encoding`. The Worker now stores compressed
    copies without that header and restores it on a hit, and the verifier
-   decodes a first and a repeated compressed response.
+   decodes a first and a repeated compressed response. Version `d99ae741`
+   passed all 22 verifier probes on 16 November.
 8. **Documentation.** Rewrite the documentation site's page
    [How publication works](../../apps/website/src/content/docs/publication.md), which describes
    the flow this proposal replaces, and update the package READMEs.
+
+## Latency after deployment
+
+These times were measured on 16 November 2026 against Worker version
+`d99ae741`. They are times to first byte from a client that Cloudflare served
+from Johannesburg (`colo=JNB`), while the bucket is in Western Europe
+(`WEUR`). Twelve `html` features were each requested seven times, in order: three
+Brotli, two gzip, then two identity. Every body decoded to the identity bytes,
+and every ETag was strong.
+
+| Request | What it reads | Time to first byte |
+| --- | --- | --- |
+| First Brotli request for a feature | Cache miss: `meta.json`, root or shard if the isolate has not read them yet, and the blob | 0.63–1.46 s |
+| First gzip or identity request for the same feature | Cache miss: `meta.json` and the blob | 0.61–1.08 s |
+| Repeated request, any encoding | Edge cache hit | 0.04–0.21 s |
+| CORS preflight, for comparison | Nothing | 0.04–0.19 s |
+
+Each R2 read from Johannesburg adds roughly 200 to 300 ms, and the reads run one
+after another. So a cache miss costs well over half a second here, and a hit
+costs about the same as the network round trip. The edge cache is per data
+center and keeps an entry for one day, so the first request for a feature in
+each data center pays the miss. Readers closer to Western Europe should see
+shorter misses; this was not measured.
+
