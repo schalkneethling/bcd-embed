@@ -98,6 +98,9 @@ const createRuntime = (): Miniflare =>
 describe("Cloudflare Worker with a real local R2 binding", () => {
   let runtime: Miniflare;
 
+  // Measured on 17 November 2026: about 3 seconds on an idle machine (1 s to bundle, 1.5 s to
+  // emit and seed R2), and over 10 seconds while the machine's load average was above 20. The
+  // limit allows for that load rather than Vitest's 10-second default for hooks.
   beforeAll(async () => {
     // Root `pnpm check` runs tests before workspace builds. Produce the exact
     // Worker bundle under test here, including on a fresh checkout.
@@ -117,7 +120,7 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
         .map((entry) => join(entry.parentPath, entry.name).slice(outputRoot.length + 1))
         // The metadata is written last, just as publication must do.
         .sort((left, right) => Number(left === "v1/meta.json") - Number(right === "v1/meta.json"));
-      for (const path of paths) {
+      const seed = async (path: string) => {
         const bytes = await readFile(join(outputRoot, path));
         const sha256 = createHash("sha256").update(bytes).digest("hex");
         const encoding = path.endsWith(".br") ? "br" : path.endsWith(".gz") ? "gzip" : undefined;
@@ -129,7 +132,13 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
           customMetadata: { sha256 },
           sha256,
         });
-      }
+      };
+      // Every object except the metadata is written 16 at a time, then the metadata alone.
+      if (paths.at(-1) !== "v1/meta.json") throw new Error("The emitted tree has no v1/meta.json.");
+      const objects = paths.slice(0, -1);
+      for (let start = 0; start < objects.length; start += 16)
+        await Promise.all(objects.slice(start, start + 16).map(seed));
+      await seed(paths.at(-1)!);
       const root = snapshotRootSchema.parse(
         JSON.parse(await readFile(join(outputRoot, snapshotRootPath(snapshotId)), "utf8")),
       );
@@ -145,7 +154,7 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
     } finally {
       await rm(outputRoot, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await runtime?.dispose();
