@@ -8,12 +8,7 @@ their `max-age`. Cloudflare's Cache API does **not** implement
 `stale-while-revalidate`; that directive remains on client-facing `current`
 responses, but edge cache misses re-read R2 after one day. Cache API entries
 are local to a data center and do not bypass Worker invocation.
-Only identity responses on canonical `current` routes and `meta.json` use this
-edge cache. Brotli and gzip responses always read R2, because the deployed edge
-served cached compressed responses compressed a second time, under a weak ETag
-(observed in November 2026; Miniflare does not reproduce it). The Worker skips
-both the lookup and the store for them, so entries cached before the change are
-never served. Pinned
+Only canonical `current` routes and `meta.json` use this edge cache. Pinned
 routes retain their public immutable cache headers, but bypass Cache API so a
 retired snapshot cannot remain edge-served for a year after metadata removal.
 Each pinned origin read rechecks membership and streams the artifact from R2;
@@ -61,8 +56,16 @@ Run `pnpm dev:website` from the repository root to read it with its diagrams.
 The Worker serves offline variants with `encodeBody: "manual"`; no large-body
 compression runs on requests. It restores `request.cf.clientAcceptEncoding`
 before negotiation because Cloudflare rewrites the origin header. Cache keys
-name the identity encoding, the only one cached, and responses carry
-`Vary: Accept-Encoding`.
+include the selected encoding and responses carry `Vary: Accept-Encoding`.
+
+A stored Brotli or gzip copy has no `Content-Encoding` header. Its encoding is
+kept in the private `x-bcd-cache-content-encoding` header, and a hit restores
+`Content-Encoding` from it. On the deployed edge, a cached response stored with
+`Content-Encoding` came back compressed a second time, under a weak ETag, which
+a client cannot decode (observed in November 2026; Miniflare does not reproduce
+it). A hit whose stored encoding does not match its cache key is discarded and
+the request reads R2. The cache is named `bcd-embed-api-v2`, so entries stored
+the old way under `bcd-embed-api-v1` are never read.
 A private Cache API header preserves encoded length and is stripped on all
 public responses. Cached GET uses `FixedLengthStream` when needed to retain
 GET/HEAD wire length without buffering.
@@ -81,8 +84,9 @@ hot path never hashes large stored bodies. Only small generated errors use
 request-time compression, with a 16 KiB input bound.
 
 Strict raw-HTTP local tests verify identity, Brotli, gzip, HEAD, 304, errors,
-and exact encoded bytes. A test plants an entry in the cache slot a compressed
-response would use and checks the Worker ignores it and stores nothing there.
+and exact encoded bytes. Tests check that a compressed entry is stored without
+`Content-Encoding`, that a hit restores it, and that an entry stored any other
+way is ignored.
 This is local transport evidence, not deployed Cloudflare edge acceptance, so
 run the endpoint verifier against the deployed Worker after every deploy:
 
@@ -92,7 +96,9 @@ node packages/server/scripts/verify-endpoint.mjs --base-url <deployed Worker ori
 
 The verifier requests the compressed feature twice and decodes both bodies. Each
 must decode to the identity bytes, which catches a body compressed twice even
-when its headers look right.
+when its headers look right. Cloudflare rejects the `%ZZ` and `%00` probes
+itself, with an HTML `400` and no CORS header, before the Worker runs; on a
+remote target the verifier accepts that response for those two probes only.
 
 Runtime errors emit structured, non-request-derived error classes to Workers
 Logs and Sentry when the optional `SENTRY_DSN` Worker secret is configured.

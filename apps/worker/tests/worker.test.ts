@@ -286,60 +286,85 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
     },
   );
 
-  it.each(["br", "gzip"])(
-    "reads %s responses from R2 and never stores or serves them through Cache API",
-    async (encoding) => {
-      // The deployed edge double-compressed cached Brotli and gzip responses, and Miniflare does
-      // not reproduce that, so these tests pin the bypass itself: a planted entry in the slot a
-      // compressed response would use is ignored, and a compressed miss stores nothing.
+  describe.each(["br", "gzip"])("Cache API entries for %s responses", (encoding) => {
+    // On the deployed edge, a cached response stored with Content-Encoding came back compressed a
+    // second time. Miniflare does not do that, so these tests pin the storage format instead: the
+    // stored copy keeps its encoding under a private header, and a hit restores it.
+    const featureRoute = "/v1/current/features/javascript.builtins.Array.json";
+    const privateHeader = "x-bcd-cache-content-encoding";
+    const open = async () => {
       const ready = await runtime.ready;
-      const cache = await (await runtime.getCaches()).open("bcd-embed-api-v1");
-      const slot = (path: string, slotEncoding: string): string => {
-        const key = new URL(path, ready);
-        key.searchParams.set("__bcd_encoding", slotEncoding);
-        return key.href;
-      };
-      const featureRoute = "/v1/current/features/javascript.builtins.Array.json";
-      await cache.put(
-        slot(featureRoute, encoding),
-        new MiniflareResponse("planted", {
-          headers: { "cache-control": "max-age=60", "content-encoding": encoding },
-        }),
-      );
-      const served = await rawFetch(runtime, url(featureRoute.slice(1)), {
+      const cache = await (await runtime.getCaches()).open("bcd-embed-api-v2");
+      const key = new URL(featureRoute, ready);
+      key.searchParams.set("__bcd_encoding", encoding);
+      return { cache, slot: key.href };
+    };
+    const storedBytes = async () => {
+      const bucket = await runtime.getR2Bucket("ARTIFACTS");
+      const object = await bucket.get(`${featurePath}${encoding === "br" ? ".br" : ".gz"}`);
+      return Buffer.from(await object!.arrayBuffer());
+    };
+    const fetchCompressed = async () => {
+      const response = await rawFetch(runtime, url(featureRoute.slice(1)), {
         headers: { "accept-encoding": encoding },
       });
-      const bucket = await runtime.getR2Bucket("ARTIFACTS");
-      const stored = await bucket.get(`${featurePath}${encoding === "br" ? ".br" : ".gz"}`);
-      expect(Buffer.from(await served.arrayBuffer())).toEqual(
-        Buffer.from(await stored!.arrayBuffer()),
-      );
-      expect(served.headers.get("etag")).toMatch(/^"[a-f0-9]{64}"$/);
-      await cache.delete(slot(featureRoute, encoding));
+      return { response, bytes: Buffer.from(await response.arrayBuffer()) };
+    };
 
-      const metaRoute = "/v1/meta.json";
-      await cache.delete(slot(metaRoute, encoding));
-      await cache.delete(slot(metaRoute, "identity"));
-      await (
-        await rawFetch(runtime, url(metaRoute.slice(1)), {
-          headers: { "accept-encoding": encoding },
-        })
-      ).arrayBuffer();
-      await (
-        await rawFetch(runtime, url(metaRoute.slice(1)), {
-          headers: { "accept-encoding": "identity" },
-        })
-      ).arrayBuffer();
-      // The identity put runs after the compressed request finished, so once it lands, a put for
-      // the compressed request would have landed too.
-      await vi.waitFor(async () => {
-        const identity = await cache.match(slot(metaRoute, "identity"));
-        expect(identity).toBeDefined();
-        await identity!.body?.cancel();
+    it("stores the compressed bytes without Content-Encoding", async () => {
+      const { cache, slot } = await open();
+      await cache.delete(slot);
+      const miss = await fetchCompressed();
+      expect(miss.bytes).toEqual(await storedBytes());
+      const entry = await vi.waitFor(async () => {
+        const found = await cache.match(slot);
+        expect(found).toBeDefined();
+        return found!;
       });
-      expect(await cache.match(slot(metaRoute, encoding))).toBeUndefined();
-    },
-  );
+      expect(entry.headers.get("content-encoding")).toBeNull();
+      expect(entry.headers.get(privateHeader)).toBe(encoding);
+      expect(Buffer.from(await entry.arrayBuffer())).toEqual(await storedBytes());
+    });
+
+    it("serves a hit with Content-Encoding restored and the private header removed", async () => {
+      const { cache, slot } = await open();
+      // A planted body proves the response came from the cache, not from R2.
+      await cache.put(
+        slot,
+        new MiniflareResponse("planted", {
+          headers: {
+            "cache-control": "max-age=60",
+            etag: '"planted"',
+            [privateHeader]: encoding,
+          },
+        }),
+      );
+      const hit = await fetchCompressed();
+      expect(hit.bytes.toString()).toBe("planted");
+      expect(hit.response.headers.get("content-encoding")).toBe(encoding);
+      expect(hit.response.headers.get(privateHeader)).toBeNull();
+      expect(hit.response.headers.get("etag")).toBe('"planted"');
+      await cache.delete(slot);
+    });
+
+    it.each([
+      ["stored with Content-Encoding", { "content-encoding": encoding, [privateHeader]: encoding }],
+      ["stored without its encoding", {}],
+      ["stored under another encoding", { [privateHeader]: encoding === "br" ? "gzip" : "br" }],
+    ])("ignores an entry %s and reads R2", async (_label, headers) => {
+      const { cache, slot } = await open();
+      await cache.put(
+        slot,
+        new MiniflareResponse("planted", {
+          headers: { "cache-control": "max-age=60", ...headers },
+        }),
+      );
+      const served = await fetchCompressed();
+      expect(served.bytes).toEqual(await storedBytes());
+      expect(served.response.headers.get("etag")).toMatch(/^"[a-f0-9]{64}"$/);
+      await cache.delete(slot);
+    });
+  });
 
   it.each(["br", "gzip"])(
     "encodes bounded errors as %s with byte-specific tags and equivalent HEAD",

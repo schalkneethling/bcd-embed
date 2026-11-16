@@ -2,7 +2,11 @@ import { createServer } from "node:http";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseVerifyArguments, verifyEndpoint } from "../scripts/verify-endpoint.mjs";
+import {
+  parseVerifyArguments,
+  rejectedBeforeWorker,
+  verifyEndpoint,
+} from "../scripts/verify-endpoint.mjs";
 
 const snapshotId = "bcd-8.1.3-gen-0.0.0";
 const snapshot = {
@@ -314,6 +318,30 @@ describe("verify-endpoint CLI grammar", () => {
     expect(report.note).toContain("Cloudflare edge compression");
     expect(fixture.requestTargets).toContain("/v1/current/features/api.%ZZ.json");
     expect(fixture.requestTargets).toContain("/v1/current/features/api.%2e%2e%2fsecret.json");
+  });
+
+  it("recognizes only Cloudflare's own HTML 400 as a rejection before the Worker", () => {
+    const edge = {
+      status: 400,
+      headers: { server: "cloudflare", "content-type": "text/html" },
+    };
+    expect(rejectedBeforeWorker(edge)).toBe(true);
+    expect(rejectedBeforeWorker({ ...edge, status: 404 })).toBe(false);
+    expect(
+      rejectedBeforeWorker({
+        ...edge,
+        headers: { ...edge.headers, "content-type": "application/json; charset=utf-8" },
+      }),
+    ).toBe(false);
+    expect(
+      rejectedBeforeWorker({
+        ...edge,
+        headers: { ...edge.headers, "access-control-allow-origin": "*" },
+      }),
+    ).toBe(false);
+    expect(rejectedBeforeWorker({ ...edge, headers: { ...edge.headers, server: "nginx" } })).toBe(
+      false,
+    );
   });
 
   it("rejects a repeated compressed response that decodes to compressed bytes", async () => {

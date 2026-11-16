@@ -374,6 +374,16 @@ const assertDecodesTo = (response, encoding, identityBody, requestPath, label) =
   }
 };
 
+// Cloudflare answers a request whose path holds an invalid percent-escape (`%ZZ`) or an encoded
+// NUL (`%00`) itself, with an HTML 400 and no CORS header, so the Worker never sees it (observed
+// November 2026). Only those cases, and only on a remote target, may end this way.
+const EDGE_REJECTED_SUFFIXES = new Set(["%ZZ", "%00"]);
+export const rejectedBeforeWorker = (response) =>
+  response.status === 400 &&
+  (header(response, "server") ?? "").toLowerCase() === "cloudflare" &&
+  (header(response, "content-type") ?? "").toLowerCase().startsWith("text/html") &&
+  header(response, "access-control-allow-origin") === undefined;
+
 const assertSuccess = (response, requestPath) => {
   assertStatus(response, 200, requestPath);
   assertCors(response, requestPath);
@@ -709,7 +719,16 @@ export const verifyEndpoint = async ({
   const invalidKeyCases = ["%ZZ", "%2fsecret", "%5csecret", "%2e%2e%2fsecret", "%00"];
   for (const [index, encodedSuffix] of invalidKeyCases.entries()) {
     const invalidPath = `/v1/current/features/${namespace}.${encodedSuffix}.json`;
-    parseError(await context.request(invalidPath), 400, "invalid_key", invalidPath);
+    const invalidResponse = await context.request(invalidPath);
+    if (
+      remoteTarget &&
+      EDGE_REJECTED_SUFFIXES.has(encodedSuffix) &&
+      rejectedBeforeWorker(invalidResponse)
+    ) {
+      record(`invalid key encoding/traversal ${index + 1} (rejected by Cloudflare)`);
+      continue;
+    }
+    parseError(invalidResponse, 400, "invalid_key", invalidPath);
     record(`invalid key encoding/traversal ${index + 1}`);
   }
 

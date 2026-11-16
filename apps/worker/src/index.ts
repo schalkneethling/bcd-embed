@@ -11,6 +11,12 @@ import { sentryOptions } from "./sentry.js";
 
 type WorkerEnv = Env & { SENTRY_DSN?: string };
 const CACHE_LENGTH_HEADER = "x-bcd-cache-representation-length";
+// The Cache API on Cloudflare's edge compresses a stored response a second time when the stored
+// copy carries Content-Encoding (observed November 2026; Miniflare does not do this). The stored
+// copy therefore keeps its encoding under this private name, and a hit restores it.
+const CACHE_ENCODING_HEADER = "x-bcd-cache-content-encoding";
+// Renamed from bcd-embed-api-v1, whose compressed entries were stored the old way.
+const CACHE_NAME = "bcd-embed-api-v2";
 
 // Lives as long as the isolate, so requests it serves share parsed roots and shards. Both are
 // immutable, and retirement is still checked against meta.json on every request.
@@ -36,8 +42,17 @@ const withoutBody = async (response: Response, status: number): Promise<Response
 const fromCache = async (
   request: Request,
   response: Response,
+  encoding: string,
   ctx: ExecutionContext,
 ): Promise<Response> => {
+  const storedEncoding = response.headers.get(CACHE_ENCODING_HEADER);
+  if (
+    response.headers.has("content-encoding") ||
+    storedEncoding !== (encoding === "br" || encoding === "gzip" ? encoding : null)
+  ) {
+    await response.body?.cancel();
+    throw new Error("Cached representation encoding does not match its cache key.");
+  }
   const length = response.headers.get(CACHE_LENGTH_HEADER);
   if (length !== null && (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)))) {
     await response.body?.cancel();
@@ -45,6 +60,8 @@ const fromCache = async (
   }
   const headers = new Headers(response.headers);
   headers.delete(CACHE_LENGTH_HEADER);
+  headers.delete(CACHE_ENCODING_HEADER);
+  if (storedEncoding !== null) headers.set("content-encoding", storedEncoding);
   if (length !== null) headers.set("content-length", length);
   response = new Response(response.body, {
     status: response.status,
@@ -134,25 +151,19 @@ const worker = {
     if (pathname !== "/v1/meta.json" && !pathname.startsWith("/v1/current/"))
       return manualResponse(await handle(request));
 
-    // Only identity responses use Cache API. On the deployed edge (observed November 2026, not
-    // reproduced by Miniflare), a cached Brotli or gzip response comes back compressed a second
-    // time under a weak ETag, which a client cannot decode. Skipping the lookup as well as the
-    // put also ignores any such entry still cached. Compressed responses read from R2 instead.
-    if (negotiateEncoding(request.headers.get("accept-encoding")) !== "identity")
-      return manualResponse(await handle(request));
-
     // Cache API applies request conditionals and Range headers itself. Use a clean
     // canonical GET key, then apply the shared HTTP conditional logic explicitly.
+    const encoding = negotiateEncoding(request.headers.get("accept-encoding")) ?? "unacceptable";
     const cacheUrl = new URL(request.url);
     cacheUrl.search = "";
-    cacheUrl.searchParams.set("__bcd_encoding", "identity");
+    cacheUrl.searchParams.set("__bcd_encoding", encoding);
     cacheUrl.hash = "";
     const cacheKey = new Request(cacheUrl, { method: "GET" });
     let cache: Cache | undefined;
     try {
-      cache = await caches.open("bcd-embed-api-v1");
+      cache = await caches.open(CACHE_NAME);
       const hit = await cache.match(cacheKey);
-      if (hit !== undefined) return await fromCache(request, hit, ctx);
+      if (hit !== undefined) return await fromCache(request, hit, encoding, ctx);
     } catch (error) {
       reportError(error);
     }
@@ -163,6 +174,11 @@ const worker = {
         const cached = response.clone();
         const length = response.headers.get("content-length");
         if (length !== null) cached.headers.set(CACHE_LENGTH_HEADER, length);
+        const contentEncoding = cached.headers.get("content-encoding");
+        if (contentEncoding !== null) {
+          cached.headers.delete("content-encoding");
+          cached.headers.set(CACHE_ENCODING_HEADER, contentEncoding);
+        }
         ctx.waitUntil(
           cache.put(cacheKey, cached).catch((error: unknown) => {
             reportError(error);
