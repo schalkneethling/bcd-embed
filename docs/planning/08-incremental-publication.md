@@ -545,8 +545,10 @@ publisher should log its connection pool's state so a recurrence is visible.
    completed on 15 November. The Worker was deployed on 15 November. The live
    verifier failed: Brotli and gzip responses served from the Worker's Cache API
    arrived compressed a second time, under a weak ETag. Miniflare does not
-   reproduce this. The Worker now caches only identity responses, and the
-   verifier decodes a first and a repeated compressed response.
+   reproduce this. A minimal test Worker reproduced it on 16 November whenever
+   the stored copy carried `Content-Encoding`. The Worker now stores compressed
+   copies without that header and restores it on a hit, and the verifier
+   decodes a first and a repeated compressed response.
 8. **Documentation.** Rewrite the documentation site's page
    [How publication works](../../apps/website/src/content/docs/publication.md), which describes
    the flow this proposal replaces, and update the package READMEs.

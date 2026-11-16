@@ -62,7 +62,7 @@ describe("Worker cache boundary", () => {
       })
     ).text();
     await Promise.all(pending);
-    expect(caches.open).toHaveBeenCalledWith("bcd-embed-api-v1");
+    expect(caches.open).toHaveBeenCalledWith("bcd-embed-api-v2");
     const key = match.mock.calls[0]?.[0] as Request;
     expect(key.url).toBe("https://api.example.test:8443/v1/meta.json?__bcd_encoding=identity");
     expect(key.method).toBe("GET");

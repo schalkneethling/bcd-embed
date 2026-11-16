@@ -73,7 +73,7 @@ sequenceDiagram
     participant R as R2 bucket
 
     C->>W: GET the feature URL
-    W->>E: Is this response cached here? (plain responses only)
+    W->>E: Is this response cached here?
     alt Cached
         E-->>W: the stored response
     else Not cached
@@ -90,9 +90,9 @@ Three details in that diagram are easy to miss.
 
 The **edge cache** is a store inside each Cloudflare data center. A cached
 response skips both reads from R2. Only `current` routes and `meta.json` use
-it, and only for plain responses. A Brotli or gzip response always reads R2,
-because the deployed edge returned cached compressed responses compressed a
-second time, which a browser cannot decode. A request for a pinned snapshot, such as
+it. A compressed copy is stored without its `Content-Encoding` header, which
+the Worker puts back when it serves the copy, because Cloudflare compressed a
+stored response a second time when the header was present. A request for a pinned snapshot, such as
 `/v1/bcd-8.1.8-gen-0.0.0/features/…`, always reads R2, so that a snapshot
 removed from `meta.json` stops being served straight away.
 
