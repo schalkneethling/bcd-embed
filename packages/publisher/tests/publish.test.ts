@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -16,7 +16,7 @@ import {
   type DiffApproval,
 } from "@bcd-embed/generator";
 import { blobPath, shardPath, snapshotRootPath } from "@bcd-embed/schema";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { parsePublishCommand } from "../src/cli.js";
 import { formatPublisherError } from "../src/errors.js";
@@ -34,8 +34,16 @@ const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 const directories: string[] = [];
 const noSleep = async (): Promise<void> => {};
 
+// Measured on 17 November 2026: the slowest test here takes about 0.5 seconds on an idle machine,
+// and tests passed Vitest's 5-second default while the load average was above 20.
+vi.setConfig({ testTimeout: 30_000 });
+
+// A test that timed out may still be writing into its folder, so removal retries ENOTEMPTY.
+const removeFolder = (root: string) =>
+  rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+
 afterEach(async () => {
-  for (const root of directories.splice(0)) await rm(root, { recursive: true, force: true });
+  for (const root of directories.splice(0)) await removeFolder(root);
 });
 
 /** `features` maps a name below `api` to the Chrome version that added it. */
@@ -89,20 +97,38 @@ type Release = {
   expires: string;
   features?: Record<string, string>;
 };
+// Emitting a release takes about 50 milliseconds, mostly compression, and the tests emit the same
+// few releases dozens of times. Each release is emitted once into a template folder, and every
+// test gets its own copy, because some tests change their candidate on disk.
+const templates = new Map<string, Promise<string>>();
+afterAll(async () => {
+  for (const template of templates.values()) await removeFolder(await template);
+});
+
 const emit = async ({
   version = BCD_VERSION,
   generated,
   expires,
   features = featuresWith({}),
 }: Release): Promise<string> => {
+  const key = JSON.stringify([version, generated, expires, features]);
+  let template = templates.get(key);
+  if (template === undefined) {
+    template = (async () => {
+      const templateRoot = await mkdtemp(join(tmpdir(), "bcd-embed-publish-template-"));
+      const snapshot = generateSnapshot({ generated, expires, data: fixture(features) });
+      await emitContentTree({
+        outputRoot: templateRoot,
+        // The generator pins one BCD release, so a later release is the same data renamed.
+        generatedSnapshot: version === BCD_VERSION ? snapshot : withRelease(snapshot, { version }),
+      });
+      return templateRoot;
+    })();
+    templates.set(key, template);
+  }
   const root = await mkdtemp(join(tmpdir(), "bcd-embed-publish-"));
   directories.push(root);
-  const snapshot = generateSnapshot({ generated, expires, data: fixture(features) });
-  await emitContentTree({
-    outputRoot: root,
-    // The generator pins one BCD release, so a later release is the same data renamed.
-    generatedSnapshot: version === BCD_VERSION ? snapshot : withRelease(snapshot, { version }),
-  });
+  await cp(await template, root, { recursive: true });
   return root;
 };
 
