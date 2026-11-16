@@ -8,7 +8,12 @@ their `max-age`. Cloudflare's Cache API does **not** implement
 `stale-while-revalidate`; that directive remains on client-facing `current`
 responses, but edge cache misses re-read R2 after one day. Cache API entries
 are local to a data center and do not bypass Worker invocation.
-Only canonical `current` routes and `meta.json` use this edge cache. Pinned
+Only identity responses on canonical `current` routes and `meta.json` use this
+edge cache. Brotli and gzip responses always read R2, because the deployed edge
+served cached compressed responses compressed a second time, under a weak ETag
+(observed in November 2026; Miniflare does not reproduce it). The Worker skips
+both the lookup and the store for them, so entries cached before the change are
+never served. Pinned
 routes retain their public immutable cache headers, but bypass Cache API so a
 retired snapshot cannot remain edge-served for a year after metadata removal.
 Each pinned origin read rechecks membership and streams the artifact from R2;
@@ -56,7 +61,8 @@ Run `pnpm dev:website` from the repository root to read it with its diagrams.
 The Worker serves offline variants with `encodeBody: "manual"`; no large-body
 compression runs on requests. It restores `request.cf.clientAcceptEncoding`
 before negotiation because Cloudflare rewrites the origin header. Cache keys
-include the selected encoding and responses carry `Vary: Accept-Encoding`.
+name the identity encoding, the only one cached, and responses carry
+`Vary: Accept-Encoding`.
 A private Cache API header preserves encoded length and is stripped on all
 public responses. Cached GET uses `FixedLengthStream` when needed to retain
 GET/HEAD wire length without buffering.
@@ -75,9 +81,18 @@ hot path never hashes large stored bodies. Only small generated errors use
 request-time compression, with a 16 KiB input bound.
 
 Strict raw-HTTP local tests verify identity, Brotli, gzip, HEAD, 304, errors,
-and exact encoded bytes. The endpoint verifier now runs without the identity-only
-skip. This is local transport evidence, not deployed Cloudflare edge acceptance;
-an explicitly authorized LIVE probe remains required before launch.
+and exact encoded bytes. A test plants an entry in the cache slot a compressed
+response would use and checks the Worker ignores it and stores nothing there.
+This is local transport evidence, not deployed Cloudflare edge acceptance, so
+run the endpoint verifier against the deployed Worker after every deploy:
+
+```bash
+node packages/server/scripts/verify-endpoint.mjs --base-url <deployed Worker origin> --allow-remote
+```
+
+The verifier requests the compressed feature twice and decodes both bodies. Each
+must decode to the identity bytes, which catches a body compressed twice even
+when its headers look right.
 
 Runtime errors emit structured, non-request-derived error classes to Workers
 Logs and Sentry when the optional `SENTRY_DSN` Worker secret is configured.

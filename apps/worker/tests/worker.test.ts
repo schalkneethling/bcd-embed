@@ -18,7 +18,7 @@ import {
   snapshotRootPath,
   snapshotRootSchema,
 } from "@bcd-embed/schema";
-import { Miniflare, convertV4MiniflareOptions } from "miniflare";
+import { Miniflare, Response as MiniflareResponse, convertV4MiniflareOptions } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { reportError } from "../src/logging.js";
@@ -223,7 +223,8 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
     const report = JSON.parse(stdout);
     expect(stderr).toBe("");
     expect(report.remote).toBe(false);
-    expect(report.probes).toBe(21);
+    expect(report.probes).toBe(22);
+    expect(report.checks).toContain("decoded body (br, first and repeated)");
     expect(report.checks).toContain("strong ETag (br)");
     expect(report.checks).toContain("compressed If-None-Match");
     expect(report.note).toContain("future explicit LIVE probe");
@@ -282,6 +283,61 @@ describe("Cloudflare Worker with a real local R2 binding", () => {
       expect(other.status).toBe(200);
       expect(other.headers.get("etag")).toBe(identity.headers.get("etag"));
       await other.body?.cancel();
+    },
+  );
+
+  it.each(["br", "gzip"])(
+    "reads %s responses from R2 and never stores or serves them through Cache API",
+    async (encoding) => {
+      // The deployed edge double-compressed cached Brotli and gzip responses, and Miniflare does
+      // not reproduce that, so these tests pin the bypass itself: a planted entry in the slot a
+      // compressed response would use is ignored, and a compressed miss stores nothing.
+      const ready = await runtime.ready;
+      const cache = await (await runtime.getCaches()).open("bcd-embed-api-v1");
+      const slot = (path: string, slotEncoding: string): string => {
+        const key = new URL(path, ready);
+        key.searchParams.set("__bcd_encoding", slotEncoding);
+        return key.href;
+      };
+      const featureRoute = "/v1/current/features/javascript.builtins.Array.json";
+      await cache.put(
+        slot(featureRoute, encoding),
+        new MiniflareResponse("planted", {
+          headers: { "cache-control": "max-age=60", "content-encoding": encoding },
+        }),
+      );
+      const served = await rawFetch(runtime, url(featureRoute.slice(1)), {
+        headers: { "accept-encoding": encoding },
+      });
+      const bucket = await runtime.getR2Bucket("ARTIFACTS");
+      const stored = await bucket.get(`${featurePath}${encoding === "br" ? ".br" : ".gz"}`);
+      expect(Buffer.from(await served.arrayBuffer())).toEqual(
+        Buffer.from(await stored!.arrayBuffer()),
+      );
+      expect(served.headers.get("etag")).toMatch(/^"[a-f0-9]{64}"$/);
+      await cache.delete(slot(featureRoute, encoding));
+
+      const metaRoute = "/v1/meta.json";
+      await cache.delete(slot(metaRoute, encoding));
+      await cache.delete(slot(metaRoute, "identity"));
+      await (
+        await rawFetch(runtime, url(metaRoute.slice(1)), {
+          headers: { "accept-encoding": encoding },
+        })
+      ).arrayBuffer();
+      await (
+        await rawFetch(runtime, url(metaRoute.slice(1)), {
+          headers: { "accept-encoding": "identity" },
+        })
+      ).arrayBuffer();
+      // The identity put runs after the compressed request finished, so once it lands, a put for
+      // the compressed request would have landed too.
+      await vi.waitFor(async () => {
+        const identity = await cache.match(slot(metaRoute, "identity"));
+        expect(identity).toBeDefined();
+        await identity!.body?.cancel();
+      });
+      expect(await cache.match(slot(metaRoute, encoding))).toBeUndefined();
     },
   );
 

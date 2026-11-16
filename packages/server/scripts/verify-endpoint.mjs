@@ -3,6 +3,7 @@ import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MIN_TIMEOUT_MS = 100;
@@ -353,6 +354,26 @@ const assertStrongEtag = (response, requestPath) => {
   return etag;
 };
 
+// Decoding once must give back the identity bytes. A body compressed twice, or a compressed copy of
+// different content, fails here even when every header looks right.
+const assertDecodesTo = (response, encoding, identityBody, requestPath, label) => {
+  let decoded;
+  try {
+    const options = { maxOutputLength: MAX_RESPONSE_BYTES };
+    decoded =
+      encoding === "br"
+        ? brotliDecompressSync(response.body, options)
+        : gunzipSync(response.body, options);
+  } catch {
+    throw new Error(`${label} ${encoding} body for ${requestPath} could not be decoded.`);
+  }
+  if (!decoded.equals(identityBody)) {
+    throw new Error(
+      `${label} ${encoding} body for ${requestPath} decodes to ${decoded.length} bytes that differ from the ${identityBody.length} identity bytes. A body compressed twice decodes to the compressed bytes.`,
+    );
+  }
+};
+
 const assertSuccess = (response, requestPath) => {
   assertStatus(response, 200, requestPath);
   assertCors(response, requestPath);
@@ -552,11 +573,39 @@ export const verifyEndpoint = async ({
     });
     assertSuccess(compressedResponse, featurePath);
     assertCurrentCache(compressedResponse, featurePath);
-    const compressedEtag = assertStrongEtag(compressedResponse, featurePath);
     contentEncoding = (header(compressedResponse, "content-encoding") ?? "identity").toLowerCase();
     if (contentEncoding !== "identity" && !["br", "gzip"].includes(contentEncoding)) {
       throw new Error(`${featurePath} used unsupported compression '${contentEncoding}'.`);
     }
+    if (contentEncoding !== "identity") {
+      assertDecodesTo(
+        compressedResponse,
+        contentEncoding,
+        featureResponse.body,
+        featurePath,
+        "First",
+      );
+      // An edge cache can answer the repeat differently from the first response, so the repeat
+      // must decode to the same bytes and carry the same validator.
+      const repeated = await context.request(featurePath, {
+        headers: { "accept-encoding": "br, gzip" },
+      });
+      assertSuccess(repeated, featurePath);
+      const repeatedEncoding = (header(repeated, "content-encoding") ?? "identity").toLowerCase();
+      if (repeatedEncoding !== contentEncoding) {
+        throw new Error(
+          `Repeated ${featurePath} used '${repeatedEncoding}' after '${contentEncoding}'.`,
+        );
+      }
+      assertDecodesTo(repeated, contentEncoding, featureResponse.body, featurePath, "Repeated");
+      if (header(repeated, "etag") !== header(compressedResponse, "etag")) {
+        throw new Error(
+          `Repeated ${featurePath} changed its ETag from ${header(compressedResponse, "etag")} to ${header(repeated, "etag")}.`,
+        );
+      }
+      record(`decoded body (${contentEncoding}, first and repeated)`);
+    }
+    const compressedEtag = assertStrongEtag(compressedResponse, featurePath);
     if (contentEncoding !== "identity" && compressedEtag === featureEtag) {
       const sameBytes = compressedResponse.body.equals(featureResponse.body);
       throw new Error(

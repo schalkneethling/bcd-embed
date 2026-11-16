@@ -23,10 +23,14 @@ const startFixtureServer = async (
     errorCacheControl = "max-age=3600",
     releaseHeaders = true,
     oversizedMetadata = false,
+    // Answers the second compressed feature GET the way the deployed edge cache did: compressed
+    // twice, under a weak copy of the first ETag.
+    doubleCompressRepeat = false,
   } = {},
 ) => {
   const requestTargets = [];
   let compressedRequests = 0;
+  let compressedFeatureGets = 0;
   let resolveOversizedResponseClosed;
   const oversizedResponseClosed = new Promise((resolve) => {
     resolveOversizedResponseClosed = resolve;
@@ -132,6 +136,11 @@ const startFixtureServer = async (
             body = undefined;
           } else if (compressed) {
             body = gzipSync(Buffer.from(JSON.stringify(body)));
+            compressedFeatureGets += 1;
+            if (doubleCompressRepeat && compressedFeatureGets === 2) {
+              body = gzipSync(body);
+              etag = `W/${etag}`;
+            }
           }
         } else {
           body = { __compat: { support: { chrome: { version_added: "1" } } } };
@@ -299,11 +308,19 @@ describe("verify-endpoint CLI grammar", () => {
     expect(report.remote).toBe(false);
     expect(report.probes).toBeLessThanOrEqual(24);
     expect(report.probes).toBe(fixture.requestTargets.length);
-    expect(fixture.compressedRequests).toBe(2);
+    expect(fixture.compressedRequests).toBe(3);
+    expect(report.checks).toContain("decoded body (gzip, first and repeated)");
     expect(report.checks).toContain("compressed If-None-Match");
     expect(report.note).toContain("Cloudflare edge compression");
     expect(fixture.requestTargets).toContain("/v1/current/features/api.%ZZ.json");
     expect(fixture.requestTargets).toContain("/v1/current/features/api.%2e%2e%2fsecret.json");
+  });
+
+  it("rejects a repeated compressed response that decodes to compressed bytes", async () => {
+    const fixture = await startFixtureServer("127.0.0.1", { doubleCompressRepeat: true });
+    await expect(verifyEndpoint({ baseUrl: fixture.baseUrl, allowRemote: false })).rejects.toThrow(
+      /Repeated gzip body for \/v1\/current\/features\/api\.sampleFeature\.json decodes to \d+ bytes that differ/,
+    );
   });
 
   it("rejects and closes an oversized response without starting further probes", async () => {
