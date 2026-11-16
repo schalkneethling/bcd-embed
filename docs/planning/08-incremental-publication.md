@@ -553,7 +553,9 @@ publisher should log its connection pool's state so a recurrence is visible.
    copies without that header and restores it on a hit, and the verifier
    decodes a first and a repeated compressed response. Version `d99ae741`
    passed all 22 verifier probes on 16 November.
-8. **Documentation.** Rewrite the documentation site's page
+8. **Documentation.** Done on 16 November 2026: the page now records the first
+   publication's measured size and duration, and the READMEs describe the
+   deployed state. Rewrite the documentation site's page
    [How publication works](../../apps/website/src/content/docs/publication.md), which describes
    the flow this proposal replaces, and update the package READMEs.
 
