@@ -542,7 +542,11 @@ publisher should log its connection pool's state so a recurrence is visible.
    run the live endpoint verifier. Measure cold and warm response times, because
    a request that misses the tree cache makes two more R2 reads. The first
    publication ran on 14 November 2026 (BCD 8.1.9), and its cleanup first
-   completed on 15 November.
+   completed on 15 November. The Worker was deployed on 15 November. The live
+   verifier failed: Brotli and gzip responses served from the Worker's Cache API
+   arrived compressed a second time, under a weak ETag. Miniflare does not
+   reproduce this. The Worker now caches only identity responses, and the
+   verifier decodes a first and a repeated compressed response.
 8. **Documentation.** Rewrite the documentation site's page
    [How publication works](../../apps/website/src/content/docs/publication.md), which describes
    the flow this proposal replaces, and update the package READMEs.

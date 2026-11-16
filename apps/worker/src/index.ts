@@ -134,14 +134,18 @@ const worker = {
     if (pathname !== "/v1/meta.json" && !pathname.startsWith("/v1/current/"))
       return manualResponse(await handle(request));
 
+    // Only identity responses use Cache API. On the deployed edge (observed November 2026, not
+    // reproduced by Miniflare), a cached Brotli or gzip response comes back compressed a second
+    // time under a weak ETag, which a client cannot decode. Skipping the lookup as well as the
+    // put also ignores any such entry still cached. Compressed responses read from R2 instead.
+    if (negotiateEncoding(request.headers.get("accept-encoding")) !== "identity")
+      return manualResponse(await handle(request));
+
     // Cache API applies request conditionals and Range headers itself. Use a clean
     // canonical GET key, then apply the shared HTTP conditional logic explicitly.
     const cacheUrl = new URL(request.url);
     cacheUrl.search = "";
-    cacheUrl.searchParams.set(
-      "__bcd_encoding",
-      negotiateEncoding(request.headers.get("accept-encoding")) ?? "unacceptable",
-    );
+    cacheUrl.searchParams.set("__bcd_encoding", "identity");
     cacheUrl.hash = "";
     const cacheKey = new Request(cacheUrl, { method: "GET" });
     let cache: Cache | undefined;
