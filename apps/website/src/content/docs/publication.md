@@ -9,14 +9,10 @@ live snapshot does not already have. This page explains what is in a snapshot,
 how it reaches the bucket, why an interrupted upload is safe, and how to run a
 publication.
 
-:::caution[Status on 11 November 2026]
-The generator and the publisher use the layout on this page, but no publication
-has run against R2 with it yet. The Worker still reads the earlier layout, one
-folder per snapshot, and cannot serve this one until it is updated. The timings
-and operation counts below are therefore estimates unless a line says
-"measured".
-[Document 8](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/08-incremental-publication.md)
-tracks the remaining steps.
+:::note[Status on 16 November 2026]
+The first publication in this layout ran on 14 November 2026 and made BCD 8.1.9
+current. The deployed Worker has served this layout since 15 November. Numbers
+on this page are measured unless a line says they are an estimate.
 :::
 
 The command-line tool that does the copying is the publisher, the
@@ -263,7 +259,8 @@ run stops.
 
 Before the content-addressed layout, each snapshot was uploaded into its own
 folder, `v1/<snapshot>/`. The BCD 8.1.8 upload abandoned on 10 November 2026
-left objects in `v1/bcd-8.1.8-gen-0.0.0/`. Cleanup lists only `v1/blobs/`, `v1/shards/`,
+left 81,468 objects in `v1/bcd-8.1.8-gen-0.0.0/`; the workflow below deleted
+them on 15 November 2026. Cleanup lists only `v1/blobs/`, `v1/shards/`,
 `v1/snapshots/` and `v1/_meta/`, so it never removes such a folder.
 
 The `Legacy snapshot cleanup` workflow deletes one. Dispatch it from `main` with
@@ -283,27 +280,30 @@ R2 bills writes and listings as Class A operations and reads as Class B. The
 publisher counts both and prints them with its result, so a release that
 changes far more than expected is visible in the job log.
 
-| Publication                | Objects written | Storage added |
-| -------------------------- | --------------- | ------------- |
-| The first one, BCD 8.1.8   | about 122,100   | about 0.57 GB |
-| 8.1.7 → 8.1.8, one release | 3,158           | 55.5 MB       |
+| Publication                | Objects written | Storage added | Measured from      |
+| -------------------------- | --------------- | ------------- | ------------------ |
+| The first one, BCD 8.1.9   | 122,312         | 586 MB        | the run against R2 |
+| 8.1.7 → 8.1.8, one release | 3,158           | 55.5 MB       | snapshots on disk  |
 
-The first row is every blob in three encodings, 256 shards and a root. The
-second row is 972 new blobs in three encodings, 241 shards and a root. Both are
-measured from generated snapshots on disk, not from a run against R2.
+The first row is every blob in three encodings, 256 shards and a root, written
+on 14 November 2026. Its storage figure is the whole bucket afterwards, as
+`wrangler r2 bucket info` reported it on 16 November. The second row is 972 new
+blobs in three encodings, 241 shards and a root, measured by comparing two
+generated snapshots; no release-to-release publication has run against R2 yet.
 
 Each written object also costs one read to verify it. Cleanup adds about 257
 reads for each snapshot `meta.json` lists, and one listing for every 1,000
 stored objects.
 
-No upload in this layout has been timed. The number of objects handled at the
-same time is `UPLOAD_CONCURRENCY`, 32, in
+The first publication uploaded and verified its 122,312 objects in about 40
+minutes, roughly 50 objects a second. The number of objects handled at the same
+time is `UPLOAD_CONCURRENCY`, 32, in
 [`packages/publisher/src/concurrency.ts`](https://github.com/schalkneethling/bcd-embed/blob/main/packages/publisher/src/concurrency.ts).
 While it uploads, the publisher prints a line to the job log every 5,000
 objects:
 
 ```
-bcd-embed-publish: 35000 of 122093 objects verified in R2
+bcd-embed-publish: 35000 of 122312 objects verified in R2
 ```
 
 ## Running a publication

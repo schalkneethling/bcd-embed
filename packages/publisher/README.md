@@ -85,4 +85,6 @@ The optional `clock: () => Date` hook defaults to wall time, must return a finit
 
 ## Launch status
 
-No publication in this layout has run against R2 yet. The first live attempt, on 10 November 2026, used the earlier design that uploaded all 125,640 objects of a snapshot, and it did not finish; [Document 8](../../docs/planning/08-incremental-publication.md) records why. The bucket still holds about 81,300 objects from that attempt, which step 6 of that document removes. Public launch additionally requires verified compressed-wire strong ETags, operational alerting through Sentry, and live bandwidth and rate protections.
+The first publication in this layout ran on 14 November 2026. It uploaded and verified 122,312 objects in about 40 minutes and made BCD 8.1.9 current; its retention cleanup first completed on 15 November. An earlier attempt, on 10 November 2026, used the design that uploaded all 125,640 objects of a snapshot, and it did not finish; [Document 8](../../docs/planning/08-incremental-publication.md) records why. The 81,468 objects it left were deleted on 15 November.
+
+The deployed Worker passed the live endpoint verifier on 16 November 2026, including strong ETags on compressed responses. Public launch still requires operational alerting through Sentry, and live bandwidth and rate protections.

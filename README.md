@@ -6,8 +6,10 @@ Embeddable browser compatibility tables backed by live
 The data pipeline is built and lives on `main`: a contract, a normalizer, a
 static artifact generator, a read-only HTTP handler, a Cloudflare Worker adapter,
 a private publisher, and the freshness workflows that keep it current with new
-BCD releases. Nothing is deployed yet, so no public endpoint exists. The web
-component (`packages/element`) has not been started. The design and sequencing
+BCD releases. The API Worker has been deployed to Cloudflare since 15 November
+2026 and serves BCD 8.1.9, but it is not ready for public use until the launch
+requirements in the [publisher README](./packages/publisher/README.md#launch-status)
+are met. The web component (`packages/element`) has not been started. The design and sequencing
 decisions live in [`docs/planning`](./docs/planning/).
 
 ## Repository layout
@@ -30,18 +32,19 @@ workspaces are:
   a candidate artifact tree against a baseline and, only when an operator
   explicitly opts in, uploads it to an R2 bucket and switches the current
   snapshot.
+- `packages/element` — `@bcd-embed/element`, the future `<bcd-compat-table>`
+  web component. The component does not exist yet; the workspace holds the
+  screen reader tests for the Phase 1 static markup.
 - `apps/worker` — `@bcd-embed/worker`, the Cloudflare Worker that runs the
   server handler against an R2 bucket binding and adds edge caching and error
-  reporting. It is tested locally and has not been deployed.
+  reporting. It is deployed manually with `pnpm --filter @bcd-embed/worker run
+  deploy`, and the endpoint verifier checks it after each deploy.
 - `apps/docs` — `@bcd-embed/docs`, the playground that validates a response
   against the contract.
 - `apps/website` — `@bcd-embed/website`, the documentation site, built with
   [Starlight](https://starlight.astro.build). Its pages are the Markdown files
   in `apps/website/src/content/docs`. It is configured for Cloudflare hosting
   and has not been deployed.
-
-The `element` package, the web component, will be added when its implementation
-phase begins.
 
 Each package and app has its own README with the details of its behavior.
 
