@@ -1,6 +1,6 @@
 # Document 9 — Custom domain and rate limits
 
-Status: steps 1 to 3 are done (17 November 2026). Steps 4 to 6 are not started.
+Status: steps 1 to 5 are done (17 November 2026), except one measurement in step 5. Step 6 is not started.
 
 ## Summary
 
@@ -214,6 +214,35 @@ status, headers and body. The Worker's request count in the Cloudflare
 dashboard, compared before and after, answers the third question. Document 2
 §8 already asks for a `rate_limited` test "under actual rate-limit pressure in
 a deployed environment", and this is that test.
+
+### Result on 17 November 2026
+
+The rule was created in the dashboard with the settings proposed in step 4.
+The test sent 400 requests for `/v1/meta.json` from one IP address in about
+two seconds, 40 at a time, with an `Origin` header as a browser would send:
+
+| Outcome          | Requests |
+| ---------------- | -------- |
+| `200` from the Worker | 304 |
+| `429` from Cloudflare | 96  |
+
+So the rule blocked within the first period, after a few requests more than
+the threshold. That matches Cloudflare's note that counters can lag by a few
+seconds.
+
+The `429` answers two of the three open questions:
+
+| Question                                      | Answer                                                                                                     |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Does it carry `access-control-allow-origin`?  | No. A browser hides the response from the component, which sees a network error.                           |
+| Content type, body, and `Retry-After`?        | `text/html`, a 7,118-byte "Access denied" page, `cache-control: no-store`, and `Retry-After: 9`. The component cannot read `Retry-After` without CORS. |
+
+The billing question is still open. A `wrangler tail` session ran during the
+test, but it recorded 57 Worker invocations when the Worker had answered 304
+requests, so the tail dropped events and cannot show whether the 96 blocked
+requests reached the Worker. The Worker's request count in the Cloudflare
+dashboard for 18:21 UTC on 17 November 2026 answers it: about 305 requests
+means blocked requests do not invoke the Worker, and about 401 means they do.
 
 ## Step 6: update the contract and documentation
 
