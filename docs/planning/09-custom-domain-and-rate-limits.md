@@ -151,7 +151,7 @@ changed, so a blocked client gets Cloudflare's response, not the contract's
 | ------------- | ------------------------------------------------------------------------ |
 | Filter        | URI path starts with `/v1/`                                              |
 | Counted by    | IP address (the only Free option)                                        |
-| Threshold     | **Decision needed.** A starting proposal is 300 requests in 10 seconds.  |
+| Threshold     | 300 requests in 10 seconds (accepted on 17 November 2026)               |
 | Period        | 10 seconds                                                               |
 | Action        | Block                                                                    |
 | Timeout       | 10 seconds                                                               |
@@ -232,13 +232,15 @@ and eventually consistent. And the documentation does not state which Workers
 plans include it. It remains an option if step 5 shows that the edge response
 breaks the component badly.
 
-## Decisions needed
+## Decisions
 
-| Decision                                  | Proposal                                                     |
-| ----------------------------------------- | ------------------------------------------------------------ |
-| API hostname                              | `api.browser-compat.dev`                                     |
-| Rule threshold                            | 300 requests in 10 seconds per IP address, revisited later   |
-| Workers plan for the account              | Unknown. On Free, Cloudflare stops the Worker for everyone after 100,000 requests a day (Error 1027), which is a cost ceiling but also an outage. |
+The owner settled all three on 17 November 2026.
+
+| Decision                     | Outcome                                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API hostname                 | Accepted: `api.browser-compat.dev`.                                                                                                                  |
+| Rule threshold               | Accepted: 300 requests in 10 seconds per IP address, to revisit with traffic data.                                                                  |
+| Workers plan for the account | Settled: Workers Paid. It includes 10 million requests a month, then charges $0.30 per million. No daily cap stops the Worker, so the rate limiting rule and the edge cache are what keep request costs bounded. |
 
 ## Sources
 
