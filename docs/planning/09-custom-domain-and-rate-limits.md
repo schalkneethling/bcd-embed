@@ -1,6 +1,6 @@
 # Document 9 — Custom domain and rate limits
 
-Status: steps 1 to 5 are done (17 November 2026), except one measurement in step 5. Step 6 is not started.
+Status: steps 1 to 5 are done (17 November 2026). Step 6 is not started.
 
 ## Summary
 
@@ -237,12 +237,15 @@ The `429` answers two of the three open questions:
 | Does it carry `access-control-allow-origin`?  | No. A browser hides the response from the component, which sees a network error.                           |
 | Content type, body, and `Retry-After`?        | `text/html`, a 7,118-byte "Access denied" page, `cache-control: no-store`, and `Retry-After: 9`. The component cannot read `Retry-After` without CORS. |
 
-The billing question is still open. A `wrangler tail` session ran during the
-test, but it recorded 57 Worker invocations when the Worker had answered 304
-requests, so the tail dropped events and cannot show whether the 96 blocked
-requests reached the Worker. The Worker's request count in the Cloudflare
-dashboard for 18:21 UTC on 17 November 2026 answers it: about 305 requests
-means blocked requests do not invoke the Worker, and about 401 means they do.
+Blocked requests do not invoke the Worker. A `wrangler tail` session could
+not show this, because it recorded 57 invocations while the Worker answered
+304 requests, so it dropped events. The dashboard's Invocations chart did: the
+15-minute bin that holds the test, starting at 18:15 UTC, counts 315
+invocations. Had the 97 blocked requests (the 96 in the burst and one
+captured afterwards) reached the Worker, the bin would hold at least 401.
+The pricing page bills "inbound requests to your Worker", so requests the
+rule blocks should not be billed as Workers requests. The pricing page does
+not state this case directly.
 
 ## Step 6: update the contract and documentation
 
