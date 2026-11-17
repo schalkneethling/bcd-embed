@@ -1,6 +1,6 @@
 # Document 9 — Custom domain and rate limits
 
-Status: steps 1 to 5 are done (17 November 2026). Step 6 is not started.
+Status: done. All six steps were completed on 17 November 2026.
 
 ## Summary
 
@@ -269,6 +269,21 @@ These pages change with the work:
   account-level rate limit".
 - `apps/worker/README.md`, for the verifier command with the new origin.
 - `README.md` and the publisher README's launch status.
+
+### Result on 17 November 2026
+
+These pages now describe the edge rate limit:
+
+- Document 1 §8 states that errors from Cloudflare, before the API runs, are
+  the exception to "JSON, never HTML", and that consumers must treat a failed
+  request as temporarily unavailable. §9 and §10 point to it.
+- Document 2 §4 names the rule instead of calling edge rate limiting a
+  prerequisite.
+- Document 3 Phase 4 tells the element to render its fallback, emit its error
+  event, and not retry when a request fails without a readable response.
+- The deployment page has a "Rate limiting" section with the rule's settings,
+  and its launch list no longer includes a rate limit.
+- The publisher README's launch status leaves only Sentry alerting.
 
 ## What this design leaves out
 

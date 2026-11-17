@@ -55,6 +55,28 @@ have no DNS record of its own for `api.browser-compat.dev`, since Cloudflare
 creates that record. Why the API moved off `workers.dev` is explained in
 [Document 9](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/09-custom-domain-and-rate-limits.md).
 
+## Rate limiting
+
+One Cloudflare rate limiting rule protects the API. It belongs to the
+`browser-compat.dev` zone, not to this repository, so it is created in the
+Cloudflare dashboard. A deploy does not change it. These are its settings:
+
+| Setting    | Value                       |
+| ---------- | --------------------------- |
+| Match      | URI path starts with `/v1/` |
+| Counted by | IP address                  |
+| Requests   | 300                         |
+| Period     | 10 seconds                  |
+| Action     | Block                       |
+| Duration   | 10 seconds                  |
+
+A blocked request gets Cloudflare's own HTML `429` page, and the Worker never
+runs, so it does not count as a Workers request. The page has no CORS header,
+so a browser reports a blocked request to the component as a network error.
+[Document 9](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/09-custom-domain-and-rate-limits.md)
+explains why the zone's plan fixes most of these settings, and records the
+test that tripped the rule.
+
 ## How configuration reaches the Worker
 
 The Worker has one configuration value today: `SENTRY_DSN`, the address that
@@ -152,8 +174,8 @@ Two commands exercise the Worker without touching a Cloudflare account:
 
 These items are separate work that a deploy does not cover:
 
-- An account-level rate limit.
 - A Sentry alert that is configured and tested. Setting the DSN sends errors
   to Sentry, but nobody is notified until an alert exists.
-- Live deployment and pressure tests against the real Cloudflare edge. The
-  existing tests are local evidence only.
+- A test under sustained load. The endpoint verifier and the rate limiting
+  test have run against the live edge, but neither measures sustained
+  traffic.
