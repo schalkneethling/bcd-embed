@@ -226,7 +226,17 @@ resumable without changing its snapshot bytes.
 ## Sentry prerequisites
 
 Set `SENTRY_DSN` as a Worker secret and GitHub Actions secret only after an
-operator has configured an alert and tested it with a non-production project.
+operator has configured an alert and tested it.
+
+This was done on 17 November 2026, with the production `bcd-embed` project
+rather than a separate non-production one. The tests did not touch the
+deployed Worker: a local Worker with an empty bucket produced a backend error,
+and `scripts/notify-sentry.mjs` sent pipeline test events directly. Both
+arrived. The test found two defects, since fixed: the Worker's redaction
+dropped the `component` and `event` tags that alert rules filter on, and
+pipeline events had no title. The project scrubs IP addresses, because Sentry
+otherwise stores the address each event was sent from. The deployment page's
+"Sentry alerting" section describes the project and its alert.
 No DSN is committed. Without it, Worker reporting and pipeline notification are
 disabled and say so; neither claims delivery. Worker events have a strict
 whitelist and omit request, user, breadcrumb, error-message, stack, and extra
