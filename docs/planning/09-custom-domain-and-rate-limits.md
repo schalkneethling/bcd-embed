@@ -1,6 +1,6 @@
 # Document 9 — Custom domain and rate limits
 
-Status: proposal, awaiting review. Nothing in this document is implemented.
+Status: steps 1 to 3 are done (17 November 2026). Steps 4 to 6 are not started.
 
 ## Summary
 
@@ -122,6 +122,27 @@ both need to hold again here:
 The same step records latency from the same location as Document 8's
 "Latency after deployment" section, and confirms that the old `workers.dev`
 address no longer serves the API.
+
+### Result on 17 November 2026
+
+Worker version `4772552b` deployed to `api.browser-compat.dev`, and all 22
+verifier probes passed, including the repeated compressed request and
+Cloudflare's own `400` for the `%ZZ` and `%00` probes. The old `workers.dev`
+address now answers `404` with the text `error code: 1042`, so it no longer
+serves the API.
+
+Latency from Johannesburg (JNB), for the Array feature with Brotli:
+
+| Request                    | Time        | Bytes                                   |
+| -------------------------- | ----------- | --------------------------------------- |
+| First request              | 0.95 s      | 6,792                                   |
+| Four repeated requests     | 0.06–0.14 s | 6,792, with a strong ETag               |
+| Identity (no compression)  | 0.09 s      | 641,987                                 |
+
+The repeated Brotli responses are the Worker's own 6,792 bytes with a strong
+ETag, so the edge did not compress them a second time. These times match
+Document 8's measurements on `workers.dev`: a cache hit of 0.04–0.21 s and a
+cold miss of 0.63–1.46 s.
 
 ## Step 4: add the rate limiting rule
 
