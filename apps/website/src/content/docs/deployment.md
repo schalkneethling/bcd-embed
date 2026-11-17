@@ -120,6 +120,34 @@ Varlock asks for the value, encrypts it for this machine, and writes the
 encrypted form back to the file. The same command prints the resolved
 configuration with secrets masked, so you can run it again to check the result.
 
+### Sentry alerting
+
+Errors go to the `bcd-embed` project in the `schalkneethling` Sentry
+organization, which stores its data in the EU region. The deployed Worker and
+the freshness workflows' failure jobs both report to it with the same DSN. The
+workflows read it from the repository secret `SENTRY_DSN`, because their
+`notify-failure` jobs run without a GitHub environment.
+
+Three settings in Sentry belong to this setup, not to this repository:
+
+| Setting                                              | Why                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Scrub IP addresses: on                               | Sentry otherwise records the IP address each event was sent from, which the Worker never sends itself. |
+| Alert "bcd-embed: email on every new issue"          | Emails the maintainer when Sentry creates a new issue, for both Worker errors and pipeline failures.   |
+| Alert "Send a notification for high priority issues" | Sentry's default for a new project. It is left as created.                                             |
+
+Worker events carry the tags `component: worker` and
+`event: bcd_embed_worker_error`. Pipeline events have the title
+`Pipeline <event> <status>`, the logger `bcd-embed.pipeline`, and the tags
+`event` and `status`. To test the pipeline path without a workflow run:
+
+```sh
+SENTRY_DSN='<dsn>' node scripts/notify-sentry.mjs setup_check failure
+```
+
+Each new `<event>` and `<status>` pair creates a new issue, so the alert emails
+once per pair.
+
 ## Running a deploy
 
 ```sh
@@ -174,8 +202,6 @@ Two commands exercise the Worker without touching a Cloudflare account:
 
 These items are separate work that a deploy does not cover:
 
-- A Sentry alert that is configured and tested. Setting the DSN sends errors
-  to Sentry, but nobody is notified until an alert exists.
 - A test under sustained load. The endpoint verifier and the rate limiting
   test have run against the live edge, but neither measures sustained
   traffic.

@@ -27,6 +27,7 @@ describe("pipeline Sentry notification", () => {
       "https://example.invalid/api/42/envelope/?sentry_version=7&sentry_key=public",
     );
     expect(String(init.body)).toContain('"logger":"bcd-embed.pipeline"');
+    expect(String(init.body)).toContain('"message":{"formatted":"Pipeline freshness failure"}');
     expect(String(init.body)).not.toContain("SENTRY_DSN");
   });
 

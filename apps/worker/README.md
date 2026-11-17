@@ -105,6 +105,6 @@ Logs and Sentry when the optional `SENTRY_DSN` Worker secret is configured.
 The Sentry SDK is configured to drop request, user, breadcrumb, message, stack,
 and extra fields; it receives only bounded error types and two fixed tags,
 `component: worker` and `event: bcd_embed_worker_error`, which alert rules can
-filter on. Without that secret,
-Sentry is deliberately disabled and no alert delivery is implied. Configure and
-test an alert before public launch.
+filter on. Without that secret, Sentry is deliberately disabled. How the
+Sentry project and its alert are set up is described in the deployment page's
+"Sentry alerting" section.
