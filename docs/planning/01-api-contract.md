@@ -347,7 +347,7 @@ These values are headers and not body fields on purpose. A body contains only th
 
 ## 8. Errors
 
-Errors are JSON, never HTML, and carry a machine-readable `code`.
+Errors the API returns are JSON, never HTML, and carry a machine-readable `code`. The exceptions are responses that Cloudflare sends before the API runs: the edge rate limit described below, and Cloudflare's own `400` for some malformed paths, such as an invalid percent-encoding.
 
 ```jsonc
 {
@@ -374,6 +374,8 @@ missing-versus-null state for consumers.
 | 429 | `rate_limited` | Bandwidth protection. Carries `Retry-After`. |
 | 503 | `generation_in_progress` | Only possible in a self-hosted dynamic deployment. |
 
+**Rate limits applied at the edge.** The hosted deployment enforces its rate limit with a Cloudflare rule that blocks a request before the Worker runs (Document 9). That response is Cloudflare's own, not the `rate_limited` body above: HTTP 429 with an HTML page, a `Retry-After` header, and no `access-control-allow-origin` header. A browser therefore hides it from cross-origin scripts, so a consumer sees a failed request rather than a 429. Consumers must treat a failed request as "temporarily unavailable" and must not retry in a loop. The `rate_limited` body remains the contract for deployments that limit inside the handler, such as a self-hosted server using the `beforeRead` hook.
+
 A typo in a BCD key is the most likely consumer error. A `didYouMean` suggestion field was considered and deferred out of v1: edit-distance suggestions require request-time computation over the index, which this architecture otherwise never performs (Document 2 §1), and the index (§4.3) already serves the same need at authoring time. It remains a candidate additive field (§11).
 
 `invalid_key` (400) and `feature_not_found` (404) are distinct: the former means the request is malformed and the consumer should fix its code; the latter means the key is plausible but BCD has no data, and the consumer's appropriate response is a "report missing data" affordance rather than a bare error.
@@ -388,7 +390,7 @@ A typo in a BCD key is the most likely consumer error. A `didYouMean` suggestion
 
 Pinned snapshots are immutable, served with `max-age=31536000, immutable`. One consequence: a snapshot pruned from storage (§7, Document 2 §3) can keep being served from intermediary caches until their copies expire, so retirement is eventual rather than immediate; `snapshot_not_found` is guaranteed only once caches drain.
 
-Error responses are cacheable: `invalid_key`, `feature_not_found`, and `namespace_not_queryable` carry `max-age=3600`, so a page embedding a typo'd key does not invoke the Worker on every load. `rate_limited` responses are `no-store` and carry `Retry-After`.
+Error responses are cacheable: `invalid_key`, `feature_not_found`, and `namespace_not_queryable` carry `max-age=3600`, so a page embedding a typo'd key does not invoke the Worker on every load. `rate_limited` responses are `no-store` and carry `Retry-After`. The hosted deployment's edge rate limit responds in Cloudflare's own format instead (§8).
 
 Every response carries a strong `ETag` and supports conditional requests. Because `ETag`, `Retry-After` and the three release headers (§7) are not on the CORS-safelisted response-header list, every response also carries `access-control-expose-headers: etag, retry-after, bcd-embed-snapshot, bcd-embed-generated, bcd-embed-source-version`; without it a cross-origin consumer could read none of them.
 
@@ -400,7 +402,7 @@ All responses are compressed, Brotli where the client supports it (falling back 
 
 The data is public domain and identical for every caller. There is no authentication, no per-user state, no write path, and no query engine — no injection surface, nothing to exfiltrate, no expensive computation an attacker can force. In the static architecture (Document 2), a request is a CDN file read.
 
-What remains is bandwidth, handled at the edge: per-IP rate limiting, standard CDN protections, and a cache that absorbs the majority of legitimate traffic. The one required input validation is the key allowlist in §3, which prevents a malformed key from being interpreted as a path traversal when mapped to storage. This should be fuzz-tested, not just unit-tested.
+What remains is bandwidth, handled at the edge: per-IP rate limiting (a Cloudflare rule on the hosted deployment, Document 9), standard CDN protections, and a cache that absorbs the majority of legitimate traffic. The one required input validation is the key allowlist in §3, which prevents a malformed key from being interpreted as a path traversal when mapped to storage. This should be fuzz-tested, not just unit-tested.
 
 A published fair-use expectation and an easy self-hosting path (Document 2 §7) are the primary mitigation against sustained abuse: standing up an independent copy is intentionally a low-effort exercise.
 

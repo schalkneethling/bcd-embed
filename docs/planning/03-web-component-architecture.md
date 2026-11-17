@@ -261,7 +261,7 @@ Visual regression covers the support-state palette and container-query breakpoin
 
 **Phase 3 — styling.** Base styles in the cascade layer, registered custom properties, container queries under Shared First, `light-dark()` for dark mode, print styles. Verify that un-layered author CSS overrides every base style, since this is the core assumption behind the light-DOM decision.
 
-**Phase 4 — fetch mode.** Async task, loading/error states, request cache and deduplication, `IntersectionObserver` deferral and the `loading` attribute that controls it, `endpoint` override. Integrate against the live service.
+**Phase 4 — fetch mode.** Async task, loading/error states, request cache and deduplication, `IntersectionObserver` deferral and the `loading` attribute that controls it, `endpoint` override. Integrate against the live service. A request that fails without a readable response is a temporary failure, not a bug in the page: the hosted service's rate limit answers with a Cloudflare 429 that has no CORS header, so the browser reports it as a network error (Document 1 §8, Document 9). The element renders its fallback content, emits its error event, and does not retry on its own.
 
 **Phase 5 — interaction.** Disclosure, focus management, keyboard paths, reduced motion.
 
