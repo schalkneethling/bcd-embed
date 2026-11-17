@@ -46,6 +46,20 @@ describe("Worker Sentry configuration", () => {
     ]);
   });
 
+  it("keeps only the tags the Worker sets, with their fixed values", () => {
+    const options = sentryOptions({ SENTRY_DSN: "https://public@example.invalid/1" })!;
+    const keep = options.beforeSend!(
+      { tags: { component: "worker", event: "bcd_embed_worker_error", url: "/secret" } },
+      {},
+    );
+    expect(keep?.tags).toEqual({ component: "worker", event: "bcd_embed_worker_error" });
+    const drop = options.beforeSend!(
+      { tags: { component: "/secret", event: "request-path-and-secret" } },
+      {},
+    );
+    expect(drop?.tags).toBeUndefined();
+  });
+
   it("does not read request bodies before the handler runs", () => {
     const options = sentryOptions({ SENTRY_DSN: "https://public@example.invalid/1" })!;
     expect(options.dataCollection).toEqual({ httpBodies: [] });
