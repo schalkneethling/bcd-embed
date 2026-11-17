@@ -9,9 +9,10 @@ live snapshot does not already have. This page explains what is in a snapshot,
 how it reaches the bucket, why an interrupted upload is safe, and how to run a
 publication.
 
-:::note[Status on 16 November 2026]
+:::note[Status on 17 November 2026]
 The first publication in this layout ran on 14 November 2026 and made BCD 8.1.9
-current. The deployed Worker has served this layout since 15 November. Numbers
+current. The deployed Worker has served this layout since 15 November, and since
+17 November it answers only on `https://api.browser-compat.dev`. Numbers
 on this page are measured unless a line says they are an estimate.
 :::
 

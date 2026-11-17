@@ -7,9 +7,10 @@ The data pipeline is built and lives on `main`: a contract, a normalizer, a
 static artifact generator, a read-only HTTP handler, a Cloudflare Worker adapter,
 a private publisher, and the freshness workflows that keep it current with new
 BCD releases. The API Worker has been deployed to Cloudflare since 15 November
-2026, answers on `https://api.browser-compat.dev`, and serves BCD 8.1.9, but it is not ready for public use until the launch
-requirements in the [publisher README](./packages/publisher/README.md#launch-status)
-are met. The web component (`packages/element`) has not been started. The design and sequencing
+2026, answers on `https://api.browser-compat.dev`, and serves BCD 8.1.9, behind a Cloudflare rate limiting rule and with Sentry alerting. One launch
+requirement remains open, a test under sustained load, which the
+[deployment page](./apps/website/src/content/docs/deployment.md#what-is-still-open-before-a-public-launch)
+lists. The web component (`packages/element`) has not been started. The design and sequencing
 decisions live in [`docs/planning`](./docs/planning/).
 
 ## Repository layout

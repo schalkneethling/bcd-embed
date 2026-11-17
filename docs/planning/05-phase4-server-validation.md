@@ -103,10 +103,21 @@ bytes it never receives. Accordingly, the verifier uses encoded traversal-like
 characters inside one key segment and does not treat a canonicalized literal
 dot path as evidence of `invalid_key` handling.
 
-## LIVE acceptance — pending
+## LIVE acceptance — passed
 
-After a controlled deployment to an explicitly selected staging origin, run
-the verifier only with that caller-supplied URL and explicit opt-in:
+The verifier passed all 22 probes against the deployed Worker on 16 November
+2026, when it answered on `workers.dev`, and again on 17 November 2026 on
+`https://api.browser-compat.dev`. Both runs received Brotli with a strong ETag
+on a first and a repeated compressed request, and a bodyless `304` for a
+conditional request. Reaching that result needed a change to how the Worker
+stores compressed copies in the edge cache, because the edge compressed a
+cached compressed response a second time; `apps/worker/README.md` describes the
+storage format. Cloudflare rejects the `%ZZ` and `%00` probes itself with an
+HTML `400` before the Worker runs, and the verifier accepts that response on a
+remote target for those two probes only.
+
+The procedure below is unchanged. Run the verifier only with a caller-supplied
+URL and explicit opt-in:
 
 ```sh
 node packages/server/scripts/verify-endpoint.mjs \
