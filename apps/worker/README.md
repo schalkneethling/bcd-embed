@@ -91,7 +91,7 @@ This is local transport evidence, not deployed Cloudflare edge acceptance, so
 run the endpoint verifier against the deployed Worker after every deploy:
 
 ```bash
-node packages/server/scripts/verify-endpoint.mjs --base-url <deployed Worker origin> --allow-remote
+node packages/server/scripts/verify-endpoint.mjs --base-url https://api.browser-compat.dev --allow-remote
 ```
 
 The verifier requests the compressed feature twice and decodes both bodies. Each
