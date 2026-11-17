@@ -120,6 +120,9 @@ The validation records for the finished phases are:
 - [`08-incremental-publication.md`](./docs/planning/08-incremental-publication.md)
   — proposal to store each file once by content hash, so a BCD release uploads
   only what changed.
+- [`09-custom-domain-and-rate-limits.md`](./docs/planning/09-custom-domain-and-rate-limits.md)
+  — proposal to move the API to `api.browser-compat.dev` and protect it with a
+  Cloudflare rate limiting rule.
 
 ## Contract package
 
