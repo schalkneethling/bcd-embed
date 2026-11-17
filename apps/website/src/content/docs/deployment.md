@@ -22,6 +22,7 @@ matters.
 ```mermaid
 flowchart TD
     bucket["Create the R2 bucket<br/>bcd-embed-artifacts"] --> publish["Publish a snapshot<br/>with the publisher"]
+    zone["Activate the browser-compat.dev<br/>zone on Cloudflare"] --> deploy
     publish --> deploy["Deploy the Worker"]
     deploy --> launch["Finish the launch work<br/>listed at the end of this page"]
 ```
@@ -36,6 +37,23 @@ An operator creates the bucket and then publishes a snapshot with
 and writes `v1/meta.json` last. [How publication works](/publication/) describes
 that process. Do not deploy against an empty bucket, and do not assume the
 metadata the generator writes to disk is already a safe remote publication.
+
+## Where the Worker answers
+
+The Worker answers only on `https://api.browser-compat.dev`, a Workers Custom
+Domain. Three fields in `apps/worker/wrangler.jsonc` set this up:
+
+| Field                 | What it does                                                                                                                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routes`              | Attaches the Worker to `api.browser-compat.dev`. On deploy, Cloudflare creates the DNS record and a certificate for that hostname.                  |
+| `workers_dev: false`  | Removes the `workers.dev` address. Turning it off only in the dashboard does not last, because the next Wrangler deploy turns it back on.           |
+| `preview_urls: false` | Turns off preview and version addresses. Turning off `workers.dev` leaves these on, and they would let clients reach the Worker around rate limits. |
+
+The `browser-compat.dev` zone must be active on Cloudflare before a deploy,
+because a Custom Domain can only be created on an active zone. The zone must
+have no DNS record of its own for `api.browser-compat.dev`, since Cloudflare
+creates that record. Why the API moved off `workers.dev` is explained in
+[Document 9](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/09-custom-domain-and-rate-limits.md).
 
 ## How configuration reaches the Worker
 
