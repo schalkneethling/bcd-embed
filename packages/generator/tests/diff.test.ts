@@ -35,6 +35,12 @@ import { generateSnapshot, type GeneratedArtifact } from "../src/generate.js";
 import { BCD_VERSION } from "../src/input.js";
 import { withRelease, writeContentTree } from "./support/write-content-tree.js";
 
+// Measured on 17 November 2026, with twice as many busy processes as cores: the slowest test here
+// took 2.5 s, half of Vitest's 5 s default. In CI run 44164614547 one test that takes 35 ms
+// unloaded hit the 5 s default once, in the last 60 runs; that stall is unexplained. This limit
+// leaves room for a loaded runner, and a real hang still fails.
+vi.setConfig({ testTimeout: 30_000 });
+
 const outputRoots: string[] = [];
 const output = async (): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), "bcd-embed-output-diff-"));
