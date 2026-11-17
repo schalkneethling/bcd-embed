@@ -10,6 +10,22 @@ const BOUNDED_ERROR_CLASSES: ReadonlySet<string> = new Set([
   "Unknown",
 ]);
 
+/**
+ * The tags `reportError` sets, each with the only value it ever sets. A tag is kept only when it
+ * matches exactly, so alert rules can filter on it without letting other values through.
+ */
+const BOUNDED_TAGS: ReadonlyMap<string, string> = new Map([
+  ["component", "worker"],
+  ["event", "bcd_embed_worker_error"],
+]);
+
+const boundedTags = (tags: Record<string, unknown> | undefined) => {
+  const kept = Object.fromEntries(
+    [...BOUNDED_TAGS].filter(([key, value]) => tags?.[key] === value),
+  );
+  return Object.keys(kept).length === 0 ? undefined : kept;
+};
+
 const redactEvent = (event: Parameters<NonNullable<CloudflareOptions["beforeSend"]>>[0]) => ({
   event_id: event.event_id,
   exception:
@@ -23,6 +39,7 @@ const redactEvent = (event: Parameters<NonNullable<CloudflareOptions["beforeSend
         },
   level: event.level,
   platform: event.platform,
+  tags: boundedTags(event.tags),
   timestamp: event.timestamp,
   type: event.type,
 });
