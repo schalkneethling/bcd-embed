@@ -58,6 +58,9 @@ export const notifySentry = async ({ dsn, event, fetchImpl = fetch, status }) =>
       fingerprint: [`pipeline-${event}-${status}`],
       level: "error",
       logger: "bcd-embed.pipeline",
+      // Without a message Sentry titles the issue "<unlabeled event>", which says nothing in an
+      // alert email. Both values are bounded identifiers, checked above.
+      message: { formatted: `Pipeline ${event} ${status}` },
       tags: { event, status },
     }),
     "",
