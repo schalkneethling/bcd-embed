@@ -52,7 +52,8 @@ const disclosureIn = (page: Page, feature: string) =>
 const expandStep = (page: Page, moves: Moves, feature: string): ExtraStep => ({
   step: `expand ${feature} in Chrome`,
   perform: moves.activate,
-  check: () => expect(disclosureIn(page, feature)).toHaveJSProperty("open", true),
+  // Soft, so that a disclosure NVDA fails to open still leaves the later steps in the transcript.
+  check: () => expect.soft(disclosureIn(page, feature)).toHaveJSProperty("open", true),
 });
 
 /** Step 2, performed last because it moves NVDA's cursor away from the cells. */

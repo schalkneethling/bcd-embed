@@ -81,9 +81,11 @@ jobs:
             os: ubuntu-26.04
             browser: firefox
             run: "xvfb-run dbus-run-session --"
-          # Guidepup supports Windows Server 2022 and 2025, and its own NVDA tests run on the
-          # hosted Windows runners with no wrapper around the test command. Playwright's Firefox
-          # stands in for Firefox, as its WebKit stands in for Safari.
+          # Guidepup supports Windows Server 2022 and 2025. guidepup/guidepup-playwright's
+          # .github/workflows/test-nvda.yml (lines 18 and 25 to 29 at commit b017456b) runs setup,
+          # install and its Firefox NVDA tests on windows-2022 and windows-2025 with no wrapper
+          # around the test command. Playwright's Firefox stands in for Firefox, as its WebKit
+          # stands in for Safari.
           - reader: nvda
             os: windows-2025
             browser: firefox

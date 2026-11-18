@@ -37,8 +37,9 @@ export type ExtraStep = {
   step: string;
   perform(): Promise<void>;
   /**
-   * A check on the page that fails the test, made after the step is recorded. It never checks
-   * what was spoken.
+   * A check on the page, made after the step is recorded. It must use `expect.soft`, so that a
+   * mismatch fails the test but the remaining steps still run and reach the transcript. It never
+   * checks what was spoken.
    */
   check?(): Promise<void>;
   /**
@@ -55,10 +56,11 @@ const pageUrl = (file: string) =>
   new URL(`../../../docs/planning/phase1-markup/${file}`, import.meta.url).href;
 
 /**
- * Walks the table and attaches the transcript to the test. The checks on the page (which element
- * has focus, whether the disclosure is open) are hard failures. The checks on what was spoken are
- * soft, so a wording difference still leaves a complete transcript to read. Each step is recorded
- * before its page check, so a failed check still leaves that step's output in the transcript.
+ * Walks the table and attaches the transcript to the test. The shared walk's checks on the page
+ * (which element has focus, whether the disclosure is open) are hard failures, because every later
+ * shared move depends on them. The extra steps' page checks and all checks on what was spoken are
+ * soft, so a mismatch still leaves a complete transcript to read. Each step is recorded before its
+ * page check, so a failed check still leaves that step's output in the transcript.
  * `readerSpecific` maps a step to a phrase that only this screen reader is expected to say there.
  * `extraSteps` run after the shared walk, in order.
  */
@@ -71,6 +73,11 @@ export async function walkTable(
   readerSpecific: Readonly<Record<string, string>>,
   extraSteps: readonly ExtraStep[] = [],
 ): Promise<void> {
+  // `heard()` finds a step's output by its name, so a repeated name would check the wrong step.
+  const extraNames = extraSteps.map(({ step }) => step);
+  const repeated = extraNames.filter((name, index) => extraNames.indexOf(name) !== index);
+  if (repeated.length > 0) throw new Error(`Extra step names repeat: ${repeated.join(", ")}`);
+
   const transcript: Step[] = [];
   const record = async (step: string) => {
     // Everything spoken since the last recorded step. Orca echoes the key first ("tab"), so the
@@ -136,18 +143,23 @@ export async function walkTable(
       await extra.check?.();
     }
   } finally {
-    // Written to the test's output directory, which the workflow uploads as an artifact on a pass
-    // and on a failure. An attachment given as a `body` reaches only the reporters and is never
-    // written to that directory.
     const json = JSON.stringify(transcript, null, 2);
-    const transcriptPath = testInfo.outputPath("transcript.json");
-    await writeFile(transcriptPath, json);
-    await testInfo.attach("transcript.json", {
-      path: transcriptPath,
-      contentType: "application/json",
-    });
-    // Printed as well, so the transcript is in the job log without downloading the artifact.
+    // Printed first, so the transcript is in the job log even if writing the file fails.
     console.log(`Transcript, ${variant.name}:\n${json}`);
+    // Written to the test's output directory, which the workflow uploads as an artifact on a pass
+    // and on a failure. An attachment given as a `body` is not written there as a file: after a
+    // pass it reaches only the reporters, and after a failure it is only inside `trace.zip`.
+    try {
+      const transcriptPath = testInfo.outputPath("transcript.json");
+      await writeFile(transcriptPath, json);
+      await testInfo.attach("transcript.json", {
+        path: transcriptPath,
+        contentType: "application/json",
+      });
+    } catch (error) {
+      // Logged rather than thrown, so a failed write never hides the walk's own error.
+      console.error(`Could not save the transcript for ${variant.name}:`, error);
+    }
   }
 
   const heard = (step: string) => {

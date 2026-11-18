@@ -11,8 +11,8 @@ export default defineConfig({
   testDir: "./screen-reader",
   testMatch: "**/*.nvda.ts",
   // Each test starts the screen reader and moves it into the page, which takes tens of seconds.
-  // The NVDA walk also performs Document 7's steps 8 to 14, about twenty more moves than the
-  // VoiceOver and Orca walks, so it gets twice their time.
+  // The NVDA walk also performs Document 7's step 2 and steps 8 to 14: 27 more moves than the
+  // VoiceOver and Orca walks in variant A, and 13 more in variant B. So it gets twice their time.
   timeout: 10 * 60 * 1000,
   // A screen reader sometimes fails to start. Playwright reports a test that passed on retry as
   // flaky.
