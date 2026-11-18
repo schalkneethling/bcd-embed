@@ -29,3 +29,7 @@ dist-ssr
 
 # AI agent worktrees
 .claude/worktrees/
+
+# Playwright output from the screen reader tests (packages/element/playwright.*.config.ts)
+packages/element/test-results/
+packages/element/playwright-report/
