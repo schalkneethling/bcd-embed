@@ -117,7 +117,9 @@ three states:
 
 - **Asserted in CI.** The test fails if the page is in the wrong state, or if
   NVDA does not speak the text that the markup defines, such as a cell's
-  accessible name.
+  accessible name. Where only part of the step is asserted, the state names
+  that part. The shared walk's page checks are hard and stop the test; every
+  check in steps 2 and 8 to 14 is soft, so the walk still runs to its end.
 - **Performed in CI for transcript review.** NVDA performs the step and its
   output lands in the transcript, but nothing checks it, because the wording
   is NVDA's own or the expectation needs a person's judgment.
@@ -125,16 +127,16 @@ three states:
 
 | #   | NVDA state                                   | How the test performs it, and what it checks                                                                                                                                                                         |
 | --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Asserted in CI                               | Tab until the region has focus. Focus is a hard check, and "Browser compatibility" is a soft one. NVDA's role word for the region is for transcript review.                                                          |
+| 1   | Asserted in CI: focus, and the name's first words | Tab until the region has focus. Focus is a hard check. The soft check covers only "Browser compatibility", not the full name "Browser compatibility: fixture.adversarial-v1". NVDA's role word for the region is for transcript review. |
 | 2   | Performed in CI for transcript review        | Control+Home, then `T` (next table), at the end of the walk. How NVDA announces the caption and the size is its own wording, not yet known.                                                                         |
 | 3   | Asserted in CI                               | Table navigation (Control+Alt+Right) along `fit-content`. The cell names are soft checks. Whether NVDA announces the column header, and "Server" on Node.js, is for transcript review.                               |
 | 4   | Performed in CI for transcript review        | Not as written. The shared walk moves down the Node.js column for three rows, and steps 8 to 13 move down the Chrome column in shorter runs. Whether each move announces the row header is for transcript review.     |
-| 5   | Asserted in CI                               | Enter on the `fit-content` summary. The open state and focus are hard checks, and "expanded" is a soft one. Reaching the three history items is not performed on this cell; steps 8 and 9 read history items on theirs. |
+| 5   | Asserted in CI: open state, focus, "expanded" | Enter on the `fit-content` summary. The open state and focus are hard checks, and "expanded" is a soft one. Reaching the three history items is not performed on this cell, so that part is not asserted; steps 8 and 9 read history items on theirs. |
 | 6   | Asserted in CI                               | Enter again. The closed state and focus are hard checks, and "collapsed" is a soft one.                                                                                                                              |
 | 7   | Manual                                       | The walk tabs only to the first disclosure. A full traversal is a check of the page's tab order more than of NVDA, and Document 3 §9 already asks for it as a scripted keyboard test of the component.             |
-| 8   | Asserted in CI                               | Table navigation to `AudioTrackList` in Chrome, Enter, then `I` (next list item) twice. The cell name, the open state, and the two history items are checked; in variant B too.                                     |
-| 9   | Asserted in CI                               | Table navigation to `removed_partial` in Chrome, Enter, then `I` twice. "No support in Chrome", the open state, the removal history and the note are checked.                                                       |
-| 10  | Asserted in CI                               | Table navigation to `missing_target` in Opera and `unknown_runtime` in Node.js. Both names are checked. Whether they sound "clearly different" is for transcript review.                                          |
+| 8   | Asserted in CI                               | Table navigation to `AudioTrackList` in Chrome, Enter, then `I` (next list item) twice. The cell name, the open state, and the two history items are soft checks, so the walk goes on if one fails; in variant B too. |
+| 9   | Asserted in CI                               | Table navigation to `removed_partial` in Chrome, Enter, then `I` twice. "No support in Chrome", the open state, the removal history and the note are soft checks.                                                   |
+| 10  | Asserted in CI: the two names                | Table navigation to `missing_target` in Opera and `unknown_runtime` in Node.js. Both names are soft checks. Whether they sound "clearly different", which is the step's real question, is for transcript review. |
 | 11  | Asserted in CI                               | Table navigation to `localName` in Opera. "Supported since Opera 12.1 or earlier" is checked.                                                                                                                       |
 | 12  | Asserted in CI                               | Table navigation to the `from` and `async_iterable` row headers. Both names, with their "(part of …)" text, are checked.                                                                                            |
 | 13  | Performed in CI for transcript review        | Table navigation down the Chrome column from `Array` to `async_iterable` in variant B. The cell names are checked. Whether NVDA announces the ancestor row headers, and whether that helps, is for the owner.      |

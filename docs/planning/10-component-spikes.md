@@ -31,17 +31,20 @@ to ten minutes and is retried once.
 
 The walk shared with VoiceOver and Orca (`screen-reader/walk-table.ts`) gains an optional list of
 extra steps that one reader performs after the shared moves, recorded into the same transcript.
-NVDA uses it for Document 7's steps 2 and 8 to 14. Document 7's section "NVDA in CI" lists, step
+NVDA uses it for Document 7's steps 2 and 8 to 14. Every check in an extra step is soft, so a
+mismatch fails the test but the walk still runs to its end and every step reaches the transcript.
+The walk refuses extra steps whose names repeat, because the soft checks look a step up by name. Document 7's section "NVDA in CI" lists, step
 by step, which are asserted, which are performed for transcript review, and which stay manual.
 
 Two fixes to the shared walk came out of the issue's requirement that the artifact hold a
 transcript for every performed step, on a pass and on a failure. Both also apply to VoiceOver and
 Orca:
 
-1. The transcript was attached as a `body`, which Playwright passes to its reporters but never
-   writes to `test-results/`. The uploaded artifact therefore never held `transcript.json` as a
-   file, and after a pass it held nothing; the transcripts were readable only in the job log. The
-   walk now writes `transcript.json` into the test's output directory and attaches that file.
+1. The transcript was attached as a `body`, which Playwright does not write to `test-results/` as
+   a file. After a pass it reaches only the reporters, so the uploaded artifact held no
+   transcript. After a failure it is inside `trace.zip`, because the configs keep the trace on
+   failure and tracing includes attachments, so reading it meant opening the trace. The walk now
+   writes `transcript.json` into the test's output directory and attaches that file.
 2. Each step was recorded after its page check, so a failed check dropped that step's output from
    the transcript. Each step is now recorded first.
 
@@ -79,16 +82,21 @@ heading, level 1" and "link, Get Started", but nothing about tables, disclosures
 ### Still unverified until CI runs
 
 - **The runner setup.** `@guidepup/setup@0.29.3 setup --ci` and `install nvda` on `windows-2025`.
-  Guidepup's own CI runs the same pair of commands (version 0.29.2) on `windows-2022` and
-  `windows-2025`, which is the strongest evidence available.
-- **pnpm under Git Bash on Windows.** `pnpm/action-setup` 6.1.1 tests `pnpm` under `shell: bash`
-  on `windows-latest` in its own CI, but this repository has not run it on Windows before.
+  The closest evidence is guidepup/guidepup-playwright's `.github/workflows/test-nvda.yml` at
+  commit `b017456b`: lines 18 and 25 to 29 run `@guidepup/setup@0.29.2 setup --ci`, then
+  `install`, then `yarn test:nvda:firefox` with no wrapper, on `windows-2022` and `windows-2025`.
+  We use 0.29.3, one patch release later.
+- **pnpm under Git Bash on Windows.** pnpm/action-setup's `.github/workflows/test.yaml` at the
+  pinned commit `73e46992` runs `pnpm --version` with `shell: bash` (lines 73 and 85) in a matrix
+  that includes `windows-latest` (lines 47 and 50). This repository has not run pnpm on Windows
+  before.
 - **Where NVDA's cursor starts.** After `navigateToWebContent`, the walk tabs up to three times to
   reach the region. Guidepup's helper presses Tab once itself, so focus may already be on the
   introduction's link.
 - **Whether Enter on the summary toggles it under NVDA.** NVDA in browse mode handles Enter
-  itself and performs the item's default action. The hard check on `open` settles this on the
-  first run.
+  itself and performs the item's default action. The shared walk's hard check on `open` settles
+  this on the first run. In steps 8 and 9 the same check is soft, so a disclosure that does not
+  open fails the test without stopping the later steps.
 - **Whether table navigation works from inside an open disclosure's list.** Steps 8 and 9 read the
   history items with `I` and then move on with Control+Alt+Down from inside the list. If NVDA
   does not treat that position as inside the cell, the later cell-name checks fail, and the
@@ -96,8 +104,8 @@ heading, level 1" and "link, Get Started", but nothing about tables, disclosures
 - **Whether `I` reads each history item whole.** A history item with `code` elements may be read
   in more than one phrase. The checks allow for phrases split by the transcript's ` | `
   separator only where they use a pattern (`enable-experimental-web-platform-features.*enabled`).
-- **The time per test.** The NVDA walk has about thirty more captured moves than the others in variant A. The
-  ten-minute test limit and the 45-minute job limit are estimates.
+- **The time per test.** The NVDA walk makes 27 more captured moves than the other readers in
+  variant A, and 13 more in variant B. The ten-minute test limit and the 45-minute job limit are estimates.
 - **Reliability.** Guidepup's own NVDA Firefox example config sets `retries: 5`, which suggests
   NVDA with Firefox flakes on hosted runners. This repository keeps `retries: 1`, as for the other
   readers. A test that passes on its retry is reported as flaky in the list reporter's summary,
