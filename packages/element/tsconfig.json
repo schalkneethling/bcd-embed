@@ -1,4 +1,4 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["*.ts", "screen-reader/**/*.ts"]
+  "include": ["*.ts", "screen-reader/**/*.ts", "spike/**/*.ts"]
 }

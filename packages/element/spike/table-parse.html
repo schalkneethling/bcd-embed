@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike: custom element inside a table</title>
+  </head>
+  <body>
+    <!-- No script: this page only shows what the HTML parser does with the markup. -->
+    <div id="direct-wrapper">
+      <table id="direct-table">
+        <bcd-compat-table id="direct"><p id="direct-child">Fallback</p></bcd-compat-table>
+        <tr id="direct-row">
+          <td>Cell</td>
+        </tr>
+      </table>
+    </div>
+
+    <div id="cell-wrapper">
+      <table id="cell-table">
+        <tr>
+          <td id="cell">
+            <bcd-compat-table id="in-cell"><p>Fallback</p></bcd-compat-table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>

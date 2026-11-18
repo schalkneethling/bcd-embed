@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike: light-DOM render root</title>
+  </head>
+  <body>
+    <bcd-spike-table id="basic" label="first label"
+      ><p id="author-a">Author fallback paragraph</p>
+      <a id="author-b" href="https://developer.mozilla.org/">MDN link</a></bcd-spike-table
+    >
+
+    <bcd-spike-slot id="slotted"><p id="slot-author">Author child</p></bcd-spike-slot>
+
+    <script type="module" src="./light-dom.ts"></script>
+  </body>
+</html>

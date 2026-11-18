@@ -5,12 +5,20 @@
   "type": "module",
   "scripts": {
     "test:orca": "playwright test --config playwright.orca.config.ts",
+    "test:spike": "playwright test --config playwright.spike.config.ts",
     "test:voiceover": "playwright test --config playwright.voiceover.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@guidepup/guidepup": "0.39.0",
     "@guidepup/playwright": "0.21.0",
-    "@playwright/test": "1.65.0"
+    "@lit/task": "1.0.3",
+    "@playwright/test": "1.65.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "lit": "3.3.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "vite": "^8.3.8"
   }
 }
