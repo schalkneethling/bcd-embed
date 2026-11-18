@@ -38,9 +38,9 @@ never appear. The spans have no class in this markup.
 **A cell's accessible name states the whole fact, including the support
 target.** A cell reads "Supported since Chrome 46", not "46". The visible
 glyph and version are `aria-hidden` and `hidden`, and a visually hidden span
-carries the sentence. The name repeats the target because a screen reader announces the
-column header only when the column changes, so a reader moving down a column
-would otherwise hear versions with no browser.
+carries the sentence. The name repeats the target because a screen reader
+announces the column header only when the column changes, so a reader moving
+down a column would otherwise hear versions with no browser.
 
 **A cell gets a disclosure only when it has more to say than its name.** The
 disclosure is a native `<details>`, and its `<summary>` holds the cell's fact
