@@ -43,9 +43,10 @@ export type ExtraStep = {
    */
   check?(): Promise<void>;
   /**
-   * What the screen reader should say, checked softly. Only text that the markup defines, such as
-   * a cell's accessible name, belongs here. Leave it out where the wording is the screen reader's
-   * own and can only be learned from a run: the step is then performed for its transcript alone.
+   * What the screen reader should say, checked softly. Write it from the screen reader's wording
+   * as a transcript recorded it, or from the markup's own text where no transcript exists yet.
+   * Leave it out where the wording can only be learned from a run: the step is then performed for
+   * its transcript alone.
    */
   expected?: string | RegExp;
 };
@@ -61,8 +62,11 @@ const pageUrl = (file: string) =>
  * shared move depends on them. The extra steps' page checks and all checks on what was spoken are
  * soft, so a mismatch still leaves a complete transcript to read. Each step is recorded before its
  * page check, so a failed check still leaves that step's output in the transcript.
- * `readerSpecific` maps a step to a phrase that only this screen reader is expected to say there.
- * `extraSteps` run after the shared walk, in order.
+ * `readerSpecific` maps a step to a phrase that only this screen reader is expected to say there,
+ * checked in addition to the shared checks. `more.sharedWording` instead replaces the shared check
+ * for each step it names, for a screen reader whose real wording differs from the markup's text,
+ * as NVDA's "Node dot js" differs from "Node.js". `more.extraSteps` run after the shared walk, in
+ * order.
  */
 export async function walkTable(
   page: Page,
@@ -71,8 +75,9 @@ export async function walkTable(
   variant: Variant,
   testInfo: TestInfo,
   readerSpecific: Readonly<Record<string, string>>,
-  extraSteps: readonly ExtraStep[] = [],
+  more: { extraSteps?: readonly ExtraStep[]; sharedWording?: Wording } = {},
 ): Promise<void> {
+  const { extraSteps = [], sharedWording = {} } = more;
   // `heard()` finds a step's output by its name, so a repeated name would check the wrong step.
   const extraNames = extraSteps.map(({ step }) => step);
   const repeated = extraNames.filter((name, index) => extraNames.indexOf(name) !== index);
@@ -166,19 +171,26 @@ export async function walkTable(
     const entry = transcript.find((candidate) => candidate.step === step);
     return `${entry?.spoken ?? ""} ${entry?.item ?? ""}`;
   };
-  expect.soft(heard("Tab to the scroll region")).toContain("Browser compatibility");
-  expect
-    .soft(heard("Tab to the fit-content cell in Chrome"))
-    .toContain("Supported since Chrome 46");
-  expect.soft(heard("open the fit-content disclosure")).toMatch(/expanded/i);
-  expect.soft(heard("close the fit-content disclosure")).toMatch(/collapsed/i);
-  expect.soft(heard("move right to Opera")).toContain("No data for Opera");
-  expect.soft(heard("move right to Node.js")).toContain("No data for Node.js");
-  for (const [step, expected] of Object.entries(readerSpecific)) {
-    expect.soft(heard(step), step).toContain(expected);
-  }
-  for (const { step, expected } of extraSteps) {
+  const check = (step: string, expected: string | RegExp) => {
     if (typeof expected === "string") expect.soft(heard(step), step).toContain(expected);
-    else if (expected) expect.soft(heard(step), step).toMatch(expected);
+    else expect.soft(heard(step), step).toMatch(expected);
+  };
+  for (const [step, expected] of Object.entries({ ...sharedChecks, ...sharedWording })) {
+    check(step, expected);
   }
+  for (const [step, expected] of Object.entries(readerSpecific)) check(step, expected);
+  for (const { step, expected } of extraSteps) if (expected) check(step, expected);
 }
+
+/** What a screen reader should say at each named step: a phrase it contains, or a pattern. */
+export type Wording = Readonly<Record<string, string | RegExp>>;
+
+/** The shared walk's soft checks, written from the markup's own text. */
+const sharedChecks: Wording = {
+  "Tab to the scroll region": "Browser compatibility",
+  "Tab to the fit-content cell in Chrome": "Supported since Chrome 46",
+  "open the fit-content disclosure": /expanded/i,
+  "close the fit-content disclosure": /collapsed/i,
+  "move right to Opera": "No data for Opera",
+  "move right to Node.js": "No data for Node.js",
+};
