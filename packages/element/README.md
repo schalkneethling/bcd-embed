@@ -4,14 +4,6 @@ The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architec
 component itself does not exist yet. The workspace currently holds the screen reader tests for
 the Phase 1 static markup in `docs/planning/phase1-markup/`.
 
-## Lit spike (issue #187)
-
-`spike/` holds throwaway elements, pages, and Playwright tests that check the Lit, React, and
-parser behaviours Document 3 relies on. It is not the component and nothing in it ships. The
-findings are in `docs/planning/10-component-spikes.md`. To run it, install the browsers with
-`pnpm exec playwright install chromium firefox webkit` in this workspace, then run
-`pnpm --filter @bcd-embed/element test:spike`. It is not part of `pnpm check`.
-
 ## Screen reader tests
 
 [Guidepup](https://www.guidepup.dev/) drives a real screen reader through Playwright and records
