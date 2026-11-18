@@ -10,9 +10,12 @@ number and subject, and states what it settled, what it did not, and what is sti
 reliably enough to be part of the required `screen-readers` check, and how many of Document 7's
 manual steps can it automate?
 
-**Status.** Written and ready for its first CI run, not yet run. The change was written on macOS,
-where NVDA cannot run, so nothing below about NVDA's behaviour has been observed yet. The five
-consecutive manual runs that the issue requires decide whether NVDA stays in the required check.
+**Status.** NVDA runs on `windows-2025`. Four manual runs on 18 November 2026 completed, and in
+all four NVDA performed every step and gave the same transcript, word for word, on every attempt.
+All four failed, and only on soft checks written in the markup's spelling rather than NVDA's
+("Node.js" where NVDA says "Node dot js"). The checks are now written from NVDA's real wording. The
+five consecutive passing runs that the issue requires have to be run again on that change, so
+NVDA has not yet earned its place in the required check.
 
 ### What the change does
 
@@ -33,8 +36,11 @@ The walk shared with VoiceOver and Orca (`screen-reader/walk-table.ts`) gains an
 extra steps that one reader performs after the shared moves, recorded into the same transcript.
 NVDA uses it for Document 7's steps 2 and 8 to 14. Every check in an extra step is soft, so a
 mismatch fails the test but the walk still runs to its end and every step reaches the transcript.
-The walk refuses extra steps whose names repeat, because the soft checks look a step up by name. Document 7's section "NVDA in CI" lists, step
-by step, which are asserted, which are performed for transcript review, and which stay manual.
+The walk refuses extra steps whose names repeat, because the soft checks look a step up by name.
+The walk also takes `sharedWording`, which replaces the shared checks for a reader whose real
+wording differs from the markup's text, as NVDA's does. Document 7's section "NVDA in CI" lists,
+step by step, which are asserted, which are performed for transcript review, and which stay
+manual.
 
 Two fixes to the shared walk came out of the issue's requirement that the artifact hold a
 transcript for every performed step, on a pass and on a failure. Both also apply to VoiceOver and
@@ -58,58 +64,76 @@ it as a scripted keyboard test of the component.
 
 | Document 7 state                      | Steps                       |
 | ------------------------------------- | --------------------------- |
-| Asserted in CI                        | 1, 3, 5, 6, 8, 9, 10, 11, 12 |
-| Performed in CI for transcript review | 2, 4, 13, 14                |
-| Manual                                | 7                           |
+| Asserted in CI                        | 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14 |
+| Manual                                | 7                                       |
+
+Steps 10, 13 and 14 also ask for a person's judgment ("clearly different", "helps or is noise",
+"any difference"), which the transcript informs but no check can give.
 
 ### How the checks were chosen
 
-Guidepup documents NVDA's API, not NVDA's wording. Its own NVDA example for Firefox
-(`examples/playwright-nvda` in guidepup/guidepup-playwright) shows phrases such as "Guidepup,
-heading, level 1" and "link, Get Started", but nothing about tables, disclosures or states. So:
+Guidepup documents NVDA's API, not NVDA's wording, so the first version checked only text the
+markup defines and left NVDA's own wording unchecked until a run recorded it. The first four runs
+recorded it, and every NVDA step now checks the phrase NVDA actually spoke there, copied from the
+transcripts of run 44354307768 and confirmed against run 44345867416. That includes NVDA's role
+and state words ("button, collapsed", "expanded", "list, with 2 items, bullet"), the table size,
+and the header announcements.
 
-- The soft checks cover only text the markup defines: cell names, row header names, and history
-  items. A wrong cell name means NVDA's cursor is not where the walk thinks it is, or the name is
-  not exposed.
-- NVDA's own wording (its role names, "table with … rows", how it announces a header) carries no
-  check. Those steps are performed so that the first run records the wording, and the checks can
-  be written from it.
-- The shared walk's soft checks for "expanded" and "collapsed" also apply to NVDA. NVDA is
-  expected to use those words, but this is not yet observed.
-- VoiceOver checks that it says "Server and Node.js" on entering the Node.js column. NVDA has no
-  such check, because its wording for column headers is not known yet.
+The checks keep NVDA's spelling of what it speaks, such as "Node dot js", rather than normalising
+punctuation in the test. A user hears that wording, so a change in it should fail the test. Each
+check is a phrase the transcript must contain, so the parts NVDA reads before or after it are not
+checked: on Tab to the region, for example, only the region and table announcement is checked,
+not the reading of every cell that follows.
 
-### Still unverified until CI runs
+### What the first runs showed
 
-- **The runner setup.** `@guidepup/setup@0.29.3 setup --ci` and `install nvda` on `windows-2025`.
-  The closest evidence is guidepup/guidepup-playwright's `.github/workflows/test-nvda.yml` at
-  commit `b017456b`: lines 18 and 25 to 29 run `@guidepup/setup@0.29.2 setup --ci`, then
-  `install`, then `yarn test:nvda:firefox` with no wrapper, on `windows-2022` and `windows-2025`.
-  We use 0.29.3, one patch release later.
-- **pnpm under Git Bash on Windows.** pnpm/action-setup's `.github/workflows/test.yaml` at the
-  pinned commit `73e46992` runs `pnpm --version` with `shell: bash` (lines 73 and 85) in a matrix
-  that includes `windows-latest` (lines 47 and 50). This repository has not run pnpm on Windows
-  before.
-- **Where NVDA's cursor starts.** After `navigateToWebContent`, the walk tabs up to three times to
-  reach the region. Guidepup's helper presses Tab once itself, so focus may already be on the
-  introduction's link.
-- **Whether Enter on the summary toggles it under NVDA.** NVDA in browse mode handles Enter
-  itself and performs the item's default action. The shared walk's hard check on `open` settles
-  this on the first run. In steps 8 and 9 the same check is soft, so a disclosure that does not
-  open fails the test without stopping the later steps.
-- **Whether table navigation works from inside an open disclosure's list.** Steps 8 and 9 read the
-  history items with `I` and then move on with Control+Alt+Down from inside the list. If NVDA
-  does not treat that position as inside the cell, the later cell-name checks fail, and the
-  transcript shows where the cursor went.
-- **Whether `I` reads each history item whole.** A history item with `code` elements may be read
-  in more than one phrase. The checks allow for phrases split by the transcript's ` | `
-  separator only where they use a pattern (`enable-experimental-web-platform-features.*enabled`).
-- **The time per test.** The NVDA walk makes 27 more captured moves than the other readers in
-  variant A, and 13 more in variant B. The ten-minute test limit and the 45-minute job limit are estimates.
-- **Reliability.** Guidepup's own NVDA Firefox example config sets `retries: 5`, which suggests
-  NVDA with Firefox flakes on hosted runners. This repository keeps `retries: 1`, as for the other
-  readers. A test that passes on its retry is reported as flaky in the list reporter's summary,
-  and the issue counts that as a failed run.
+The transcripts were identical in all four runs and on every retry, so the failures were not
+flaky. Three soft checks failed in every run, because they were written in the markup's spelling:
+
+| Check                              | Expected                              | NVDA said                                                      |
+| ---------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
+| "move right to Node.js", A and B   | "No data for Node.js"                 | "Node dot js Server, column 4, No data for Node dot js" (A)    |
+| Step 10, `unknown_runtime`         | "Support unknown in Node.js"          | "Node dot js Server, column 4, Support unknown in Node dot js" |
+| Step 12, `async_iterable` header   | `async_iterable.*\(part of Array\.from\)` | "row 16, async iterable, (part of Array dot from)"         |
+
+The cause is NVDA's default punctuation level. It speaks "." inside a word as "dot", reads an
+underscore as a pause, and splits a camel-case identifier into words: "missing_target" is "missing
+target", "AudioTrackList" is "Audio Track List", and "localName" is "local Name". That is what an
+NVDA user hears, so the expectations follow it.
+
+Every move landed on the cell the walk intended, and every disclosure opened. The other findings,
+which Document 7 records step by step:
+
+- **Column headers.** NVDA announces the column header on every column change, unlike Orca, and
+  includes the platform: "Node dot js Server, column 4" in variant A and "Server Node dot js,
+  column 4" in variant B.
+- **Row headers.** NVDA announces the row header on every row change. In variant B it announces
+  every ancestor row header too: "Array from async iterable, row 8" (step 13).
+- **The region reads the whole table.** On Tab to the region, NVDA announces the region and the
+  table, then reads every header and cell of the table, all 16 rows in variant A, before it
+  stops. That is a long announcement for one tab stop, and a question for the owner rather than
+  a test failure.
+- **A stray "dot".** The flag preference item ends "to, enabled, dot", because the full stop sits
+  after the closing `code` element and NVDA reads it as a separate symbol.
+- **Variant A's row header runs together on a row change.** Moving down to `from` gives
+  "from(part of Array), row 15", without the pause NVDA gives it on a column change ("from, (part
+  of Array)").
+
+### Still unverified
+
+- **Reliability with the corrected checks.** The four runs say NVDA is deterministic, but no run
+  has yet passed, so none has shown a pass without a retry.
+- **Reliability over time.** Guidepup's own NVDA Firefox example config sets `retries: 5`, which
+  suggests NVDA with Firefox flakes on hosted runners, though these four runs did not. This
+  repository keeps `retries: 1`, as for the other readers. A test that passes on its retry is
+  reported as flaky in the list reporter's summary, and the issue counts that as a failed run.
+- **Wording across NVDA releases.** The checks pin NVDA's exact wording, so a new NVDA release
+  installed by `@guidepup/setup` may change it. The transcript then shows the new wording.
+
+Settled by the first runs: the runner setup (`@guidepup/setup@0.29.3 setup --ci` and `install
+nvda`), pnpm under Git Bash on Windows, NVDA's starting position, Enter toggling a summary in
+browse mode, table navigation from inside an open disclosure's list, and `I` reading a history
+item whole. The time limits were generous: the NVDA job took about five minutes.
 
 ### Decision rule
 
@@ -121,10 +145,16 @@ two-day time box, the spike stops here and the owner chooses again. The owner pa
 
 ### Results of the manual runs
 
-| Run | Run ID | Variant A | Variant B | Retried | Notes |
-| --- | ------ | --------- | --------- | ------- | ----- |
-| 1   |        |           |           |         |       |
-| 2   |        |           |           |         |       |
-| 3   |        |           |           |         |       |
-| 4   |        |           |           |         |       |
-| 5   |        |           |           |         |       |
+The first four runs used the checks written before NVDA had run, so they count as the spike's
+first evidence, not as the five consecutive runs. Each test took 40 seconds to a minute on each
+attempt.
+
+| Run | Run ID      | NVDA job | Variant A | Variant B | Retried | Notes |
+| --- | ----------- | -------- | --------- | --------- | ------- | ----- |
+| 1   | 44345867416 | 5 min 2 s | Failed   | Failed    | Yes, failed again | The three wording failures above, on both attempts. VoiceOver and Orca passed. |
+| 2   | 44349309077 | 4 min 58 s | Failed  | Failed    | Yes, failed again | The same failures. VoiceOver and Orca passed. |
+| 3   | 44350926720 | 4 min 46 s | Failed  | Failed    | Yes, failed again | The same failures. VoiceOver was cancelled because no hosted macOS runner picked the job up ("The job was not acquired by Runner of type hosted"), which this change does not affect. |
+| 4   | 44354307768 | 5 min 8 s | Failed   | Failed    | Yes, failed again | The same failures. VoiceOver was cancelled for the same macOS capacity reason. |
+| 5   | 44357655471 |          |           |           |         | Still queued for a macOS runner when this was written. It runs the old checks too. |
+
+The five consecutive runs on the corrected checks are still to be made and recorded here.
