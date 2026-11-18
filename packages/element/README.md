@@ -17,7 +17,9 @@ screen reader, so the two transcripts can be compared step by step.
 
 The tests are not part of `pnpm check`, because the screen reader takes over the machine while
 they run. The Screen readers workflow (`.github/workflows/screen-readers.yml`) runs both on
-pull requests that change this workspace or the markup. It is advisory, not a required check.
+pull requests that change this workspace or the markup. Its `screen-readers` job is a required
+status check: it reports on every pull request and blocks the merge when either screen reader
+fails or is cancelled.
 
 Each test attaches a `transcript.json` and prints it to the job log. The checks on the page
 (which element has focus, whether a disclosure is open) fail the test. The checks on the spoken
@@ -31,10 +33,12 @@ tests inside `xvfb-run dbus-run-session --`.
 The setup tool is not a dependency of this workspace, because it only prepares a machine and
 the tests never import it. Running it with `pnpm dlx` keeps its version pinned in one command.
 
-`@guidepup/guidepup` is pinned to 0.38.0, the version `@guidepup/playwright` 0.21.0 was built
-against. Version 0.40.0 groups the Orca commands by service, and `@guidepup/playwright` 0.21.0
-still looks them up by their old flat names, so moving Orca into the page fails with "Cannot read
-properties of undefined (reading 'service')". Update the two packages together.
+`@guidepup/guidepup` is pinned to 0.39.0, the version in `package.json`. `@guidepup/playwright`
+0.21.0 lists 0.38.0 as its own development dependency and accepts 0.38.0 or later as a peer, so
+0.39.0 satisfies it. Version 0.40.0 groups the Orca commands by service, and
+`@guidepup/playwright` 0.21.0 still looks them up by their old flat names, so moving Orca into the
+page fails with "Cannot read properties of undefined (reading 'service')". Update the two packages
+together.
 
 These tests do not replace the release gate in Document 3 §9, which names NVDA with Firefox and
 VoiceOver with Safari. Playwright's WebKit is not Safari, and Orca is not NVDA.
