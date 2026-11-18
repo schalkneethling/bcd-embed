@@ -30,6 +30,7 @@ dist-ssr
 # AI agent worktrees
 .claude/worktrees/
 
-# Playwright output from the screen reader tests (packages/element/playwright.*.config.ts)
+# Playwright output for packages/element: the screen reader tests write test-results/, and the
+# HTML reporter, which the configs do not use today, would write playwright-report/.
 packages/element/test-results/
 packages/element/playwright-report/
