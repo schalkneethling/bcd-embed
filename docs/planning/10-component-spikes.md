@@ -454,3 +454,436 @@ The first two contradict text in Document 3. The rest add rules it does not stat
 The light-DOM and `static properties` assumptions themselves held: none of the tests found a
 reason to give them up. The `hidden` assumption held for element children, with the gaps in
 findings 3 and 4.
+
+## Issue 188 — Test, build, size, and stylelint tooling
+
+Status: measured locally on 18 November 2026. The numbers that only a GitHub Actions runner can give are
+listed under "To measure in CI" with exact commands, because this spike ran without permission to push a
+branch or start a workflow.
+
+### Summary
+
+- A Chromium Vitest project can sit beside the Node tests in the root config without changing which Node
+  tests run, but only if the Node project excludes the browser test files. Without the exclusion, the Node
+  project also collects the browser file.
+- Installing only Chromium's headless shell (`playwright install --only-shell chromium`) took 17.6 s cold
+  against 44.9 s for `playwright install chromium`, both with Playwright 1.65.1, a saving of about 27 s. The
+  disk use with Playwright 1.65.0 was 222 MB against 584 MB. Vitest's headless Chromium uses the headless
+  shell, so the smaller install is enough for the Vitest project.
+- `size-limit` with `@size-limit/preset-small-lib` exits 1 over the limit and 0 under it. It counts an
+  external `lit` import in the total unless the entry sets `ignore: ["lit"]`.
+- Vite library mode emits a second chunk for a dynamic `import()`.
+- Flattening `@import ... layer()` works with Vite's default CSS pipeline, with `lightningcss`, and with
+  `postcss-import`. In all three the `@property` rule ends up inside its `@layer` block, not at the top
+  level. Chromium, Firefox, and WebKit still register it there. None of them currently registers an
+  `@property` rule that sits in a shadow root, whether in a `<style>` element, inside `@layer`, or in an
+  adopted stylesheet. The CSS specification draft says they should (section 6).
+- At an `available` floor of `2025`, the Baseline linter flags exactly one construct from the test
+  stylesheet: the `@supports selector(:has(*))` block. No documented option silences it, so the block must
+  be removed.
+- The current `check` job on `main` leaves at least 253 s of headroom under its 600 s limit.
+
+### Measurement environment
+
+Local numbers come from one machine, so treat them as upper-bound shapes, not CI predictions.
+
+| Item                  | Value                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Machine               | macOS (Darwin 27.2.0), Apple silicon                                                                         |
+| Load during the runs  | Load average between 18 and 37, because other agents ran builds in parallel. This inflates every duration.  |
+| Node.js               | v26.13.1                                                                                                     |
+| Repository pnpm       | 11.24.0 (from `packageManager`)                                                                              |
+| Lab project pnpm      | 12.9.1 (a scratch project outside the repository has no `packageManager` field)                              |
+| Vitest                | 5.1.0, with `@vitest/browser-playwright` 5.1.0                                                               |
+| Playwright            | 1.65.0 in the repository (`@playwright/test`), 1.65.1 in the scratch project                                 |
+| Chromium / Firefox / WebKit | Chrome for Testing 158.0.8127.18 (Playwright 1.65.0) and 159.0.8154.6 (1.65.1) / Firefox 159.0 / WebKit 27.2 |
+| Vite                  | 8.3.8                                                                                                        |
+| size-limit            | 14.3.0, with `@size-limit/preset-small-lib` 14.3.0, which bundles with rolldown                              |
+| Lit                   | 3.3.3                                                                                                        |
+| Custom Elements Manifest analyzer | `@custom-elements-manifest/analyzer` 0.11.0                                                      |
+| CSS bundlers          | `lightningcss` 1.33.0, `postcss` 8.5.33, `postcss-import` 17.0.1                                             |
+| Stylelint             | 17.16.0, with `stylelint-plugin-use-baseline` 1.4.8                                                          |
+
+Repository measurements ran in the repository worktree. Everything else ran in a scratch project outside the
+repository, so nothing here changes `package.json`, the lockfile, or the shared configuration. The one
+repository experiment (the second Vitest project) was reverted; `git status` was clean afterwards.
+
+### 1. Browser downloads
+
+`playwright install` puts browsers in a per-user cache directory. On Linux this is `~/.cache/ms-playwright`
+unless `PLAYWRIGHT_BROWSERS_PATH` or `XDG_CACHE_HOME` overrides it (from `defaultCacheDirectory()` in
+`playwright-core`; this spike ran on macOS and did not confirm the Linux path, so run `playwright install
+--list` in CI to see it). "Cold" means an empty directory, set with `PLAYWRIGHT_BROWSERS_PATH`.
+"Warm" means the same command run again on a filled directory; it downloads nothing, so it measures process
+start-up. Times are wall-clock (`time`) and include pnpm's own start-up.
+
+| Command                                                                      | Playwright | Cold    | Warm   | Disk   |
+| ---------------------------------------------------------------------------- | ---------- | ------- | ------ | ------ |
+| `playwright install chromium`                                                | 1.65.1     | 44.9 s  | 4.3 s  | 604 MB |
+| `playwright install chromium`                                                | 1.65.0     | 93.7 s  | 6.0 s  | 584 MB |
+| `playwright install chromium firefox webkit`                                 | 1.65.1     | 50.2 s  | 0.5 s  | 1.2 GB |
+| `playwright install --only-shell chromium`                                   | 1.65.0     | 13.8 s  | not run | 222 MB |
+| `playwright install --only-shell chromium`                                   | 1.65.1     | 17.6 s  | not run | not measured |
+
+What the numbers show:
+
+- `playwright install chromium` installs three things: Chrome for Testing, the headless shell, and FFmpeg.
+  The headless shell is the part that headless Vitest runs use. `--only-shell` (listed in
+  `playwright install --help`) skips the full browser.
+- The two cold Chromium rows differ by a factor of two for the same download size, which is network and
+  machine noise. A single cold run says little. CI numbers need several runs.
+- The pinned Playwright version matters. The browser build is tied to the Playwright version: running Vitest
+  against an installed 1.65.1 browser (`chromium_headless_shell-1255`) from the repository's 1.65.0 fails
+  with `browserType.launch: Executable doesn't exist at ...chromium_headless_shell-1254/...`. Always
+  install with the workspace's own Playwright: `pnpm --filter @bcd-embed/element exec playwright install ...`.
+  The existing Screen readers workflow already does this (`.github/workflows/screen-readers.yml`, line 122).
+
+### 2. Browser test runs
+
+Both projects test the same 20-test probe: it mounts a Lit element, then reads its shadow DOM and a computed
+style. The durations below are the tool's own report, followed by wall-clock time in parentheses.
+
+| Run                                                                             | Run 1          | Run 2          | Run 3          |
+| ------------------------------------------------------------------------------- | -------------- | -------------- | -------------- |
+| Vitest browser project, Chromium, 20 tests (scratch project, Vitest 5.1.0)      | 3.21 s (4.5 s) | 0.53 s (1.1 s) | 0.60 s (1.2 s) |
+| Same project inside the repository root config, `vitest run --project browser`  | 3.71 s (6.5 s) | 1.41 s (3.8 s) | 1.15 s (3.5 s) |
+| Playwright Test, 20 tests in three engines (60 test runs), `playwright test`    | 36.6 s (37.7 s) | 38.8 s (42.4 s) | 12.7 s (13.2 s) |
+
+One Playwright Test run per engine, taken straight after those three: Chromium 2.5 s, Firefox 8.2 s,
+WebKit 3.8 s. The spread between the three-engine runs (12.7 s to 38.8 s) comes from the load on the machine.
+The first Vitest run is slower because Vite optimizes dependencies once.
+
+Playwright Test needed a web server for the page, so its config starts `vite --port 5199 --strictPort`
+through `webServer` and sets `use.baseURL`. Vitest browser mode serves the test files itself.
+
+Both tools fail when a test fails. A deliberately failing test exits 1 in each (`vitest run` with the
+browser config, and `playwright test --project=chromium`).
+
+Vitest config keys used, each checked in `vitest/dist/chunks/plugin.d.LRFSN46m.d.ts` (and the provider in
+`@vitest/browser-playwright/dist/index.d.ts`): `test.projects`, a project's `extends`, `test.browser.enabled`,
+`browser.headless`, `browser.provider` set to `playwright()`, and `browser.instances: [{ browser: "chromium" }]`.
+Playwright config keys used, checked in `playwright/types/test.d.ts`: `testDir`, `fullyParallel`, `reporter`,
+`use.baseURL`, `projects`, and `webServer` with `command`, `url`, and `reuseExistingServer`.
+
+### 3. A browser project beside the Node tests
+
+The experiment added `@vitest/browser-playwright@5.1.0` to the root `package.json`, turned the root
+`vitest.config.ts` into two projects (`node` and `browser`, both `extends: true`), and added one browser test
+file, `packages/element/browser-probe/probe.browser.test.ts`. Playwright 1.65.0 already resolved as the peer
+dependency, so no second Playwright copy appeared in the lockfile. The experiment was then reverted.
+
+The two lists are the output of `pnpm exec vitest list --json`, which counts test definitions statically. A
+test defined in a `for` loop counts once. The compared key is the file path plus the full test name.
+
+| Configuration                                                              | Collected tests | Notes                                                                    |
+| -------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| Before: the existing root config                                           | 319             |                                                                          |
+| After, no `exclude` on the Node project                                    | 320 in `node`   | The browser file leaks into `node` (one extra entry). It is not identical. |
+| After, `exclude: [...defaultExclude, ".claude/worktrees/**", "**/*.browser.test.ts"]` on `node` | 319 in `node`, 1 in `browser` | The Node list is identical to the "before" list. |
+
+Executed tests, from `vitest run --project node` and a full `vitest run` with Chromium installed: the Node
+project ran 482 tests, and the full run reported 502 passed, which is 482 plus the 20 browser tests. Some Node
+tests timed out in other runs made while the load average was 18 to 37 (`packages/core/tests/dataset.test.ts`
+in one run; `packages/generator/tests/diff.test.ts` and `apps/worker/tests/worker.test.ts` in another). I infer
+that the machine load caused those timeouts; I did not measure it. Two facts support the inference: the same
+tests passed in the run with both projects, and the original, unmodified config's `pnpm check` also passed
+all 482 Node tests. A repeat run on a quiet machine would confirm it.
+
+Two practical findings:
+
+1. The experiment repeated `.claude/worktrees/**` in the Node project's own `exclude`, because Vitest merges a
+   project's options with the root's and this spike did not test whether the two `exclude` lists combine.
+   Repeat the pattern, or other worktrees' tests may run again.
+2. Naming browser tests `*.browser.test.ts` gives the Node project one pattern to exclude. A browser project
+   that only lists an `include` does not stop the Node project from collecting those files.
+
+### 4. size-limit
+
+Configuration lives in `.size-limit.json`. Each entry's keys (`path`, `limit`, `ignore`, `entry`) are listed in
+`size-limit/index.d.ts` and `size-limit/get-config.js`. `@size-limit/preset-small-lib` 14.3.0 is
+`[...rolldown, ...file]`, so it bundles with rolldown, minifies, and measures with Brotli.
+
+| Case                                                       | Result                                                                 | Exit code |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------- | --------- |
+| Probe element, `limit: "100 B"`                            | 5.34 kB, "Package size limit has exceeded by 5.24 kB"                  | 1         |
+| Probe element, `limit: "50 kB"`                            | 5.34 kB, passes                                                        | 0         |
+
+Command: `node node_modules/size-limit/bin.js` run in a directory with the `.size-limit.json` shown above.
+
+**Is an external dependency counted?** Yes, by default. The probe imports from `lit`:
+
+| Entry                                              | Size (Brotli) | Meaning                                       |
+| -------------------------------------------------- | ------------- | --------------------------------------------- |
+| `src/probe-element.js`, no `ignore`                | 5,341 B       | `lit` is bundled and counted                  |
+| `src/probe-element.js`, `"ignore": ["lit"]`        | 184 B         | `lit` is excluded; only the component counts  |
+
+The same holds for a file that Vite built with `lit` externalized. The built `dist/main.js` still contains
+`import { LitElement as e, html as t } from "lit"`, and size-limit resolves that import and counts it:
+
+| Entry                                                 | Size (Brotli) |
+| ----------------------------------------------------- | ------------- |
+| `dist/main.js`, no `ignore`                           | 5.29 kB       |
+| `dist/main.js`, `"ignore": ["lit"]`                   | 246 B         |
+| `dist/main.js`, `"ignore": ["lit"]`, `"entry": ["main"]` | 199 B      |
+
+The last row shows a second effect. By default size-limit adds every chunk the entry produces, so the
+dynamically imported chunk (section 5) is in the 246 B. `entry: ["main"]` limits the total to the main chunk
+and the chunks it imports statically; the dynamic chunk then drops out (47 B difference).
+Recommendation: budget the component with `"ignore": ["lit"]` and decide separately whether `lit` has its own
+budget.
+
+### 5. Vite library mode and dynamic `import()`
+
+Config (`build.lib` is documented in `vite/dist/node/index.d.ts`, `LibraryOptions`; Vite 8 names the bundler
+option `rolldownOptions`, and `rollupOptions` is a deprecated alias):
+
+```js
+build: {
+  lib: { entry: "src/main.js", formats: ["es"], fileName: "main" },
+  rolldownOptions: { external: ["lit", /^lit\//] },
+}
+```
+
+Command: `pnpm exec vite build <dir>`. Output:
+
+```text
+dist/lazy-BmytB9oe.js  0.07 kB │ gzip: 0.09 kB
+dist/main.js           0.39 kB │ gzip: 0.28 kB
+```
+
+**Library mode emits a second chunk for a dynamic `import()`**, with a content hash in its name. The entry
+refers to it as `import("./lazy-BmytB9oe.js")`. A consumer that copies only `main.js` loses the lazy code.
+If the component must ship as a single file, the dynamic import has to become a static one.
+
+### 6. Flattening `@import ... layer()` into one `base.css`
+
+Input (`base.css`, with `tokens.css` holding an `@property` rule and `:host`, and `table.css` holding a rule
+for `table`):
+
+```css
+@layer tokens, components;
+
+@import "./tokens.css" layer(tokens);
+@import "./table.css" layer(components);
+```
+
+Three tools produce a single flattened file. All three keep the layers and nest the `@property` rule inside
+`@layer tokens`:
+
+| Tool and exact invocation                                                                     | One file? | `@property` at top level? | Notes                                                                                       |
+| --------------------------------------------------------------------------------------------- | --------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| Vite 8.3.8 library mode, default CSS pipeline: `build.lib.cssFileName: "base"`, `build.cssMinify: false`, entry is a JS file that does `import "./base.css"` | Yes, `dist/base.css` | No, inside `@layer tokens` | Keeps `@layer tokens, components;`. Appends a `/*$vite$:1*/` comment. Also emits an empty `entry.js`. |
+| Vite with `css: { transformer: "lightningcss" }`, same other options                          | Yes       | No, inside `@layer tokens` | Drops the `@layer tokens, components;` statement (the block order sets the layer order). Adds `--lightningcss-light` and `--lightningcss-dark` custom properties and a `prefers-color-scheme` media rule around `color-scheme: light dark`. |
+| `lightningcss` 1.33.0, `bundle({ filename })` from `lightningcss`                             | Yes       | No, inside `@layer tokens` | Rewrites `rebeccapurple` as `#639`. Drops the `@layer` order statement.                      |
+| `postcss` 8.5.33 with `postcss-import` 17.0.1, `postcss([postcssImport()]).process(css, { from })` | Yes  | No, inside `@layer tokens` | Keeps `@layer tokens, components;`. Leaves values unchanged.                                |
+
+The recommended tool is Vite's own CSS pipeline with `build.cssMinify: false` set explicitly. It adds no
+dependency, keeps the layer order statement, and leaves values alone. The option matters: in Vite 8.3.8 the
+default of `build.cssMinify` is `'lightningcss'` (`vite/dist/node/index.d.ts`, line 2798, which types it as
+`boolean | "lightningcss" | "esbuild"`). The rows above show what lightningcss does to this input: it drops the
+`@layer` order statement and rewrites values. This spike did not run a build with the default minifier, so the
+exact output of the default is untested; the first row ran with `cssMinify: false`. If minified CSS is wanted
+for the published file, minify it as a separate, measured step. The `lightningcss` transformer also changes
+`color-scheme` handling, which the component may not want.
+
+**Keeping `@property` at the top level.** Import the file that holds the `@property` rules without
+`layer()`. With `@import "./properties.css";` ahead of `@import "./table.css" layer(components);`, both
+`lightningcss` `bundle` and `postcss-import` emit the `@property` rule at the top level and wrap only the table
+rules in `@layer components`.
+
+**Does a browser register an `@property` rule inside `@layer`?** Yes. A page-level check in real browsers
+(`property-probe.mjs`, a `<style>` element, then `getComputedStyle(...).getPropertyValue("--probe")`; a
+registered property reports its `initial-value`, an unregistered one reports an empty string):
+
+| Case                                   | Chromium 159.0.8154.6 | Firefox 159.0 | WebKit 27.2 |
+| -------------------------------------- | --------------------- | ------------- | ----------- |
+| Top level, document stylesheet         | registered            | registered    | registered  |
+| Inside `@layer`, document stylesheet   | registered            | registered    | registered  |
+| Top level, shadow-root `<style>` element | not registered      | not registered | not registered |
+| Inside `@layer`, shadow-root `<style>` element | not registered | not registered | not registered |
+| Top level, shadow-root adopted stylesheet (`new CSSStyleSheet()`, `replaceSync`, `adoptedStyleSheets`) | not registered | not registered | not registered |
+
+All five cases ran in a fresh page each, in `property-probe.mjs`. The adopted-stylesheet case is the mechanism
+Lit's `static styles` uses in browsers that support it, so the last three rows cover how a Lit component would
+ship the rule. This spike did not run Lit itself for this check; the adopted-stylesheet case stands in for it.
+
+**This is current browser behavior, and it contradicts the specification draft.** The CSS Properties and
+Values API editor's draft (https://drafts.css-houdini.org/css-properties-values-api/), section 2.8 "Shadow
+DOM", says registrations "are not scoped to a tree scope", and that registrations in the document or within a
+shadow tree share one global registration map. Its changelog says "Allowed @property in shadow trees". Chromium
+159.0.8154.6, Firefox 159.0, and WebKit 27.2 all ignore the rule in a shadow root today. The advice therefore
+holds only until the engines implement the draft: register `@property` from a document-level stylesheet that
+the component's consumer loads, or call `CSS.registerProperty()` in script, and re-run `property-probe.mjs`
+when upgrading Playwright's browsers.
+
+### 7. Custom Elements Manifest
+
+The invocation that produces a manifest for a class with `static properties`:
+
+```text
+cem analyze --litelement --globs "src/**/*.js" --outdir dist
+```
+
+Run with `@custom-elements-manifest/analyzer` 0.11.0 (`node_modules/.bin/cem`). The flags are listed in
+`src/utils/cli-helpers.js`. The output is `dist/custom-elements.json`.
+
+- With `--litelement`, the manifest lists each `static properties` entry as a field and as an attribute
+  (`label` and `open`), with its type, default, and `reflects: true` where set.
+- Without `--litelement`, the manifest lists `properties` and `styles` themselves as members, only the
+  attribute named in an `@attr` JSDoc tag appears, and `open` is missing.
+- **It rewrites `package.json` by default.** `packagejson` defaults to `true`. The command above added
+  `"customElements": "dist/custom-elements.json"` to the `package.json` in the working directory.
+- To stop that, set `packagejson: false` in `custom-elements-manifest.config.mjs`. A bare `cem analyze` reads
+  that default config file, so the config above (`globs`, `outdir`, `litelement: true`, `packagejson: false`)
+  produces the manifest and leaves `package.json` unchanged. The `--packagejson` flag is a plain boolean and
+  cannot be negated on the command line.
+
+### 8. Baseline linter
+
+Test stylesheet: an `@property` rule, `color: light-dark(black, white)` inside `:host`, a `.row:has(.cell)`
+rule, an `@container (min-width: 20rem)` rule, and an `@supports selector(:has(*))` block around a `:has()`
+rule. The options come from `node_modules/stylelint-plugin-use-baseline/README.md`. Each run:
+`pnpm exec stylelint --config <config> --config-basedir <repo> test.css`, with
+`stylelint-config-standard` plus the plugin rule `[true, { ... }]`. Results are from 18 November 2026 and
+depend on the Baseline data inside the plugin at that date.
+
+| Construct                              | `available: "widely"` (the repository's current setting) | `available: "newly"` | `available: 2025` |
+| -------------------------------------- | -------------------------------------------------------- | -------------------- | ----------------- |
+| `@property`                            | flagged                                                  | passes               | passes            |
+| `light-dark()`                         | flagged                                                  | passes               | passes            |
+| `:has()`                               | passes                                                   | passes               | passes            |
+| `@container`                           | passes                                                   | passes               | passes            |
+| `@supports selector(:has(*))` block    | flagged as unnecessary                                   | flagged as unnecessary | flagged as unnecessary |
+
+Messages, in the same order: `At-rule "@property" is not a widely available baseline feature.`,
+`Function "light-dark" is not a widely available baseline feature.`, and
+`@supports selector(:has(*)) is unnecessary as the feature meets the <level> availability requirement.`
+Exit code was 2 whenever anything was flagged, 0 otherwise.
+
+**At the `2025` floor the only flagged construct is the `@supports` block.** What would silence each flagged
+construct:
+
+| Flagged construct                        | Documented option that silences it (README heading)                                     | Verified |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- | -------- |
+| `@property` at `widely`                  | `ignoreAtRules: ["property"]` (`### ignoreAtRules`), or raise `available` to `"newly"` or `2025` (`### available`) | yes      |
+| `light-dark()` at `widely`               | `ignoreFunctions: ["light-dark"]` (`### ignoreFunctions`), or raise `available`          | yes      |
+| `@supports selector(:has(*))`, any floor | None. The README lists the rule under `## Rule Details` ("Unnecessary `@supports` blocks when all checked features are already available at the configured baseline level") and shows it as a problem under `### true`, but no option turns it off. `ignoreAtRules: ["supports"]`, `ignoreSelectors: ["has"]`, and `ignoreSelectors: ["/^has/"]` were each tried at `2025` and none silenced it. | yes, by trying |
+
+So the `@supports selector(:has(*))` construct **must be avoided**: remove the block and use `:has()` directly,
+because `:has()` meets the floor. If a fallback block is ever required, a Stylelint inline comment,
+`/* stylelint-disable-next-line plugin/use-baseline */`, silenced the error in a test run. That comes from
+Stylelint itself, not from the plugin's options, and it would need a decision from the owner.
+
+`ignoreUnits` was not needed for this stylesheet. A separate check showed `cqw` and `svh` pass at both
+`"widely"` and `2025`; at `available: 2022` the `cqw` unit is flagged and `ignoreUnits: ["cqw", "svh"]`
+silences it.
+
+Policy note: `.stylelintrc.json` is managed by Calavera. Changing `available` or adding `ignoreAtRules` and
+`ignoreFunctions` is a shared-policy change, so it belongs in the Calavera recipe (`calavera.config.json`) and
+not in a hand edit. This spike changed none of the managed files.
+
+### 9. Headroom in the `check` job
+
+Durations of the `check` job (job `started_at` to `completed_at`, read with `gh api
+repos/schalkneethling/bcd-embed/actions/runs/<id>/jobs`) for the three most recent CI runs on `main`. The job's
+limit is `timeout-minutes: 10`, which is 600 s.
+
+| Run (push to `main`)                                                                          | Commit    | Job duration | Headroom |
+| --------------------------------------------------------------------------------------------- | --------- | ------------ | -------- |
+| [44178910043](https://github.com/schalkneethling/bcd-embed/actions/runs/44178910043)          | `33eed21` | 347 s        | 253 s    |
+| [44176076635](https://github.com/schalkneethling/bcd-embed/actions/runs/44176076635)          | `fce9231` | 309 s        | 291 s    |
+| [44166238446](https://github.com/schalkneethling/bcd-embed/actions/runs/44166238446)          | `40ed3ec` | 228 s        | 372 s    |
+
+The smallest headroom is 253 s, about 4 minutes 13 seconds. The time goes mostly to three steps, in the
+slowest run: the core mutation gate 137 s, "Validate generated artifacts at full BCD volume" 95 s, and
+`pnpm check` 81 s. Install steps total roughly 30 s. The three runs span 228 s to 347 s and were started
+within about 72 minutes of each other (20:09 to 21:21 UTC on 17 November 2026). Three samples show a range, not a trend.
+
+### 10. Recommendation: does the Chromium Vitest project join `pnpm check`?
+
+**Yes, provisional until the CI numbers exist.** A browser test is the only way to check shadow DOM and custom
+element behavior that Node cannot run, and the local numbers are small next to the 253 s of headroom. But the
+arithmetic below lacks the costs that only an `ubuntu-latest` runner shows, so the owner should confirm the
+recommendation once the "To measure in CI" table is filled in.
+
+What the local measurements say, to add to the 253 s of headroom (the smallest of the three runs):
+
+- Browser install: `--only-shell` took 17.6 s cold and `playwright install chromium` took 44.9 s cold, both
+  with Playwright 1.65.1 on the same machine, so the shell-only install saves about 27 s. The other pair
+  (13.8 s and 93.7 s, Playwright 1.65.0) differs by far more than the first, and the 93.7 s run is the noisiest
+  of the set, so this document does not use it for the saving. A repeat install into a filled directory took
+  4 to 6 s, which is mostly process start-up.
+- The 20-test Vitest browser run: 0.5 s to 3.7 s as Vitest reports it, 1.1 s to 6.5 s wall-clock. A real suite
+  will be larger, and the time scales with test count and page weight, not with the install.
+- Added together, a cold shell-only install and the slowest 20-test run came to about 25 s locally. That is
+  small against 253 s, but it is a local number from a loaded machine.
+
+Costs not yet in this arithmetic, all specific to the `ubuntu-latest` runner:
+
+- The system packages that `playwright install --with-deps` installs. The flag is in `playwright install
+  --help`; the packages it installs are not listed there, and the Screen readers workflow already passes it.
+- Restoring and saving an `actions/cache` entry for the browser directory, which costs time on both a hit and a
+  miss.
+- The start-up of the browser project inside `vitest run`: launching the browser and Vite's dependency
+  optimization. The first local run was 3.7 s against 1.2 s for later runs.
+
+The conditions:
+
+1. Install only the headless shell. With the pinning in condition 4, the command is `pnpm exec playwright
+   install --only-shell chromium` from the repository root. This spike measured `--only-shell` only through
+   `pnpm --filter @bcd-embed/element exec playwright install --only-shell chromium` (the workspace that owns
+   Playwright today), so run the root form once before relying on it. It also saves about 360 MB of disk
+   (584 MB against 222 MB, Playwright 1.65.0).
+2. Install it before `pnpm check` in the CI workflow, and in the setup steps of `AGENTS.md`, because
+   `pnpm check` runs `vitest run` and the browser project fails without the browser. A contributor without it
+   gets a launch error, so the error message must lead to that command.
+3. Keep the Node project's `exclude` for `**/*.browser.test.ts` (section 3), and keep the browser file naming
+   rule, so the Node test list stays identical.
+4. Own the Playwright version explicitly. `@vitest/browser-playwright` declares `playwright` as a peer
+   dependency (`playwright: '*'` in `pnpm-lock.yaml` after the experiment), and `pnpm-workspace.yaml` sets
+   `strictPeerDependencies: true`. In the experiment the peer resolved to the `playwright` 1.65.0 that
+   `@playwright/test` in `packages/element` already pulls in, so it worked by accident of the existing tree.
+   Recommended: the root `package.json` owns the browser project, because the root `vitest.config.ts`
+   declares it, so add `@vitest/browser-playwright` and `playwright` there, with `playwright` pinned to the
+   same exact version as `@playwright/test` in `packages/element` (1.65.0 today). Update the three together,
+   because a browser build is tied to the Playwright version (section 1). With that in place, the install
+   command needs no `--filter`, because the root owns the `playwright` binary. If the owner would rather keep
+   the browser project in `packages/element`, put both packages there and keep
+   `--filter @bcd-embed/element`. This spike did not test either arrangement end to end.
+
+Firefox and WebKit should not join `pnpm check`. Three engines took 12.7 s to 38.8 s for 20 tests locally and
+a 1.2 GB install. Run them in a separate advisory workflow, as the Screen readers workflow does, and revisit
+once CI numbers exist.
+
+### To measure in CI
+
+These values need an `ubuntu-latest` runner, and the issue asks for each to cite its workflow run. Run them in
+a throwaway workflow on the spike branch, three runs each, and record the run URLs here. None of these was
+run in CI by this spike.
+
+| What                                          | Exact command (from the repository root, after `pnpm install --frozen-lockfile`)                          |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Chromium alone, no cache                      | `time pnpm --filter @bcd-embed/element exec playwright install chromium`                                  |
+| Headless shell alone, no cache                | `time pnpm --filter @bcd-embed/element exec playwright install --only-shell chromium`                     |
+| Chromium, Firefox, WebKit, no cache           | `time pnpm --filter @bcd-embed/element exec playwright install chromium firefox webkit`                   |
+| Each of the above with a cache                | Cache the directory that `playwright install --list` prints, keyed on the Playwright version, then rerun the same command. Record the time of a cache hit and of the install step that follows it. |
+| 20-test Vitest browser project in Chromium    | `time pnpm exec vitest run --project browser`                                                             |
+| 20-test Playwright Test run in three engines  | `time pnpm --filter @bcd-embed/element exec playwright test` with a config that lists the three projects |
+| Full `pnpm check` with the browser project    | `time pnpm check`                                                                                         |
+
+On Linux, `playwright install --with-deps` also installs system dependencies for the browsers (`playwright
+install --help` says "install system dependencies for browsers" and does not list the packages). The Screen
+readers workflow already uses it, so include it in one variant, record the extra time, and read the installed
+packages from the job log.
+
+Also record, in the same throwaway workflow, an `actions/cache` restore on a hit and a save on a miss for the
+browser directory, and the first and later `vitest run --project browser` times, because those are the costs
+the section 10 arithmetic is missing.
+
+### Open items for the owner
+
+- The CI numbers above.
+- Whether to change the Baseline `available` floor or add `ignoreAtRules` and `ignoreFunctions`. That is a
+  Calavera recipe change.
+- Whether size-limit budgets the component with or without `lit` (section 4).
+- Whether the component ships as one file, which rules out the dynamic `import()` (section 5).
