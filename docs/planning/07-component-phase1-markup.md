@@ -102,13 +102,69 @@ it differs from the expectation.
 ## Automated runs
 
 `packages/element` runs a shortened form of this script with real screen
-readers through Guidepup: VoiceOver in Playwright's WebKit on macOS, and Orca
-in Playwright's Firefox on Linux. Each run records what was spoken at every
-step as a transcript (`packages/element/README.md`).
+readers through Guidepup: VoiceOver in Playwright's WebKit on macOS, Orca in
+Playwright's Firefox on Linux, and NVDA in Playwright's Firefox on Windows
+Server 2025. Each run records what was spoken at every step as a transcript
+(`packages/element/README.md`).
 
-The automated runs cover steps 3 to 7 and answer question 1 below. They do not
-replace the manual pass, because Playwright's WebKit is not Safari and Orca is
-not NVDA.
+The walk that all three readers share performs step 1, steps 3, 5 and 6, and
+parts of steps 4 and 7. Step 4 is performed down the Node.js column for three
+rows rather than down the Chrome column for five, and step 7 stops at the
+first disclosure rather than tabbing through the whole table. The shared walk
+answers question 1 below. It does not replace the manual pass with VoiceOver,
+because Playwright's WebKit is not Safari.
+
+### NVDA in CI
+
+The owner has no Windows machine, so NVDA's part of each pass is signed off
+by reading the transcripts from CI (the artifact `screen-reader-results-nvda`)
+rather than by a person at the keyboard. The NVDA test therefore performs as
+many steps as Guidepup's NVDA commands allow. Each step below is in one of
+three states:
+
+- **Asserted in CI.** The test fails if the page is in the wrong state, or if
+  NVDA does not speak the phrase it spoke at that step in the first CI runs.
+  Where only part of the step is asserted, the state names that part. The
+  shared walk's page checks are hard and stop the test; every other check is
+  soft, so the walk still runs to its end.
+- **Performed in CI for transcript review.** NVDA performs the step and its
+  output lands in the transcript, but nothing checks it.
+- **Manual.** The test does not perform the step, for the reason given.
+
+The phrases are NVDA's own wording, copied from the transcripts of runs
+44345867416 to 44354307768, which were identical in every run. Where a step
+also asks for a person's judgment, the transcript informs it but no check can
+give it.
+
+**NVDA speaks punctuation in names.** At its default punctuation level NVDA
+reads "Node.js" as "Node dot js", reads an underscore as a pause
+("missing_target" is "missing target"), and splits camel-case identifiers
+("AudioTrackList" is "Audio Track List", "localName" is "local Name"). So an
+NVDA user hears "No data for Node dot js" in every Node.js cell, and hears
+`async_iterable` and `async iterable` alike. The checks keep this wording,
+because it is what a user hears.
+
+| #   | NVDA state                                   | How the test performs it, and what it checks                                                                                                                                                                         |
+| --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Asserted in CI: focus, and the opening announcement | Tab until the region has focus (a hard check). NVDA says "Browser compatibility: fixture dot adversarial-v 1, region", then the table's caption and "with 16 rows and 4 columns" (8 rows in variant B). It then reads every header and cell of the table, which is not checked. |
+| 2   | Asserted in CI                               | Control+Home, then `T` (next table), at the end of the walk. NVDA gives the same region, table and caption announcement as in step 1, and stops there.                                                              |
+| 3   | Asserted in CI                               | Table navigation (Control+Alt+Right) along `fit-content`. Each move announces the column header with its platform: "Opera Desktop, column 3, No data for Opera", then "Node dot js Server, column 4, No data for Node dot js". |
+| 4   | Asserted in CI: in other columns             | Not as written. The shared walk moves down the Node.js column for three rows, and steps 8 to 13 move down the Chrome column in shorter runs. Each move announces the row header, then the cell: "abort, row 4, No data for Node dot js". |
+| 5   | Asserted in CI: open state, focus, "expanded" | Enter on the `fit-content` summary. The open state and focus are hard checks, and "expanded" is a soft one. Reaching the three history items is not performed on this cell, so that part is not asserted; steps 8 and 9 read history items on theirs. |
+| 6   | Asserted in CI                               | Enter again. The closed state and focus are hard checks, and "collapsed" is a soft one.                                                                                                                              |
+| 7   | Manual                                       | The walk tabs only to the first disclosure. A full traversal is a check of the page's tab order more than of NVDA, and Document 3 §9 already asks for it as a scripted keyboard test of the component.             |
+| 8   | Asserted in CI                               | Table navigation to `AudioTrackList` in Chrome, Enter, then `I` (next list item) twice. The cell ("button, collapsed, , Supported since Chrome 37 behind a flag. Flag details for Audio Track List in Chrome"), the open state, and both history items are checked, in both variants. The preference item ends "to, enabled, dot", because NVDA reads the full stop after the closing `code` element as a symbol. |
+| 9   | Asserted in CI                               | Table navigation to `removed_partial` in Chrome, Enter, then `I` twice. "No support in Chrome" comes first, then "History and notes for removed partial in Chrome", the removal history and the note.               |
+| 10  | Asserted in CI: what NVDA says               | "missing target, row 9, No data for Opera" and "Node dot js Server, column 4, Support unknown in Node dot js". Whether they sound "clearly different" is the owner's judgment.                                      |
+| 11  | Asserted in CI                               | Table navigation to `localName` in Opera: "Opera Desktop, column 3, Supported since Opera 12.1 or earlier".                                                                                                         |
+| 12  | Asserted in CI                               | Table navigation to the row headers: "Feature, column 1, from, (part of Array)", then "row 16, async iterable, (part of Array dot from)". On a row change, NVDA runs the parts together: "from(part of Array), row 15". |
+| 13  | Asserted in CI: what NVDA says               | Variant B, down the Chrome column. NVDA announces every ancestor row header: "Array from, row 7, Supported since Chrome 45", then "Array from async iterable, row 8, Supported since Chrome 121". Whether that helps or is noise is the owner's judgment. |
+| 14  | Asserted in CI: what NVDA says               | Variant B's moves along `fit-content`. NVDA names the platform first, in the order of the cell's `headers` attribute: "Desktop Opera, column 3" and "Server Node dot js, column 4", where variant A says "Opera Desktop" and "Node dot js Server". |
+
+On Tab to the region, NVDA reads the whole table, all 16 rows in variant A,
+before it stops. That is a long announcement for one tab stop, and a question
+for the manual pass. The spike's findings, including what is still unverified,
+are in `10-component-spikes.md`.
 
 ### First automated results
 

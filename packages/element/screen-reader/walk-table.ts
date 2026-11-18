@@ -1,10 +1,12 @@
-// The Phase 1 walk through a compatibility table, shared by the VoiceOver and Orca tests. It
-// performs the same moves with either screen reader and records what was spoken after each one,
-// so the two transcripts can be compared step by step (docs/planning/07-component-phase1-markup.md).
+// The Phase 1 walk through a compatibility table, shared by the VoiceOver, Orca and NVDA tests.
+// It performs the same moves with each screen reader and records what was spoken after each one,
+// so the transcripts can be compared step by step (docs/planning/07-component-phase1-markup.md).
+import { writeFile } from "node:fs/promises";
+
 import type { Page, TestInfo } from "@playwright/test";
 import { expect } from "@playwright/test";
 
-/** The part of a screen reader that the walk uses. VoiceOver and Orca both provide it. */
+/** The part of a screen reader that the walk uses. VoiceOver, Orca and NVDA all provide it. */
 export type Reader = {
   navigateToWebContent(): Promise<void>;
   press(key: string, options?: { capture: true }): Promise<void>;
@@ -26,16 +28,45 @@ export const variants: readonly Variant[] = [
   { name: "variant B (headers and id)", file: "headers-id.html" },
 ];
 
+/**
+ * A step that one screen reader performs after the shared walk, so that what it says lands in the
+ * same transcript. Step names must be unique within a walk, because the soft checks find a step's
+ * output by its name.
+ */
+export type ExtraStep = {
+  step: string;
+  perform(): Promise<void>;
+  /**
+   * A check on the page, made after the step is recorded. It must use `expect.soft`, so that a
+   * mismatch fails the test but the remaining steps still run and reach the transcript. It never
+   * checks what was spoken.
+   */
+  check?(): Promise<void>;
+  /**
+   * What the screen reader should say, checked softly. Write it from the screen reader's wording
+   * as a transcript recorded it, or from the markup's own text where no transcript exists yet.
+   * Leave it out where the wording can only be learned from a run: the step is then performed for
+   * its transcript alone.
+   */
+  expected?: string | RegExp;
+};
+
 type Step = { step: string; spoken: string; item: string };
 
 const pageUrl = (file: string) =>
   new URL(`../../../docs/planning/phase1-markup/${file}`, import.meta.url).href;
 
 /**
- * Walks the table and attaches the transcript to the test. The checks on the page (which element
- * has focus, whether the disclosure is open) are hard failures. The checks on what was spoken are
- * soft, so a wording difference still leaves a complete transcript to read. `readerSpecific`
- * maps a step to a phrase that only this screen reader is expected to say there.
+ * Walks the table and attaches the transcript to the test. The shared walk's checks on the page
+ * (which element has focus, whether the disclosure is open) are hard failures, because every later
+ * shared move depends on them. The extra steps' page checks and all checks on what was spoken are
+ * soft, so a mismatch still leaves a complete transcript to read. Each step is recorded before its
+ * page check, so a failed check still leaves that step's output in the transcript.
+ * `readerSpecific` maps a step to a phrase that only this screen reader is expected to say there,
+ * checked in addition to the shared checks. `more.sharedWording` instead replaces the shared check
+ * for each step it names, for a screen reader whose real wording differs from the markup's text,
+ * as NVDA's "Node dot js" differs from "Node.js". `more.extraSteps` run after the shared walk, in
+ * order.
  */
 export async function walkTable(
   page: Page,
@@ -44,7 +75,14 @@ export async function walkTable(
   variant: Variant,
   testInfo: TestInfo,
   readerSpecific: Readonly<Record<string, string>>,
+  more: { extraSteps?: readonly ExtraStep[]; sharedWording?: Wording } = {},
 ): Promise<void> {
+  const { extraSteps = [], sharedWording = {} } = more;
+  // `heard()` finds a step's output by its name, so a repeated name would check the wrong step.
+  const extraNames = extraSteps.map(({ step }) => step);
+  const repeated = extraNames.filter((name, index) => extraNames.indexOf(name) !== index);
+  if (repeated.length > 0) throw new Error(`Extra step names repeat: ${repeated.join(", ")}`);
+
   const transcript: Step[] = [];
   const record = async (step: string) => {
     // Everything spoken since the last recorded step. Orca echoes the key first ("tab"), so the
@@ -76,24 +114,24 @@ export async function walkTable(
       if (await region.evaluate((element) => element === document.activeElement)) break;
       await reader.clearSpokenPhraseLog();
     }
-    await expect(region).toBeFocused();
     await record("Tab to the scroll region");
+    await expect(region).toBeFocused();
 
     // Every later move is made with the keyboard or the screen reader, never by the page: in
     // WebKit, VoiceOver's cursor does not follow a focus change that a script makes.
     await press("Tab");
-    await expect(firstSummary).toBeFocused();
     await record("Tab to the fit-content cell in Chrome");
+    await expect(firstSummary).toBeFocused();
 
     await press("Enter");
+    await record("open the fit-content disclosure");
     await expect(firstDetails).toHaveJSProperty("open", true);
     await expect(firstSummary).toBeFocused();
-    await record("open the fit-content disclosure");
 
     await press("Enter");
+    await record("close the fit-content disclosure");
     await expect(firstDetails).toHaveJSProperty("open", false);
     await expect(firstSummary).toBeFocused();
-    await record("close the fit-content disclosure");
 
     await moves.right();
     await record("move right to Opera");
@@ -103,28 +141,56 @@ export async function walkTable(
       await moves.down();
       await record(`move down the Node.js column to row ${row}`);
     }
+
+    for (const extra of extraSteps) {
+      await extra.perform();
+      await record(extra.step);
+      await extra.check?.();
+    }
   } finally {
-    await testInfo.attach("transcript.json", {
-      body: JSON.stringify(transcript, null, 2),
-      contentType: "application/json",
-    });
-    // Printed as well, so the transcript is in the job log without downloading the artifact.
-    console.log(`Transcript, ${variant.name}:\n${JSON.stringify(transcript, null, 2)}`);
+    const json = JSON.stringify(transcript, null, 2);
+    // Printed first, so the transcript is in the job log even if writing the file fails.
+    console.log(`Transcript, ${variant.name}:\n${json}`);
+    // Written to the test's output directory, which the workflow uploads as an artifact on a pass
+    // and on a failure. An attachment given as a `body` is not written there as a file: after a
+    // pass it reaches only the reporters, and after a failure it is only inside `trace.zip`.
+    try {
+      const transcriptPath = testInfo.outputPath("transcript.json");
+      await writeFile(transcriptPath, json);
+      await testInfo.attach("transcript.json", {
+        path: transcriptPath,
+        contentType: "application/json",
+      });
+    } catch (error) {
+      // Logged rather than thrown, so a failed write never hides the walk's own error.
+      console.error(`Could not save the transcript for ${variant.name}:`, error);
+    }
   }
 
   const heard = (step: string) => {
     const entry = transcript.find((candidate) => candidate.step === step);
     return `${entry?.spoken ?? ""} ${entry?.item ?? ""}`;
   };
-  expect.soft(heard("Tab to the scroll region")).toContain("Browser compatibility");
-  expect
-    .soft(heard("Tab to the fit-content cell in Chrome"))
-    .toContain("Supported since Chrome 46");
-  expect.soft(heard("open the fit-content disclosure")).toMatch(/expanded/i);
-  expect.soft(heard("close the fit-content disclosure")).toMatch(/collapsed/i);
-  expect.soft(heard("move right to Opera")).toContain("No data for Opera");
-  expect.soft(heard("move right to Node.js")).toContain("No data for Node.js");
-  for (const [step, expected] of Object.entries(readerSpecific)) {
-    expect.soft(heard(step), step).toContain(expected);
+  const check = (step: string, expected: string | RegExp) => {
+    if (typeof expected === "string") expect.soft(heard(step), step).toContain(expected);
+    else expect.soft(heard(step), step).toMatch(expected);
+  };
+  for (const [step, expected] of Object.entries({ ...sharedChecks, ...sharedWording })) {
+    check(step, expected);
   }
+  for (const [step, expected] of Object.entries(readerSpecific)) check(step, expected);
+  for (const { step, expected } of extraSteps) if (expected) check(step, expected);
 }
+
+/** What a screen reader should say at each named step: a phrase it contains, or a pattern. */
+export type Wording = Readonly<Record<string, string | RegExp>>;
+
+/** The shared walk's soft checks, written from the markup's own text. */
+const sharedChecks: Wording = {
+  "Tab to the scroll region": "Browser compatibility",
+  "Tab to the fit-content cell in Chrome": "Supported since Chrome 46",
+  "open the fit-content disclosure": /expanded/i,
+  "close the fit-content disclosure": /collapsed/i,
+  "move right to Opera": "No data for Opera",
+  "move right to Node.js": "No data for Node.js",
+};
