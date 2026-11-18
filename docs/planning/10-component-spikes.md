@@ -13,9 +13,9 @@ manual steps can it automate?
 **Status.** NVDA runs on `windows-2025`. Four manual runs on 18 November 2026 completed, and in
 all four NVDA performed every step and gave the same transcript, word for word, on every attempt.
 All four failed, and only on soft checks written in the markup's spelling rather than NVDA's
-("Node.js" where NVDA says "Node dot js"). The checks are now written from NVDA's real wording. The
-five consecutive passing runs that the issue requires have to be run again on that change, so
-NVDA has not yet earned its place in the required check.
+("Node.js" where NVDA says "Node dot js"). The checks are now written from NVDA's real wording. On that change (commit `b623cf1`), five
+consecutive manual runs passed on 18 November 2026 with no retry, which meets the issue's
+condition for NVDA joining the required `screen-readers` check.
 
 ### What the change does
 
@@ -155,6 +155,16 @@ attempt.
 | 2   | 44349309077 | 4 min 58 s | Failed  | Failed    | Yes, failed again | The same failures. VoiceOver and Orca passed. |
 | 3   | 44350926720 | 4 min 46 s | Failed  | Failed    | Yes, failed again | The same failures. VoiceOver was cancelled because no hosted macOS runner picked the job up ("The job was not acquired by Runner of type hosted"), which this change does not affect. |
 | 4   | 44354307768 | 5 min 8 s | Failed   | Failed    | Yes, failed again | The same failures. VoiceOver was cancelled for the same macOS capacity reason. |
-| 5   | 44357655471 |          |           |           |         | Still queued for a macOS runner when this was written. It runs the old checks too. |
+| 5   | 44357655471 | not recorded | Failed | Failed  | Not recorded | Ran the old checks after a long wait for a macOS runner; NVDA failed as in runs 1 to 4, and VoiceOver was cancelled again for macOS capacity. |
 
-The five consecutive runs on the corrected checks are still to be made and recorded here.
+The five consecutive runs on the corrected checks, at commit `b623cf1`, all passed with no retry.
+Each run's list reporter printed "2 passed (1.7m)" for NVDA, with no "flaky" count and no
+"retry #1" line, and VoiceOver, Orca and the required `screen-readers` job also passed.
+
+| Run | Run ID      | NVDA job  | Variant A | Variant B | Retried | Notes |
+| --- | ----------- | --------- | --------- | --------- | ------- | ----- |
+| 1   | 44369145097 | 2 min 59 s | Passed   | Passed    | No      | All screen reader jobs passed. |
+| 2   | 44370147131 | 2 min 48 s | Passed   | Passed    | No      | All screen reader jobs passed. |
+| 3   | 44373329846 | 2 min 59 s | Passed   | Passed    | No      | All screen reader jobs passed. |
+| 4   | 44377257673 | 3 min 1 s  | Passed   | Passed    | No      | All screen reader jobs passed. |
+| 5   | 44378316134 | 2 min 50 s | Passed   | Passed    | No      | All screen reader jobs passed. |
