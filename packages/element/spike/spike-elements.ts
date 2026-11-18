@@ -100,6 +100,14 @@ export class SpikeFieldTable extends LightDomElement {
 // element is defined. A subclass, because one constructor cannot be registered under two names.
 export class SpikeLateTable extends SpikeTable {}
 
+// Defined before the parser reaches it by early-parse.html, so the parser creates an already
+// upgraded element and connects it before its children are parsed.
+export class SpikeEarlyTable extends SpikeTable {}
+
+export function defineSpikeEarlyTable(): void {
+  customElements.define("bcd-spike-early-table", SpikeEarlyTable);
+}
+
 export function defineSpikeTable(): void {
   customElements.define("bcd-spike-table", SpikeTable);
 }

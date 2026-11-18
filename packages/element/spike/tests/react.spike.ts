@@ -17,6 +17,7 @@ type ReactSpike = {
   renderData: (data: unknown) => void;
   renderLate: (data: unknown, viaRef: boolean) => void;
   defineLate: () => void;
+  renderText: (text: string, data: unknown) => void;
 };
 
 // `window.reactSpike` is declared in react-page.ts for the page; the test process sees it only
@@ -229,5 +230,81 @@ test("a ref callback sets `data` as a property even when the element is defined 
   });
 
   expect(result).toEqual({ sameObject: true, hasDataAttribute: false, renderedType: "object" });
+  expect(pageErrors).toEqual([]);
+});
+
+// Review item M4: React updates a single string child through `setTextContent`
+// (react-dom-client.development.js, lines 2834–2847), which assigns `textContent` when the
+// element has more than one child node.
+test("React changing a string child of the element", async ({ page, pageErrors }) => {
+  const result = await page.evaluate(async () => {
+    const { reactSpike } = window as unknown as SpikeWindow;
+    const snapshot = () => {
+      const host = document.getElementById("react-text");
+      return {
+        childNodes: host
+          ? [...host.childNodes].map((node) =>
+              node instanceof Element && node.hasAttribute("data-render-container")
+                ? "render-container"
+                : `#text ${node.textContent}`,
+            )
+          : null,
+        renderedTypeInPage: host?.querySelector("[data-rendered-data-type]")?.textContent ?? null,
+      };
+    };
+
+    // 1. A text-only fallback, no data yet.
+    reactSpike.renderText("Loading…", undefined);
+    const host = document.getElementById("react-text") as SpikeTableShape;
+    await host.updateComplete;
+    // A handle on the container, to see where it goes.
+    const container = host.querySelector(":scope > [data-render-container]") as HTMLElement;
+    const initial = snapshot();
+
+    // 2. Data arrives with the same text. The element hides element children only.
+    const data = { contract: "spike" };
+    reactSpike.renderText("Loading…", data);
+    await host.updateComplete;
+    const afterData = snapshot();
+
+    // 3. React changes the text.
+    reactSpike.renderText("Loaded", data);
+    await host.updateComplete;
+    const afterTextChange = snapshot();
+
+    // 4. A later property change: does Lit's output reach the page?
+    host.data = ["spike-2"];
+    await host.updateComplete;
+    return {
+      initial,
+      afterData,
+      afterTextChange,
+      afterLaterUpdate: snapshot(),
+      containerConnected: container.isConnected,
+      detachedContainerRendered:
+        container.querySelector("[data-rendered-data-type]")?.textContent ?? null,
+    };
+  });
+
+  test.info().annotations.push({ type: "observed", description: JSON.stringify(result) });
+
+  expect(result.initial.childNodes).toEqual(["#text Loading…", "render-container"]);
+  // A text node cannot carry `hidden`, so the text fallback stays visible next to the table.
+  expect(result.afterData).toEqual({
+    childNodes: ["#text Loading…", "render-container"],
+    renderedTypeInPage: "object",
+  });
+  // React's text update replaces every child, the render container included.
+  expect(result.afterTextChange).toEqual({
+    childNodes: ["#text Loaded"],
+    renderedTypeInPage: null,
+  });
+  // Lit keeps rendering into the detached container, silently: nothing reaches the page.
+  expect(result.afterLaterUpdate).toEqual({
+    childNodes: ["#text Loaded"],
+    renderedTypeInPage: null,
+  });
+  expect(result.containerConnected).toBe(false);
+  expect(result.detachedContainerRendered).toBe("object");
   expect(pageErrors).toEqual([]);
 });

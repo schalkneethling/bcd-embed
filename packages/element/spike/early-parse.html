@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike: element defined before the parser reaches it</title>
+    <!-- A classic, parser-blocking script built by vite.early.config.ts. It defines the element
+         before the parser reaches the markup below. -->
+    <script src="/early-define.js"></script>
+  </head>
+  <body>
+    <!-- Records whether the definition existed when the parser got here. The test fails if not,
+         because the page would then test upgrade-after-parse again. -->
+    <script>
+      window.definedBeforeParse = customElements.get("bcd-spike-early-table") !== undefined;
+    </script>
+    <bcd-spike-early-table id="early" label="early label"
+      ><p id="early-a">Author fallback paragraph</p>
+      <a id="early-b" href="https://developer.mozilla.org/">MDN link</a></bcd-spike-early-table
+    >
+  </body>
+</html>

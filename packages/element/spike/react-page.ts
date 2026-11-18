@@ -20,6 +20,7 @@ type ReactSpike = {
   renderData: (data: unknown) => void;
   renderLate: (data: unknown, viaRef: boolean) => void;
   defineLate: () => void;
+  renderText: (text: string, data: unknown) => void;
 };
 
 declare global {
@@ -43,6 +44,7 @@ function rootFor(id: string) {
 const fallbackRoot = rootFor("fallback-root");
 const dataRoot = rootFor("data-root");
 const lateRoot = rootFor("late-root");
+const textRoot = rootFor("text-root");
 
 // React renders the author's fallback children inside the element, so React believes it owns
 // them. The element hides or removes them once `data` arrives.
@@ -90,5 +92,12 @@ window.reactSpike = {
   },
   defineLate() {
     defineSpikeLateTable();
+  },
+  // A single string child, such as a "Loading…" fallback. React treats it as the element's text
+  // content rather than as a separate text node it tracks.
+  renderText(text, data) {
+    flushSync(() => {
+      textRoot.render(createElement("bcd-spike-table", { id: "react-text", data }, text));
+    });
   },
 };
