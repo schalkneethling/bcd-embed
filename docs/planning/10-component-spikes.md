@@ -155,7 +155,7 @@ attempt.
 | 2   | 44349309077 | 4 min 58 s | Failed  | Failed    | Yes, failed again | The same failures. VoiceOver and Orca passed. |
 | 3   | 44350926720 | 4 min 46 s | Failed  | Failed    | Yes, failed again | The same failures. VoiceOver was cancelled because no hosted macOS runner picked the job up ("The job was not acquired by Runner of type hosted"), which this change does not affect. |
 | 4   | 44354307768 | 5 min 8 s | Failed   | Failed    | Yes, failed again | The same failures. VoiceOver was cancelled for the same macOS capacity reason. |
-| 5   | 44357655471 | not recorded | Failed | Failed  | Not recorded | Ran the old checks after a long wait for a macOS runner; NVDA failed as in runs 1 to 4, and VoiceOver was cancelled again for macOS capacity. |
+| 5   | 44357655471 | 5 min 1 s | Failed | Failed  | Yes, failed again | Ran the old checks after a long wait for a macOS runner; NVDA failed as in runs 1 to 4, and VoiceOver was cancelled again for macOS capacity. |
 
 The five consecutive runs on the corrected checks, at commit `b623cf1`, all passed with no retry.
 Each run's list reporter printed "2 passed (1.7m)" for NVDA, with no "flaky" count and no
