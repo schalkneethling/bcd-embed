@@ -1,7 +1,7 @@
 name: Screen readers
 
-# Screen reader tests for the web component's markup: VoiceOver on macOS and Orca on Linux,
-# driven by Guidepup (packages/element/README.md).
+# Screen reader tests for the web component's markup: VoiceOver on macOS, Orca on Linux, and NVDA
+# on Windows, driven by Guidepup (packages/element/README.md).
 #
 # The `screen-readers` job at the end is a required status check, so a failed or cancelled
 # screen reader run blocks the merge. A required check must report on every pull request, so the
@@ -66,7 +66,7 @@ jobs:
         contains(github.head_ref, '/playwright/')
       )
     strategy:
-      # One screen reader failing says nothing about the other, so both always finish.
+      # One screen reader failing says nothing about the others, so every one always finishes.
       fail-fast: false
       matrix:
         include:
@@ -81,9 +81,23 @@ jobs:
             os: ubuntu-26.04
             browser: firefox
             run: "xvfb-run dbus-run-session --"
+          # Guidepup supports Windows Server 2022 and 2025, and its own NVDA tests run on the
+          # hosted Windows runners with no wrapper around the test command. Playwright's Firefox
+          # stands in for Firefox, as its WebKit stands in for Safari.
+          - reader: nvda
+            os: windows-2025
+            browser: firefox
+            run: ""
     name: ${{ matrix.reader }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # Each NVDA test may take up to ten minutes and is retried once on failure, so a slow run
+    # needs more than half an hour before the job is stopped.
+    timeout-minutes: 45
+    # Bash on every runner, so the steps below are written once for all three. On Windows the
+    # default would be PowerShell, and `bash` there is the Bash that comes with Git for Windows.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -108,9 +122,10 @@ jobs:
       # version is pinned here.
       #
       # `setup` prepares the runner for screen reader automation: on macOS it lets AppleScript
-      # control VoiceOver, and on Linux it installs Orca and its tools with apt. The runner is
-      # discarded after the job. `install` reads the workspace's @guidepup/guidepup version to
-      # pick the matching screen reader assets, so it runs in the workspace's directory.
+      # control VoiceOver, on Linux it installs Orca and its tools with apt, and on Windows it
+      # prepares the machine for NVDA. The runner is discarded after the job. `install` reads the
+      # workspace's @guidepup/guidepup version to pick the matching screen reader assets, so it
+      # runs in the workspace's directory. On Windows those assets are NVDA itself.
       - name: Set up the runner for screen reader automation
         run: pnpm dlx @guidepup/setup@0.29.3 setup --ci
 
@@ -118,6 +133,8 @@ jobs:
         working-directory: packages/element
         run: pnpm dlx @guidepup/setup@0.29.3 install ${{ matrix.reader }}
 
+      # On Windows, `--with-deps` installs system dependencies only for Chromium, so for Firefox it
+      # installs nothing there.
       - name: Install the browser
         run: pnpm --filter @bcd-embed/element exec playwright install --with-deps ${{ matrix.browser }}
 
@@ -136,7 +153,7 @@ jobs:
           retention-days: 14
 
   # The required status check. It passes when the screen readers passed or had nothing to test,
-  # and fails when either reader failed or was cancelled, or when `changes` itself failed.
+  # and fails when any reader failed or was cancelled, or when `changes` itself failed.
   screen-readers:
     needs: [changes, screen-reader]
     if: always()
