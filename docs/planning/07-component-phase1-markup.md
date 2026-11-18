@@ -95,13 +95,55 @@ it differs from the expectation.
 ## Automated runs
 
 `packages/element` runs a shortened form of this script with real screen
-readers through Guidepup: VoiceOver in Playwright's WebKit on macOS, and Orca
-in Playwright's Firefox on Linux. Each run records what was spoken at every
-step as a transcript (`packages/element/README.md`).
+readers through Guidepup: VoiceOver in Playwright's WebKit on macOS, Orca in
+Playwright's Firefox on Linux, and NVDA in Playwright's Firefox on Windows
+Server 2025. Each run records what was spoken at every step as a transcript
+(`packages/element/README.md`).
 
-The automated runs cover steps 3 to 7 and answer question 1 below. They do not
-replace the manual pass, because Playwright's WebKit is not Safari and Orca is
-not NVDA.
+The walk that all three readers share performs step 1, steps 3, 5 and 6, and
+parts of steps 4 and 7. Step 4 is performed down the Node.js column for three
+rows rather than down the Chrome column for five, and step 7 stops at the
+first disclosure rather than tabbing through the whole table. The shared walk
+answers question 1 below. It does not replace the manual pass with VoiceOver,
+because Playwright's WebKit is not Safari.
+
+### NVDA in CI
+
+The owner has no Windows machine, so NVDA's part of each pass is signed off
+by reading the transcripts from CI (the artifact `screen-reader-results-nvda`)
+rather than by a person at the keyboard. The NVDA test therefore performs as
+many steps as Guidepup's NVDA commands allow. Each step below is in one of
+three states:
+
+- **Asserted in CI.** The test fails if the page is in the wrong state, or if
+  NVDA does not speak the text that the markup defines, such as a cell's
+  accessible name.
+- **Performed in CI for transcript review.** NVDA performs the step and its
+  output lands in the transcript, but nothing checks it, because the wording
+  is NVDA's own or the expectation needs a person's judgment.
+- **Manual.** The test does not perform the step, for the reason given.
+
+| #   | NVDA state                                   | How the test performs it, and what it checks                                                                                                                                                                         |
+| --- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Asserted in CI                               | Tab until the region has focus. Focus is a hard check, and "Browser compatibility" is a soft one. NVDA's role word for the region is for transcript review.                                                          |
+| 2   | Performed in CI for transcript review        | Control+Home, then `T` (next table), at the end of the walk. How NVDA announces the caption and the size is its own wording, not yet known.                                                                         |
+| 3   | Asserted in CI                               | Table navigation (Control+Alt+Right) along `fit-content`. The cell names are soft checks. Whether NVDA announces the column header, and "Server" on Node.js, is for transcript review.                               |
+| 4   | Performed in CI for transcript review        | Not as written. The shared walk moves down the Node.js column for three rows, and steps 8 to 13 move down the Chrome column in shorter runs. Whether each move announces the row header is for transcript review.     |
+| 5   | Asserted in CI                               | Enter on the `fit-content` summary. The open state and focus are hard checks, and "expanded" is a soft one. Reaching the three history items is not performed on this cell; steps 8 and 9 read history items on theirs. |
+| 6   | Asserted in CI                               | Enter again. The closed state and focus are hard checks, and "collapsed" is a soft one.                                                                                                                              |
+| 7   | Manual                                       | The walk tabs only to the first disclosure. A full traversal is a check of the page's tab order more than of NVDA, and Document 3 §9 already asks for it as a scripted keyboard test of the component.             |
+| 8   | Asserted in CI                               | Table navigation to `AudioTrackList` in Chrome, Enter, then `I` (next list item) twice. The cell name, the open state, and the two history items are checked; in variant B too.                                     |
+| 9   | Asserted in CI                               | Table navigation to `removed_partial` in Chrome, Enter, then `I` twice. "No support in Chrome", the open state, the removal history and the note are checked.                                                       |
+| 10  | Asserted in CI                               | Table navigation to `missing_target` in Opera and `unknown_runtime` in Node.js. Both names are checked. Whether they sound "clearly different" is for transcript review.                                          |
+| 11  | Asserted in CI                               | Table navigation to `localName` in Opera. "Supported since Opera 12.1 or earlier" is checked.                                                                                                                       |
+| 12  | Asserted in CI                               | Table navigation to the `from` and `async_iterable` row headers. Both names, with their "(part of …)" text, are checked.                                                                                            |
+| 13  | Performed in CI for transcript review        | Table navigation down the Chrome column from `Array` to `async_iterable` in variant B. The cell names are checked. Whether NVDA announces the ancestor row headers, and whether that helps, is for the owner.      |
+| 14  | Performed in CI for transcript review        | The shared walk's moves along `fit-content` in variant B are step 3 repeated. Comparing them with variant A's transcript is for the owner.                                                                          |
+
+The soft checks on the cell names were written before the first NVDA run, from
+the markup. If NVDA reads a cell in pieces, a check can fail although the words
+were spoken, and the transcript shows which. The spike's findings, including
+what is still unverified, are in `10-component-spikes.md`.
 
 ### First automated results
 
