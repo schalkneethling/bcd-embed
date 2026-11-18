@@ -105,6 +105,9 @@ The design documents in [`docs/planning`](./docs/planning/) are:
   — the static-serving architecture and the implementation phases.
 - [`03-web-component-architecture.md`](./docs/planning/03-web-component-architecture.md)
   — the design of the web component, which is not built yet.
+- [`07-component-phase1-markup.md`](./docs/planning/07-component-phase1-markup.md)
+  — the Phase 1 static markup for the table, and the screen reader validation
+  that is still pending.
 
 The validation records for the finished phases are:
 

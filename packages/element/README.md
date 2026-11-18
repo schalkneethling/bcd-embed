@@ -21,7 +21,8 @@ more of Document 7's script (`docs/planning/07-component-phase1-markup.md`), ste
 The tests are not part of `pnpm check`, because the screen reader takes over the machine while
 they run. The Screen readers workflow (`.github/workflows/screen-readers.yml`) runs all three on
 pull requests that change this workspace or the markup, and on manual runs. Its `screen-readers`
-job is a required check, so a failing reader blocks the merge.
+job is a required status check: it reports on every pull request and blocks the merge when any
+screen reader fails or is cancelled.
 
 Each test writes a `transcript.json` to its directory under `test-results/`, attaches it, and
 prints it to the job log. The workflow uploads `test-results/` as the artifact
@@ -39,10 +40,12 @@ On Linux, run the tests inside `xvfb-run dbus-run-session --`.
 The setup tool is not a dependency of this workspace, because it only prepares a machine and
 the tests never import it. Running it with `pnpm dlx` keeps its version pinned in one command.
 
-`@guidepup/guidepup` is pinned to 0.39.0, a version `@guidepup/playwright` 0.21.0 works with.
-Version 0.40.0 groups the Orca commands by service, and `@guidepup/playwright` 0.21.0 still looks
-them up by their old flat names, so moving Orca into the page fails with "Cannot read properties
-of undefined (reading 'service')". Update the two packages together.
+`@guidepup/guidepup` is pinned to 0.39.0, the version in `package.json`. `@guidepup/playwright`
+0.21.0 lists 0.38.0 as its own development dependency and accepts 0.38.0 or later as a peer, so
+0.39.0 satisfies it. Version 0.40.0 groups the Orca commands by service, and
+`@guidepup/playwright` 0.21.0 still looks them up by their old flat names, so moving Orca into the
+page fails with "Cannot read properties of undefined (reading 'service')". Update the two packages
+together.
 
 ### What each pairing covers
 

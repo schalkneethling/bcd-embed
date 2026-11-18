@@ -26,14 +26,21 @@ two-tier header: Desktop over Chrome and Opera, Server over Node.js.
 The glyphs (✓, ✕, ◐, ⚑, ?, —) are placeholders for the icons that Phase 3
 chooses. They are hidden from assistive technology.
 
+Each glyph-and-version span carries both `aria-hidden="true"` and the `hidden`
+attribute. With no stylesheet, the browser's own `hidden` rule removes the span
+and the cell reads as the full sentence from the visually hidden span. The
+Phase 1 stylesheet turns the span back on (`display: inline`) so a sighted
+reader sees the glyph. The real stylesheet must do the same, or the glyph will
+never appear. The spans have no class in this markup.
+
 ## Decisions the markup encodes
 
 **A cell's accessible name states the whole fact, including the support
 target.** A cell reads "Supported since Chrome 46", not "46". The visible
-glyph and version are `aria-hidden`, and a visually hidden span carries the
-sentence. The name repeats the target because a screen reader announces the
-column header only when the column changes, so a reader moving down a column
-would otherwise hear versions with no browser.
+glyph and version are `aria-hidden` and `hidden`, and a visually hidden span
+carries the sentence. The name repeats the target because a screen reader
+announces the column header only when the column changes, so a reader moving
+down a column would otherwise hear versions with no browser.
 
 **A cell gets a disclosure only when it has more to say than its name.** The
 disclosure is a native `<details>`, and its `<summary>` holds the cell's fact
