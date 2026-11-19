@@ -23,7 +23,7 @@
     "@varlock/cloudflare-integration": "1.6.3",
     "miniflare": "5.20260923.0-alpha",
     "varlock": "1.25.0",
-    "wrangler": "4.160.1"
+    "wrangler": "4.163.0"
   },
   "varlock": {
     "loadPath": "./env/"
