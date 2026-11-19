@@ -78,9 +78,11 @@ variant B more completely.
 
 ## Screen-reader test script
 
-Run each step in both required combinations (Document 3 §9): VoiceOver with
-Safari, and NVDA with Firefox. Record what was announced, word for word where
-it differs from the expectation.
+Run each step in both required combinations (Document 3 §9). VoiceOver with
+Safari is run by hand. NVDA with Firefox is run by the CI walk and reviewed
+from its transcripts, as "NVDA in CI" below describes, because the owner has
+no Windows machine. Record what was announced, word for word where it differs
+from the expectation.
 
 | #   | Action                                                                        | Expectation                                                                                  |
 | --- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
