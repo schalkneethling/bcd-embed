@@ -12,6 +12,6 @@
   "devDependencies": {
     "@guidepup/guidepup": "0.39.0",
     "@guidepup/playwright": "0.21.0",
-    "@playwright/test": "1.65.0"
+    "@playwright/test": "1.65.1"
   }
 }
