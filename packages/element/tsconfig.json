@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["*.ts", "screen-reader/**/*.ts"]
+  "compilerOptions": {
+    "paths": {
+      "@bcd-embed/schema": ["../schema/src/index.ts"]
+    }
+  },
+  "include": ["*.ts", "src/**/*.ts", "tests/**/*.ts", "screen-reader/**/*.ts"]
 }
