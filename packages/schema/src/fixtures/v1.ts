@@ -53,6 +53,7 @@ const targetSupport = (
     summary: {
       state,
       versionAdded: selected.versionAdded,
+      versionAddedIsApproximate: selected.versionAddedIsApproximate,
       versionRemoved: selected.versionRemoved,
       versionRemovedIsApproximate: selected.versionRemovedIsApproximate,
       releaseDate: selected.releaseDate,

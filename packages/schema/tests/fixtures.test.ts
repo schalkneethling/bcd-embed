@@ -259,6 +259,10 @@ describe("published v1 fixtures", () => {
       versionAddedIsApproximate: true,
     });
     expect(String(approximateStatement.versionAdded)).not.toContain("≤");
+    expect(fixtureFeature(v1FixtureCases.approximateVersion).support.opera!.summary).toMatchObject({
+      versionAdded: "12.1",
+      versionAddedIsApproximate: true,
+    });
     const rawApproximate = bcdSourceFixtures.fragments["css.properties.min-width.min-content"] as {
       support: { opera: Array<{ version_added: string }> };
     };

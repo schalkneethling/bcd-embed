@@ -3,11 +3,13 @@ import { brotliCompressSync, brotliDecompressSync, gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import {
   apiErrorResponseSchema,
+  CONTRACT_VERSION,
   MAX_ROOT_BYTES,
   MAX_SHARD_BYTES,
   RELEASE_HEADERS,
   snapshotRootPath,
   type MetaResponse,
+  type StoredMetaResponse,
 } from "@bcd-embed/schema";
 import {
   createArtifactHandler,
@@ -21,10 +23,12 @@ import { contentStore } from "./support/content-store.js";
 
 const snapshot = "bcd-8.1.3-gen-0.0.0";
 const older = "bcd-8.0.13-gen-0.0.0";
-const envelope = { contract: "1.0.0" };
+const envelope = { contract: CONTRACT_VERSION };
+// The older snapshot was published before contract 1.1.0, so its files carry 1.0.0.
+const olderEnvelope = { contract: "1.0.0" };
 const generated = "2026-09-30T10:00:00Z";
 const metadata: MetaResponse = {
-  contract: "1.0.0",
+  contract: CONTRACT_VERSION,
   generated,
   current: snapshot,
   snapshots: [snapshot, older].map((id) => ({
@@ -50,7 +54,7 @@ function setup(extra: Record<string, unknown> = {}) {
       keys: ["css.properties.display", "css.properties.display.block"],
     },
     [`v1/${older}/index/legacy.json`]: {
-      ...envelope,
+      ...olderEnvelope,
       namespace: "legacy",
       keys: ["legacy.group.feature"],
     },
@@ -748,5 +752,66 @@ describe("tree cache", () => {
     expect(cache.roots.get("a")).toEqual({ id: "a" });
     expect(cache.roots.size).toBe(2);
     expect(() => createTreeCache({ shards: 0 })).toThrow("at least 1");
+  });
+});
+
+describe("snapshots published under an earlier contract", () => {
+  // A 1.0.0 feature body: its summary has no versionAddedIsApproximate.
+  const olderFeature = {
+    ...olderEnvelope,
+    query: "legacy.group.feature",
+    browsers: { opera: { name: "Opera", type: "desktop", previewName: null } },
+    features: [
+      {
+        key: "legacy.group.feature",
+        support: { opera: { summary: { state: "supported", versionAdded: "12.1" } } },
+      },
+    ],
+  };
+
+  it("passes a retained 1.0.0 payload through unchanged", async () => {
+    const { handler } = setup({
+      [`v1/${older}/features/legacy.group.feature.json`]: olderFeature,
+    });
+    const result = await handler(request(`/v1/${older}/features/legacy.group.feature.json`));
+    expect(result.status).toBe(200);
+    expect(await result.text()).toBe(JSON.stringify(olderFeature));
+  });
+
+  it("answers a missing key from a retained 1.0.0 index", async () => {
+    const { handler } = setup();
+    const result = await handler(request(`/v1/${older}/features/legacy.group.json`));
+    expect(result.status).toBe(404);
+    expect((await result.json()).error).toMatchObject({
+      code: "namespace_not_queryable",
+      query: "legacy.group",
+    });
+    const missing = await handler(request(`/v1/${older}/features/legacy.other.json`));
+    expect(missing.status).toBe(404);
+    expect((await missing.json()).error.code).toBe("feature_not_found");
+  });
+
+  it("keeps serving while the bucket's metadata is still at 1.0.0", async () => {
+    // The Worker is deployed before the publication that moves the bucket to 1.1.0.
+    const stored: StoredMetaResponse = { ...metadata, contract: "1.0.0" };
+    const { handler } = setup({
+      "v1/meta.json": stored,
+      [`v1/${snapshot}/features/css.properties.display.json`]: {
+        ...olderEnvelope,
+        query: "css.properties.display",
+      },
+    });
+    const result = await handler(request("/v1/current/features/css.properties.display.json"));
+    expect(result.status).toBe(200);
+    expect(result.headers.get(RELEASE_HEADERS.snapshot)).toBe(snapshot);
+  });
+
+  it("refuses metadata at a contract it does not know", async () => {
+    const onError = vi.fn();
+    const { get } = setup({ "v1/meta.json": { ...metadata, contract: "1.2.0" } });
+    const handler = createArtifactHandler({ store: { get }, onError });
+    const result = await handler(request("/v1/current/browsers.json"));
+    expect(result.status).toBe(500);
+    expect(onError).toHaveBeenCalledOnce();
   });
 });

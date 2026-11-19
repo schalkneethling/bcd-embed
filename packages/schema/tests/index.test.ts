@@ -10,6 +10,9 @@ import {
   generatedTimestampSchema,
   indexResponseSchema,
   metaResponseSchema,
+  STORED_CONTRACT_VERSIONS,
+  storedIndexResponseSchema,
+  storedMetaResponseSchema,
   supportBranchSchema,
   supportFlagSchema,
   supportStateSchema,
@@ -44,6 +47,7 @@ const statement = {
 const summary = {
   state: "supported" as const,
   versionAdded: "1",
+  versionAddedIsApproximate: false,
   versionRemoved: null,
   versionRemovedIsApproximate: false,
   releaseDate: "2008-12-11",
@@ -98,8 +102,8 @@ const featureResponse = {
 };
 
 describe("contract package", () => {
-  it("exposes the documented initial contract version", () => {
-    expect(CONTRACT_VERSION).toBe("1.0.0");
+  it("exposes the documented contract version", () => {
+    expect(CONTRACT_VERSION).toBe("1.1.0");
   });
 
   it("parses a complete feature response", () => {
@@ -515,6 +519,86 @@ describe("strict validation", () => {
     ).toBe(false);
   });
 
+  it("projects the selected statement's approximate added version into the summary", () => {
+    const approximateBranch = {
+      canonical: true as const,
+      prefix: null,
+      alternativeName: null,
+      statements: [{ ...statement, versionAdded: "12.1", versionAddedIsApproximate: true }],
+    };
+    const approximateSummary = {
+      ...summary,
+      versionAdded: "12.1",
+      versionAddedIsApproximate: true,
+    };
+    expect(
+      supportTargetSupportSchema.parse({
+        summary: approximateSummary,
+        branches: [approximateBranch],
+      }).summary.versionAddedIsApproximate,
+    ).toBe(true);
+
+    for (const [support, stale] of [
+      [{ summary: { ...approximateSummary, versionAddedIsApproximate: false } }, false],
+      [{ summary: { ...summary, versionAddedIsApproximate: true } }, true],
+    ] as const) {
+      const branches = stale
+        ? [{ ...approximateBranch, statements: [statement] }]
+        : [approximateBranch];
+      const result = supportTargetSupportSchema.safeParse({ ...support, branches });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toEqual([
+        expect.objectContaining({
+          path: ["summary", "versionAddedIsApproximate"],
+          message: expect.stringContaining("versionAddedIsApproximate"),
+        }),
+      ]);
+    }
+  });
+
+  it.each([
+    ["unsupported", false, null],
+    ["unsupported", false, "12"],
+    ["unsupported", null, "12"],
+    ["unknown", null, null],
+  ] as const)(
+    "keeps a %s summary with versionAdded %s and versionRemoved %s exact",
+    (state, versionAdded, versionRemoved) => {
+      const unresolved = {
+        ...statement,
+        versionAdded,
+        versionRemoved,
+        releaseDate: null,
+      };
+      const support = {
+        summary: {
+          ...summary,
+          state,
+          versionAdded,
+          versionRemoved,
+          releaseDate: null,
+        },
+        branches: [
+          {
+            canonical: true as const,
+            prefix: null,
+            alternativeName: null,
+            statements: [unresolved],
+          },
+        ],
+      };
+      expect(supportTargetSupportSchema.parse(support).summary.versionAddedIsApproximate).toBe(
+        false,
+      );
+      expect(
+        supportTargetSupportSchema.safeParse({
+          ...support,
+          summary: { ...support.summary, versionAddedIsApproximate: true },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it("requires browser metadata to exactly cover referenced targets", () => {
     expect(featureResponseSchema.safeParse({ ...featureResponse, browsers: {} }).success).toBe(
       false,
@@ -578,6 +662,55 @@ describe("strict validation", () => {
       metaResponseSchema.safeParse({
         ...metadata,
         namespaces: ["css", "css"],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("stored contract versions", () => {
+  const metadata = {
+    generated: "2026-08-28T12:00:00Z",
+    current: "bcd-8.0.13-gen-0.1.0",
+    snapshots: [
+      {
+        id: "bcd-8.0.13-gen-0.1.0",
+        source,
+        generatorVersion: "0.1.0",
+        generated: "2026-08-28T12:00:00Z",
+        expires: "2026-11-26",
+      },
+    ],
+    namespaces: ["api", "css"],
+  };
+  const index = { namespace: "css", keys: ["css.properties.display"] };
+
+  it("lists the published contract versions, ending with the generated one", () => {
+    expect(STORED_CONTRACT_VERSIONS).toEqual(["1.0.0", "1.1.0"]);
+    expect(STORED_CONTRACT_VERSIONS.at(-1)).toBe(CONTRACT_VERSION);
+  });
+
+  it.each(STORED_CONTRACT_VERSIONS)("reads stored metadata and indexes at %s", (contract) => {
+    expect(storedMetaResponseSchema.parse({ ...metadata, contract }).contract).toBe(contract);
+    expect(storedIndexResponseSchema.parse({ ...index, contract }).contract).toBe(contract);
+  });
+
+  it("rejects an unknown stored contract and any earlier one in generated output", () => {
+    expect(storedMetaResponseSchema.safeParse({ ...metadata, contract: "1.2.0" }).success).toBe(
+      false,
+    );
+    expect(storedIndexResponseSchema.safeParse({ ...index, contract: "2.0.0" }).success).toBe(
+      false,
+    );
+    expect(metaResponseSchema.safeParse({ ...metadata, contract: "1.0.0" }).success).toBe(false);
+    expect(indexResponseSchema.safeParse({ ...index, contract: "1.0.0" }).success).toBe(false);
+  });
+
+  it("keeps the metadata invariants for stored metadata", () => {
+    expect(
+      storedMetaResponseSchema.safeParse({
+        ...metadata,
+        contract: "1.0.0",
+        current: "bcd-8.0.12-gen-0.1.0",
       }).success,
     ).toBe(false);
   });

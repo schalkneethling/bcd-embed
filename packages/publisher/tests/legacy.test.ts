@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { MetaResponse } from "@bcd-embed/schema";
+import type { StoredMetaResponse } from "@bcd-embed/schema";
 import { describe, expect, it } from "vitest";
 
 import { formatPublisherError } from "../src/errors.js";
@@ -9,7 +9,8 @@ import { MemoryStore } from "./support/memory-store.js";
 
 const live = "bcd-8.1.9-gen-0.0.0";
 const legacy = "bcd-8.1.8-gen-0.0.0";
-const metadata: MetaResponse = {
+// The live bucket as published on 14 November 2026, before contract 1.1.0.
+const metadata: StoredMetaResponse = {
   contract: "1.0.0",
   generated: "2026-11-14T00:00:00Z",
   current: live,

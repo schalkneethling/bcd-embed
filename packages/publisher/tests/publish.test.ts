@@ -15,7 +15,7 @@ import {
   generateSnapshot,
   type DiffApproval,
 } from "@bcd-embed/generator";
-import { blobPath, shardPath, snapshotRootPath } from "@bcd-embed/schema";
+import { blobPath, CONTRACT_VERSION, shardPath, snapshotRootPath } from "@bcd-embed/schema";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { parsePublishCommand } from "../src/cli.js";
@@ -349,6 +349,33 @@ describe("a later publication", () => {
     expect(formatPublisherError(await failure.catch((error: unknown) => error))).toContain(
       "does not match these exact",
     );
+  });
+
+  it("replaces live metadata published under an earlier contract", async () => {
+    const store = new MemoryStore();
+    const first = await validateCandidate(await publishFirst(store));
+    // The live bucket before contract 1.1.0: the same metadata, at contract 1.0.0.
+    const live = store.objects.get("v1/meta.json")!;
+    const earlier = JSON.parse(live.bytes.toString()) as { contract: string };
+    live.bytes = Buffer.from(`${JSON.stringify({ ...earlier, contract: "1.0.0" })}\n`);
+    live.metadata.sha256 = sha256(live.bytes);
+
+    const candidateRoot = await emit(SECOND);
+    const second = await validateCandidate(candidateRoot);
+    const result = await publishCandidate({
+      candidateRoot,
+      store,
+      clock: at("2026-01-09"),
+      sleep: noSleep,
+    });
+    expect(result.type).toBe("published");
+    const meta = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()) as {
+      contract: string;
+      snapshots: Array<{ id: string }>;
+    };
+    expect(meta.contract).toBe(CONTRACT_VERSION);
+    // The earlier snapshot stays listed, so its pinned URLs keep working until it expires.
+    expect(meta.snapshots.map(({ id }) => id)).toEqual([second.snapshotId, first.snapshotId]);
   });
 
   it("rejects live metadata whose recorded digest is not its root's hash", async () => {

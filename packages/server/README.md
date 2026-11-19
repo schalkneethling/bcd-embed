@@ -70,6 +70,12 @@ and `nosniff`. Artifact bytes stream unchanged. Metadata and `current` use
 `max-age=3600`. Rate limiting and generation responses use `no-store`; 429
 includes `Retry-After`.
 
+The handler parses `meta.json` and namespace index files with the schema
+package's stored-file schemas, which accept every contract in
+`STORED_CONTRACT_VERSIONS`. A snapshot keeps the contract it was published
+under, so a pinned 1.0.0 snapshot is still served, unchanged, after the bucket
+moves to 1.1.0, and a Worker built for 1.1.0 can be deployed before that move.
+
 The six contract errors parse against `apiErrorResponseSchema`. Unknown routes,
 missing unadvertised index shards, unsupported methods, and backend/corrupt
 artifact failures are separate transport failures (404/405/500), with the exact

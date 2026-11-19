@@ -61,6 +61,7 @@ const featureResponse = {
           summary: {
             state: "supported",
             versionAdded: "1",
+            versionAddedIsApproximate: false,
             versionRemoved: null,
             versionRemovedIsApproximate: false,
             releaseDate: "2008-12-11",
@@ -263,6 +264,37 @@ describe("published JSON Schemas", () => {
                         releaseDate: null,
                       },
                     ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    },
+    {
+      name: "feature-response",
+      zodSchema: featureResponseSchema,
+      value: {
+        ...featureResponse,
+        features: [
+          {
+            ...feature,
+            support: {
+              chrome: {
+                summary: {
+                  ...feature.support.chrome.summary,
+                  state: "unsupported",
+                  versionAdded: false,
+                  versionAddedIsApproximate: true,
+                  releaseDate: null,
+                },
+                branches: [
+                  {
+                    canonical: true,
+                    prefix: null,
+                    alternativeName: null,
+                    statements: [{ ...statement, versionAdded: false, releaseDate: null }],
                   },
                 ],
               },

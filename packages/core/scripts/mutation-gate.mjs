@@ -25,6 +25,12 @@ const mutationCases = [
     after: 'statement.partialImplementation\n          ? "supported"\n          : "supported"',
   },
   {
+    name: "summary approximate added version",
+    file: "packages/core/src/support.ts",
+    before: "versionAddedIsApproximate: selected.versionAddedIsApproximate,",
+    after: "versionAddedIsApproximate: false,",
+  },
+  {
     name: "approximate-version boundary",
     file: "packages/core/src/version.ts",
     before: 'const approximate = raw.startsWith("≤");',
