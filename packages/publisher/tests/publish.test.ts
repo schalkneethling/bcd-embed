@@ -641,6 +641,23 @@ describe("cleanup of unreferenced files", () => {
     features: featuresWith({ Test: "2", Other: "2" }),
   };
 
+  it("keeps the contract of metadata it retires snapshots from", async () => {
+    const { store, second } = await threeReleases();
+    // The bucket as an earlier contract left it: two snapshots listed, the first one expiring.
+    const live = store.objects.get("v1/meta.json")!;
+    const earlier = JSON.parse(live.bytes.toString()) as { contract: string };
+    live.bytes = Buffer.from(`${JSON.stringify({ ...earlier, contract: "1.0.0" })}\n`);
+    live.metadata.sha256 = sha256(live.bytes);
+
+    await pruneRetiredSnapshots(store, { clock: at("2026-04-02"), sleep: noSleep });
+    const meta = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()) as {
+      contract: string;
+      snapshots: Array<{ id: string }>;
+    };
+    expect(meta.contract).toBe("1.0.0");
+    expect(meta.snapshots.map(({ id }) => id)).toEqual([second.snapshotId]);
+  });
+
   it("deletes what only an expired snapshot used and keeps what a live one shares", async () => {
     const { store, first, second } = await threeReleases();
     store.now = new Date("2026-04-02T12:00:00Z");

@@ -13,7 +13,10 @@ export const contractVersionSchema = z.literal(CONTRACT_VERSION);
  * Every contract version that a v1 bucket can still hold. A retained snapshot keeps the contract
  * it was published with until it expires, so the Worker and the publisher read stored metadata
  * and index files at any of these versions. Nothing generates or validates new output with it.
- * A version leaves this list once no retained snapshot can carry it.
+ * A version leaves this list only after a publication has moved `meta.json` past it and every
+ * snapshot published under it has expired: for 1.0.0, not before 12 February 2027, when
+ * `bcd-8.1.9-gen-0.0.0` expires. `meta.json` records no contract per snapshot, so the readers
+ * accept a listed version in any snapshot, the current one included.
  */
 export const STORED_CONTRACT_VERSIONS = ["1.0.0", CONTRACT_VERSION] as const;
 export const storedContractVersionSchema = z.enum(STORED_CONTRACT_VERSIONS);
