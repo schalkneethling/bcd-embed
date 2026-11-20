@@ -95,6 +95,53 @@ describe("a query that fails the key pattern", () => {
   }
 });
 
+describe("an endpoint that is not an http or https base URL", () => {
+  const invalid = [
+    "",
+    "   ",
+    "api.example.test",
+    "/relative",
+    "//api.example.test",
+    "https://api.example.test/?",
+    "https://api.example.test/?key=value",
+    "https://api.example.test/#",
+    "https://api.example.test/#part",
+    "https://user:secret@api.example.test",
+    "ftp://api.example.test",
+    "javascript:alert(1)",
+    "data:application/json,{}",
+  ];
+  for (const endpoint of invalid) {
+    it(`sends no request for ${JSON.stringify(endpoint)}`, async () => {
+      const { client, fakeFetch } = setup(okResponse);
+
+      const result = await client.requestFeature({ query: "css.properties.display", endpoint });
+
+      expect(result).toEqual({ ok: false, reason: "invalid-endpoint", status: null, code: null });
+      expect(fakeFetch).not.toHaveBeenCalled();
+      expect(client.cacheSize()).toBe(0);
+    });
+  }
+
+  it("accepts http for a local server and a path below the origin", async () => {
+    const { client, fakeFetch } = setup(okResponse);
+
+    await client.requestFeature({
+      query: "css.properties.display",
+      endpoint: "http://127.0.0.1:8787",
+    });
+    await client.requestFeature({
+      query: "css.properties.display",
+      endpoint: "https://Example.TEST/bcd/",
+    });
+
+    expect(fakeFetch.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:8787/v1/current/features/css.properties.display.json",
+      "https://example.test/bcd/v1/current/features/css.properties.display.json",
+    ]);
+  });
+});
+
 describe("sharing", () => {
   it("sends one request for 50 calls before the first settles, and all get the same result", async () => {
     const { client, fakeFetch } = setup(okResponse);
