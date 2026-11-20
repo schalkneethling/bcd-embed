@@ -1052,3 +1052,181 @@ Each run's list reporter printed "2 passed (1.7m)" for NVDA, with no "flaky" cou
 | 3   | 44373329846 | 2 min 59 s | Passed   | Passed    | No      | All screen reader jobs passed. |
 | 4   | 44377257673 | 3 min 1 s  | Passed   | Passed    | No      | All screen reader jobs passed. |
 | 5   | 44378316134 | 2 min 50 s | Passed   | Passed    | No      | All screen reader jobs passed. |
+
+## Issue #189 — Cloudflare zone facts for the two new hostnames
+
+**Question.** Can both hostnames (`browser-compat.dev` for the introduction page and `docs.browser-compat.dev`
+for the documentation site) be attached as planned, and what headers can the documentation site safely send?
+
+**Status.** Answered on 20 November 2026, with two parts still open. The owner supplied the dashboard facts from
+screenshots, so they are recorded as the owner's reading, not as something this spike verified. The local dry run
+and the Content-Security-Policy check ran on this branch. The rate-limit probe has not run, because the owner has
+not approved it, and the Workers usage notification's name is unconfirmed.
+
+| Acceptance criterion                                 | Result                                                                       |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+| DNS records and blockers                             | Nothing blocks either hostname. Owner-supplied.                              |
+| Dry run with `routes`, `workers_dev`, `preview_urls` | Passed. The change stays in `apps/website/wrangler.jsonc`.                   |
+| Deploy credentials                                   | Interactive `wrangler login`, so no token permissions apply. Coordinator-confirmed. |
+| Report-Only policy violations                        | Recorded below for the home page, a Mermaid page and the search dialog.      |
+| Rate-limit probe (301 requests)                      | Pending the owner's approval. Command below.                                 |
+| Rollback procedure                                   | Quoted below with its address.                                               |
+| Usage notification, Always Use HTTPS                 | HTTPS is on. The notification's name is unconfirmed.                         |
+| No token, account ID or dashboard address            | None appears in this section.                                                |
+
+### DNS records for `browser-compat.dev` (owner-supplied)
+
+The owner read the zone's DNS page on 20 November 2026. Exactly one record exists.
+
+| Name                        | Type   | Content         | Proxy status | TTL  |
+| --------------------------- | ------ | --------------- | ------------ | ---- |
+| `api`                       | Worker | `bcd-embed-api` | Proxied      | Auto |
+| `browser-compat.dev` (apex) | none   |                 |              |      |
+| `www`                       | none   |                 |              |      |
+| `docs`                      | none   |                 |              |      |
+
+Because the apex and `docs` have no record, no existing record blocks a Workers Custom Domain on either
+hostname. The `api` record is for a different name, so it does not interact with them.
+
+The dashboard also showed a recommendation that visitors cannot reach `www.browser-compat.dev`. That is
+correct: `www` has no record, so nothing answers it. No issue in the plan covers `www` so far, so the choice
+(redirect it to the apex, or leave it unanswered) belongs to the introduction page issue, #211.
+
+### Always Use HTTPS (owner-supplied)
+
+Always Use HTTPS is on for the zone. The dashboard said the setting had changed moments before the screenshot,
+so the owner turned it on on 20 November 2026. It was not on before that date.
+
+### Workers usage notification (owner-supplied, unconfirmed)
+
+The "Create a notification" page offers five categories: Security; Availability & performance; Account & billing
+(described as "Spending, usage, and account activity"); Certificates & access; and Cloudflare updates. The
+screenshot did not capture the specific Workers usage notification, so whether the account offers one and what
+it is called are both unconfirmed. It is most likely under "Account & billing", given that category's
+description, but that is a guess from the description and not something anyone saw. The owner needs to open that
+category and record the notification's name.
+
+### Deploy credentials (coordinator-confirmed)
+
+Deploys use an interactive `wrangler login`, which authenticates by OAuth (Open Authorization). The coordinator
+confirmed that the local Wrangler configuration holds an OAuth token, a refresh token and its scopes, and that
+no `CLOUDFLARE_API_TOKEN` is configured. So no API token exists whose permissions need listing. If a later issue
+moves deploys into CI, that issue must work out which permissions a token needs for a Custom Domain.
+
+### Dry run with `routes`, `workers_dev: false` and `preview_urls: false`
+
+`apps/website/wrangler.jsonc` gained three keys, in the same form as `apps/worker/wrangler.jsonc`, which already
+uses them:
+
+```jsonc
+"routes": [{ "pattern": "docs.browser-compat.dev", "custom_domain": true }],
+"workers_dev": false,
+"preview_urls": false,
+```
+
+The command `pnpm --filter @bcd-embed/website run deploy:dry-run` runs `astro build && wrangler deploy --dry-run`
+(the script exists in `apps/website/package.json`). I ran it from `apps/website` as `pnpm run deploy:dry-run`,
+which runs the same script. It exited with code 0 on Wrangler 4.160.1. The build wrote 4 pages and the search
+index, Wrangler read 129 files from the assets directory, and the output ended with "--dry-run: exiting now."
+Nothing deployed, and no Cloudflare call was made.
+
+A dry run does not deploy, and its output never mentions the route. So it shows that Wrangler accepts the three
+keys, not that Cloudflare will attach the hostname. The attach happens at the first real deploy, in #193. The
+keys stay in the branch because #193 needs them and the dry run passed.
+
+### Content-Security-Policy-Report-Only on a local preview
+
+I served `apps/website/dist` (the dry run's build) with a small local Node server that added
+`Content-Security-Policy-Report-Only: default-src 'self'` to every response, then opened three views in
+Playwright's headless Chromium shell (build 1254; the build the installed Playwright expects was not
+installed, and I did not download one). A report-only policy blocks nothing, so each row is what an enforcing
+`default-src 'self'` would block. I counted `securitypolicyviolation` events by the directive that applied
+and the blocked address. Chromium reports one event per occurrence, so the counts include repeats.
+
+| View                                       | Inline scripts (`script-src-elem`) | Inline `<style>` elements (`style-src-elem`) | `style=""` attributes (`style-src-attr`) | `data:` images (`img-src`) | Total |
+| ------------------------------------------ | ---------------------------------- | -------------------------------------------- | ---------------------------------------- | -------------------------- | ----- |
+| Home page (`/`)                            | 10                                 | 13                                           | 356                                      | 1                          | 380   |
+| Mermaid page (`/deployment/`)              | 10                                 | 13                                           | 464                                      | 2                          | 489   |
+| Search dialog (opened on `/`, query typed) | 10                                 | 13                                           | 356                                      | 6                          | 385   |
+
+Observations that hold in all three views:
+
+- No violation named `connect-src`, `font-src`, `worker-src` or a `blob:` address, and no ordinary console
+  error or warning appeared. The search returned 9 results, and `/deployment/` rendered 2 Mermaid diagrams as
+  SVG. So `default-src 'self'` would not stop the search index or Mermaid from loading; the violations are all
+  inline code and `data:` images.
+- The Mermaid page adds 108 `style=""` attribute violations over the home page, which comes from the diagrams'
+  generated SVG.
+- The search dialog adds 5 `data:` image violations over the home page, from the search interface's icons.
+
+What this means for a policy (my inference, not tested): an enforcing `default-src 'self'` would break the site,
+because Starlight's inline scripts and styles would be blocked. A working policy needs `script-src` entries for
+those 10 inline scripts (Chromium's messages offered a hash for each), `style-src 'unsafe-inline'` or
+equivalent for the `<style>` elements and `style=""` attributes (a hash cannot cover attributes without
+`'unsafe-hashes'`), and `img-src 'self' data:`. #193 should send the policy as Report-Only first and test any
+enforcing candidate against these same three views before it switches.
+
+### Rate-limit probe (pending the owner's approval)
+
+Not run. The probe sends 301 requests to `api.browser-compat.dev`, which the owner has not approved. Document 9
+recorded that 400 requests from one IP address in about two seconds produced 304 `200` responses and 96 `429`
+responses, and that the `429` was Cloudflare's `text/html` "Access denied" page with `Retry-After: 9` and no
+`access-control-allow-origin`. The probe checks that the rule still behaves that way. This command, run only
+after the owner says yes, sends 301 requests 40 at a time and tallies the status codes, then fetches one more
+response's headers:
+
+```sh
+seq 301 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
+  -H 'Origin: https://example.com' https://api.browser-compat.dev/v1/meta.json | sort | uniq -c
+curl -sS -D - -o /dev/null -H 'Origin: https://example.com' https://api.browser-compat.dev/v1/meta.json
+```
+
+The first command may not make request number 301 the one that is blocked, because the 40 parallel requests
+finish in no fixed order. Document 9's threshold is 300 requests in 10 seconds, so the tally should show some
+`429` responses once the counter passes 300, and the second command should show the blocked response's
+headers if the block is still active (it lasts 10 seconds). Whoever runs it should record both outputs here.
+
+### Rollback for a static-assets Worker
+
+Cloudflare's rollback page (<https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/>)
+has no section specific to Workers with static assets. Its general procedure applies: "To roll back to a
+specified version of your Worker via Wrangler, use the `wrangler rollback` command." The dashboard route is
+Workers & Pages, then the Worker, then Deployments, then the three-dot menu on the version, then Rollback.
+
+The Wrangler command reference (<https://developers.cloudflare.com/workers/wrangler/commands/workers/>) gives
+the syntax:
+
+```txt
+wrangler rollback [<VERSION_ID>] [OPTIONS]
+```
+
+It says `VERSION_ID` is "The ID of the version you wish to roll back to" and that "If not supplied, the
+rollback command defaults to the version uploaded before the latest version." It says a rollback "will
+immediately create a new deployment with the specified version of your Worker" and that the new deployment
+becomes "the active deployment across all your deployed routes and domains." With `--message`, "interactive
+prompts for rollback confirmation and message are skipped." The installed Wrangler 4.160.1 lists `--name`,
+`--message` (`-m`) and `--yes` (`-y`) in `wrangler rollback --help`, and `wrangler versions list` shows the 10
+most recent versions, which is how to find a version ID.
+
+For the documentation site, run from `apps/website` after choosing the version ID:
+
+```sh
+pnpm exec wrangler versions list
+pnpm exec wrangler rollback <VERSION_ID> --message "<reason>"
+```
+
+Three limits from the rollback page matter here. It says "You can only roll back to the 100 most recently
+published versions", and that versions older than 30 days can be deleted, after which "you cannot roll back to
+a deleted version." For static assets it warns that "Pages loaded before rollback can still request the newer
+version's assets", and tells readers to "check whether the older version includes those files", pointing to
+Cloudflare's "Version skew and static assets" page. For this site, that means a reader who loaded a page just
+before a rollback may request a hashed asset that the older version no longer has. I did not read the version
+skew page, so how Cloudflare handles that request is unverified.
+
+### Sources checked
+
+- `apps/website/wrangler.jsonc` and `apps/worker/wrangler.jsonc`, for the key names and their form.
+- Cloudflare, [Rollbacks](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/) and
+  [Wrangler Workers commands](https://developers.cloudflare.com/workers/wrangler/commands/workers/), fetched on 20 November 2026.
+- `wrangler rollback --help`, `wrangler deployments --help` and `wrangler versions --help` from the installed Wrangler 4.160.1.
+- `docs/planning/09-custom-domain-and-rate-limits.md`, for the rate limit rule and its earlier measurements.
