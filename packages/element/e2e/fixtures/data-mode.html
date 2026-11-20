@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data mode fixture</title>
+    <link rel="stylesheet" href="./fallback.css" />
+    <script type="module" src="./data-mode.ts"></script>
+  </head>
+  <body>
+    <!-- The element in data mode: the script assigns the adversarial fixture to its `data`
+         property. The only stylesheet is the rule that hides the fallback paragraph, so the page
+         shows the table as a reader with no base stylesheet gets it. -->
+    <main>
+      <h1>Data mode fixture</h1>
+      <bcd-compat-table id="table" browsers="chrome opera nodejs">
+        <p>Fallback: the browser compatibility table has not loaded.</p>
+      </bcd-compat-table>
+    </main>
+  </body>
+</html>

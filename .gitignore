@@ -35,5 +35,7 @@ dist-ssr
 packages/element/test-results/
 packages/element/playwright-report/
 
-# Failure screenshots from the Vitest browser project
+# Failure screenshots from the Vitest browser project. Vitest 5.1.0 writes them under
+# .vitest/attachments/ at the repository root.
 **/__screenshots__/
+.vitest/
