@@ -5,6 +5,9 @@ import mermaid from "astro-mermaid";
 const repository = "https://github.com/schalkneethling/bcd-embed";
 
 export default defineConfig({
+  // The address the site is served from. Astro needs it to write absolute
+  // URLs, and Starlight's sitemap integration writes no sitemap without it.
+  site: "https://docs.browser-compat.dev",
   integrations: [
     // astro-mermaid must be registered before Starlight so that it sees the
     // `mermaid` code fences before Starlight's code highlighter does.

@@ -1193,6 +1193,39 @@ equivalent for the `<style>` elements and `style=""` attributes (a hash cannot c
 `'unsafe-hashes'`), and `img-src 'self' data:`. #193 should send the policy as Report-Only first and test any
 enforcing candidate against these same three views before it switches.
 
+### Final report-only policy, three engines (#193)
+
+I measured the policy that `apps/website/public/_headers` sends, not `default-src 'self'` alone. A small Node
+server (kept outside the repository) served `apps/website/dist` and added the exact
+`Content-Security-Policy-Report-Only` value from that file to every response: `default-src 'self'; script-src
+'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:`. Playwright 1.65.1 opened three
+views in each engine, and an init script counted `securitypolicyviolation` events per effective directive. To
+confirm the counter works, I ran Chromium once against `default-src 'self'` alone, which produced 445, 799 and
+450 events on the three views.
+
+| Engine (version)          | View                                       | Violation events | Console errors | Console messages naming the policy |
+| ------------------------- | ------------------------------------------ | ---------------- | -------------- | ---------------------------------- |
+| Chromium 159.0.8154.6     | Home page (`/`)                            | 0                | 0              | 0                                  |
+| Chromium 159.0.8154.6     | Mermaid page (`/deployment/`)              | 0                | 0              | 0                                  |
+| Chromium 159.0.8154.6     | Search dialog (opened on `/`, query typed) | 0                | 0              | 0                                  |
+| Firefox 159.0             | Home page (`/`)                            | 0                | 0              | 0                                  |
+| Firefox 159.0             | Mermaid page (`/deployment/`)              | 0                | 0              | 0                                  |
+| Firefox 159.0             | Search dialog (opened on `/`, query typed) | 0                | 0              | 0                                  |
+| WebKit 27.2 (Playwright)  | Home page (`/`)                            | 0                | 1              | 1                                  |
+| WebKit 27.2 (Playwright)  | Mermaid page (`/deployment/`)              | 0                | 1              | 1                                  |
+| WebKit 27.2 (Playwright)  | Search dialog (opened on `/`, query typed) | 0                | 2              | 2                                  |
+
+All three engines reported no violation. The `/deployment/` page rendered 2 Mermaid diagrams as SVG in each engine,
+and the search dialog opened and accepted the query in each. I did not count the individual search results, so
+this run does not show that the results list is correct, only that no violation occurred while it was open.
+
+WebKit's console errors are all one message, which says the policy was delivered in report-only mode but
+specifies no `report-uri` or `report-to` directive. That is a note about where reports would go, not a
+violation. Firefox and WebKit fired no `securitypolicyviolation` events, and in Firefox and Chromium nothing named
+the policy in the console, so for those two engines the zero is a consistent result across both signals. The
+browsers were the builds Playwright's `browsers.json` pins for 1.65.1 (Chromium headless shell 1255, Firefox 1572,
+WebKit 2388). This is a local run of the built site, so it does not show what the deployed Worker sends.
+
 ### Rate-limit probe (pending the owner's approval)
 
 Not run. The probe sends 301 requests to `api.browser-compat.dev`, which the owner has not approved. Document 9

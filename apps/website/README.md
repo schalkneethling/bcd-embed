@@ -26,9 +26,11 @@ Run these from the repository root:
 
 ```
 apps/website/
-├─ astro.config.ts          site title, sidebar, and diagram settings
+├─ astro.config.ts          site address, title, sidebar, and diagram settings
 ├─ wrangler.jsonc           Cloudflare hosting configuration
 ├─ public/                  files copied to the site as they are
+│  ├─ _headers              response headers Cloudflare adds
+│  └─ robots.txt            crawler rules and the sitemap address
 └─ src/
    ├─ content.config.ts     tells Astro that src/content/docs holds the pages
    ├─ content/docs/         one Markdown file per page
@@ -53,16 +55,26 @@ that it stays readable on a phone.
 
 ## Hosting
 
-The site is set up to be hosted on Cloudflare as a Worker that serves static
-assets, with no Worker script. `wrangler.jsonc` names the Worker
-`bcd-embed-website` and points it at `dist/`.
+The site is hosted on Cloudflare as a Worker that serves static assets, with
+no Worker script. `wrangler.jsonc` names the Worker `bcd-embed-website`, points
+it at `dist/`, and attaches it to `docs.browser-compat.dev` as a Custom Domain.
+`workers_dev: false` and `preview_urls: false` leave that hostname as the only
+address.
 
-The site has not been deployed. A deploy is a manual command today, and it
-needs a Wrangler login for the Cloudflare account:
+`astro.config.ts` sets `site` to `https://docs.browser-compat.dev`, which
+Starlight needs to write `sitemap-index.xml`. `public/_headers` sets the
+security headers, a one-year `immutable` cache lifetime for the hashed files
+in `_astro/`, and a report-only Content-Security-Policy. Do not add a top-level
+`v1` folder to `public/`, because the zone's rate limiting rule matches
+`/v1/`; `tests/website-deploy.test.ts` fails if the build has one.
+
+A deploy is a manual command that needs an interactive Wrangler login for the
+Cloudflare account:
 
 ```sh
 pnpm --filter @bcd-embed/website run deploy
 ```
 
-No `site` address is set in `astro.config.ts`, because the address is not
-known until the first deploy. Astro skips the sitemap until one is set.
+The [deployment page](./src/content/docs/deployment.md#deploying-the-documentation-site)
+lists the full command sequence, the checks that confirm a deploy, and the
+rollback procedure.
