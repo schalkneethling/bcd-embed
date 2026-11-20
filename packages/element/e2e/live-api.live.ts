@@ -10,7 +10,7 @@ test(`renders ${QUERY} from the live API and fires one bcd-load with the snapsho
   page,
 }) => {
   await page.goto("/e2e/fixtures/fetch-mode.html");
-  await page.locator("#loaded[loaded]").waitFor();
+  await page.locator("#loaded[loaded]").waitFor({ state: "attached" });
   const requests: string[] = [];
   page.on("request", (request) => {
     if (request.url().startsWith("https://api.browser-compat.dev/")) requests.push(request.url());
