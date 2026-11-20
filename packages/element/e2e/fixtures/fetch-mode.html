@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fetch mode fixture</title>
+    <link rel="stylesheet" href="./fallback.css" />
+    <script type="module" src="./fetch-mode.ts"></script>
+  </head>
+  <body>
+    <!-- The element in fetch mode, holding each state still. Every element here asks the stand-in
+         API in `fixture-api.ts` (endpoint https://fixture.test), so the page sends no request to
+         a real server. The loading state lasts until the feature client's 20-second deadline.
+         Tests add their own elements to #lab. The only stylesheet is the rule that hides the
+         fallback once a table renders. -->
+    <main>
+      <h1>Fetch mode fixture</h1>
+
+      <section aria-labelledby="loading-heading">
+        <h2 id="loading-heading">Loading</h2>
+        <bcd-compat-table
+          id="loading"
+          query="fixture.pending"
+          endpoint="https://fixture.test"
+          loading="eager"
+        >
+          <p>Fallback: the browser compatibility table is loading.</p>
+        </bcd-compat-table>
+        <bcd-compat-table
+          id="loading-bare"
+          query="fixture.pending"
+          endpoint="https://fixture.test"
+          loading="eager"
+        ></bcd-compat-table>
+      </section>
+
+      <section aria-labelledby="error-heading">
+        <h2 id="error-heading">Errors</h2>
+        <bcd-compat-table
+          id="not-found"
+          query="fixture.missing"
+          endpoint="https://fixture.test"
+          loading="eager"
+        >
+          <p>Fallback: the browser compatibility table could not be loaded.</p>
+        </bcd-compat-table>
+        <bcd-compat-table
+          id="not-found-bare"
+          query="fixture.missing"
+          endpoint="https://fixture.test"
+          loading="eager"
+        ></bcd-compat-table>
+        <bcd-compat-table
+          id="unavailable-bare"
+          query="fixture.unavailable"
+          endpoint="https://fixture.test"
+          loading="eager"
+        ></bcd-compat-table>
+      </section>
+
+      <section aria-labelledby="loaded-heading">
+        <h2 id="loaded-heading">Loaded</h2>
+        <bcd-compat-table
+          id="loaded"
+          query="fixture.adversarial-v1"
+          endpoint="https://fixture.test"
+          loading="eager"
+          browsers="chrome opera nodejs"
+        >
+          <p>Fallback: the browser compatibility table has not loaded.</p>
+        </bcd-compat-table>
+      </section>
+
+      <div id="lab"></div>
+    </main>
+  </body>
+</html>
