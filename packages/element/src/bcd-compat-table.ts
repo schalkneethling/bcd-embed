@@ -8,6 +8,8 @@ import {
   isValidEndpoint,
 } from "./data/feature-client.js";
 import type { FeatureRequest, FeatureResult, FeatureSuccess } from "./data/feature-client.js";
+import { hasElementWithId, readSource, sourceScopeOf } from "./data/source-reader.js";
+import type { SourceReadResult } from "./data/source-reader.js";
 import { buildTableModel, TablePayloadError } from "./model/table-model.js";
 import type { TableModel } from "./model/table-model.js";
 import type {
@@ -24,12 +26,16 @@ import type { StringTable } from "./strings/format.js";
 
 /**
  * The `<bcd-compat-table>` element. It renders a payload as the table Phase 1 validated
- * (Document 3 sections 4 and 7), from one of two inputs, in this order:
+ * (Document 3 sections 4 and 7), from one of three inputs, in this order:
  *
  * 1. Data mode: the payload assigned to `.data`. No request is sent.
- * 2. Fetch mode: the `query` attribute, while `data` is `null`. The element asks the page's
- *    feature client (`data/feature-client.ts`) for `{endpoint}/v1/current/features/{query}.json`.
- *    The `source` attribute is a later issue (#205).
+ * 2. Source mode: the `source` attribute, while `data` is `null`. It names a
+ *    `<script type="application/json">` that holds the payload, and the element reads that script
+ *    once (`data/source-reader.ts`). No request is sent, and a `source` that fails does not fall
+ *    through to `query` (Document 3 section 4, #205).
+ * 3. Fetch mode: the `query` attribute, while `data` is `null` and `source` is absent. The element
+ *    asks the page's feature client (`data/feature-client.ts`) for
+ *    `{endpoint}/v1/current/features/{query}.json`.
  *
  * How one update runs, for example after `element.data = payload`:
  *
@@ -84,6 +90,15 @@ export const LOADED_ATTRIBUTE = "loaded";
  */
 export const LAZY_ROOT_MARGIN = "400px";
 
+/**
+ * What the element holds for its `source` attribute: the id it read, and either the answer or the
+ * fact that the script has not been parsed yet. `waiting` ends when the parser finishes, because
+ * the script can no longer arrive after that.
+ */
+type SourceState =
+  | { readonly id: string; readonly status: "waiting" }
+  | { readonly id: string; readonly status: "read"; readonly result: SourceReadResult };
+
 /** The arguments of one request: the query and the `endpoint` attribute. */
 type FetchArgs = readonly [query: string, endpoint: string | null];
 
@@ -132,6 +147,7 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     data: { attribute: false },
     query: { type: String },
     endpoint: { type: String },
+    source: { type: String },
     loading: { converter: parseLoading },
     browsers: { type: String },
     locale: { type: String },
@@ -144,6 +160,7 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   declare data: CompatTableData | null;
   declare query: string | null;
   declare endpoint: string | null;
+  declare source: string | null;
   declare loading: CompatTableLoading;
   declare browsers: string | null;
   declare locale: string | null;
@@ -183,6 +200,12 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   // Whether the `aria-busy` attribute is the element's own, so it never removes an author's.
   #ownsBusy = false;
   #viewportObserver: IntersectionObserver | null = null;
+  // The element's read of its `source` attribute, or `null` before the first read, while `data`
+  // is set, and while `source` is absent. A settled read is kept until `source` changes, so the
+  // script's text is parsed once, however often the element updates or moves.
+  #sourceState: SourceState | null = null;
+  // Cancels the wait for the parser. It exists only while `#sourceState` is `waiting`.
+  #sourceWait: AbortController | null = null;
   // Puts the render container back when a script removes it. React does this when it changes a
   // single string child: it assigns `textContent`, which replaces every child (Issue #187,
   // section 3).
@@ -200,6 +223,7 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     this.data = null;
     this.query = null;
     this.endpoint = null;
+    this.source = null;
     this.loading = "lazy";
     this.browsers = null;
     this.locale = null;
@@ -233,6 +257,9 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     // observer was not watching.
     this.#guardContainer();
     this.#containerGuard.observe(this, { childList: true });
+    // The first read of `source` happens here, before the first update. It also makes the read
+    // that the element could not make while it was out of the document, for a `source` set then.
+    if (this.#syncSource()) this.requestUpdate();
     // An update that finished while the element was out of the document held its event back.
     // When an update is still pending instead, `updated` dispatches, now that it is connected.
     if (this.hasUpdated && !this.isUpdatePending) this.#dispatchPendingEvent();
@@ -247,6 +274,8 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.#containerGuard.disconnect();
+    // A wait for the parser needs a document to watch. `connectedCallback` starts it again.
+    this.#cancelSourceWait();
     this.#syncViewportObserver();
     // Stop waiting for the answer. The shared request carries on for other elements, and this
     // run's result is dropped, so no event can fire for it while the element is out of the
@@ -284,14 +313,88 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
 
   /**
    * The query and endpoint the element is in fetch mode for, or `null` when it is not: `data` is
-   * set, or `query` is absent. The checks read property values, which a script or a framework
-   * binding can set without the attribute converter, so `undefined` counts as absent, as it does
-   * for `data`.
+   * set, `source` is present, or `query` is absent. The checks read property values, which a
+   * script or a framework binding can set without the attribute converter, so `undefined` counts
+   * as absent, as it does for `data`. A `source` that is present, even one that failed, keeps the
+   * element out of fetch mode, so a bad reference never turns into a request.
    */
   #fetchInputs(): FetchArgs | null {
-    const { data, query } = this;
-    if ((data !== null && data !== undefined) || query === null || query === undefined) return null;
+    const { data, query, source } = this;
+    if ((data !== null && data !== undefined) || (source !== null && source !== undefined)) {
+      return null;
+    }
+    if (query === null || query === undefined) return null;
     return [query, this.endpoint ?? null];
+  }
+
+  /** Stops waiting for the parser, if the element is. */
+  #cancelSourceWait(): void {
+    this.#sourceWait?.abort();
+    this.#sourceWait = null;
+  }
+
+  /**
+   * Brings `#sourceState` in line with the `source` attribute, and returns whether it changed.
+   * It reads the script only while the element is connected and `data` is unset, and it reads
+   * each id once:
+   *
+   * - `source` is absent: forget any read. A later `source` is read afresh.
+   * - The id is already read: nothing, so changing the script's text changes nothing.
+   * - The element is out of the document: nothing, because there is no tree to look in. The next
+   *   `connectedCallback` reads.
+   * - `data` is set: nothing. `data` wins, so the script is not parsed for nothing, and a broken
+   *   reference reports nothing. Clearing `data` reads it.
+   * - The script is not there yet and the parser is still running: wait. When the element is
+   *   defined before the parser reaches it, `connectedCallback` runs before the parser has read
+   *   anything after the element's start tag, so a script written after the element does not
+   *   exist yet (docs/planning/10-component-spikes.md, #187 section 1). The wait ends on the
+   *   document's `readystatechange`, which fires when the parser has finished.
+   * - Otherwise: read the script now.
+   *
+   * Every branch is O(1) apart from the read, which `readSource` states.
+   */
+  #syncSource(): boolean {
+    const id = this.source ?? null;
+    const held = this.#sourceState;
+    if (id === null) {
+      this.#cancelSourceWait();
+      this.#sourceState = null;
+      return held !== null;
+    }
+    if (this.data !== null && this.data !== undefined) {
+      // `data` wins, so a wait for the parser is pointless: stop it, and forget that it began, so
+      // that clearing `data` decides again whether to wait, read, or report.
+      if (held?.status !== "waiting") return false;
+      this.#cancelSourceWait();
+      this.#sourceState = null;
+      return true;
+    }
+    const waitingForId = held?.id === id && held.status === "waiting" && this.#sourceWait !== null;
+    if ((held?.id === id && held.status === "read") || waitingForId) return false;
+    if (!this.isConnected) return false;
+    this.#cancelSourceWait();
+    const scope = sourceScopeOf(this);
+    const { ownerDocument } = this;
+    if (ownerDocument.readyState === "loading" && !hasElementWithId(scope, id)) {
+      const wait = new AbortController();
+      this.#sourceWait = wait;
+      this.#sourceState = { id, status: "waiting" };
+      ownerDocument.addEventListener(
+        "readystatechange",
+        () => {
+          if (ownerDocument.readyState === "loading") return;
+          wait.abort();
+          this.#sourceWait = null;
+          // The parser is done, so the script is there or it never will be.
+          this.#sourceState = { id, status: "read", result: readSource(scope, id) };
+          this.requestUpdate();
+        },
+        { signal: wait.signal },
+      );
+      return true;
+    }
+    this.#sourceState = { id, status: "read", result: readSource(scope, id) };
+    return true;
   }
 
   /**
@@ -387,6 +490,9 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     const previous = this.#outcome.status;
+    // The first read is `connectedCallback`'s. This one covers a `source` that changed, or a
+    // `data` that was cleared, after it. It never asks for another update: this one is running.
+    this.#syncSource();
     this.#syncRequest();
     this.#outcome = this.#buildOutcome();
     // One event for each update in which `data` changed, and one for each change of state: a
@@ -398,7 +504,8 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     // runs no update and nothing fires. A change that leaves a table rendered re-renders it
     // without a second `bcd-load`. An event that is still waiting for the element to be
     // connected stays due.
-    this.#announce ||= changed.has("data") || this.#outcome.status !== previous;
+    this.#announce ||=
+      changed.has("data") || changed.has("source") || this.#outcome.status !== previous;
   }
 
   /**
@@ -419,6 +526,8 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     if (payload !== null && payload !== undefined) {
       return this.#buildTable(payload, { mode: "data", snapshot: null }, null);
     }
+    const { source } = this;
+    if (source !== null && source !== undefined) return this.#buildSourceOutcome(source);
     const { query } = this;
     if (query === null || query === undefined) return EMPTY;
     const args = this.#fetchArgs();
@@ -451,6 +560,27 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
       return { status: "error", detail, query };
     }
     return { status: "pending", query };
+  }
+
+  /**
+   * The outcome for a `source` attribute. Nothing shows while the element waits for the parser or
+   * for a connection, and no event fires, because the state changes again when the read ends. A
+   * failed read is the error in mode `source`, with no query in its sentence, as in data mode.
+   * `id` is the attribute's current value; a read held for another id is not its answer.
+   */
+  #buildSourceOutcome(id: string): Outcome {
+    const held = this.#sourceState;
+    if (held === null || held.id !== id || held.status === "waiting") return EMPTY;
+    const { result } = held;
+    if (result.ok) {
+      return this.#buildTable(result.payload, { mode: "source", snapshot: null }, null);
+    }
+    const { reason } = result;
+    return {
+      status: "error",
+      detail: { mode: "source", reason, status: null, code: null },
+      query: null,
+    };
   }
 
   /**

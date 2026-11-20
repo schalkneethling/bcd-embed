@@ -72,6 +72,13 @@ export interface BcdCompatTableElement extends HTMLElement {
    * `lazy`, and the property does not write the attribute back.
    */
   loading: CompatTableLoading;
+  /**
+   * The `source` attribute: the `id` of a `<script type="application/json">` that holds a
+   * payload, or `null` when it is absent. The element reads the script once for each id, so
+   * changing the script's text afterwards changes nothing. A `source` that is set keeps the
+   * element out of fetch mode, even when the read fails. `data` wins over `source`.
+   */
+  source: string | null;
   /** The `browsers` attribute: space-separated support target ids, or `null` for the default. */
   browsers: string | null;
   /** The `locale` attribute. An unknown locale, and `null`, select English. */

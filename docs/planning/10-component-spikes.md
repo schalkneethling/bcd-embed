@@ -1432,3 +1432,89 @@ rows and one region, and the first Tab focuses the region. The page imports the 
 - `vite preview --help` from Vite 8.3.8, for `--config`, `--host`, `--port` and `--strictPort`.
 - Vite 8.3.8's `index.d.ts` for `build.rolldownOptions`, and Rolldown 1.2.19's type declarations
   for `moduleSideEffects` and its precedence order.
+
+## Issue #205 — The `source` mode and the order of the script
+
+Status: done on 20 November 2026. #205 builds `source` mode and tests the inference that
+Document 3 section 7 drew from #187 section 1: a JSON script written after the element does not
+exist when the element's `connectedCallback` runs, if the element was defined before the parser
+reached it. The inference is **confirmed**, in Chromium, Firefox, and WebKit (Playwright 1.65.1).
+
+### How the two load orders were tested
+
+Two kinds of page, in `packages/element/e2e/source-mode.e2e.ts`:
+
+| Page                                 | How the element is defined                                                                                          | Script after the element exists at `connectedCallback`? |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Defined after the parser finished    | A `<script type="module">` in `<head>`, which runs after parsing                                                    | Yes                                                     |
+| Defined before the parser reaches it | The page loads the definition into an iframe's window first, then streams the markup into it, one chunk at a time   | No                                                      |
+
+The second page needs a stream, because `route.fulfill` in Playwright sends a whole body at once.
+The test creates an iframe, calls `document.open()`, and writes one inline classic script that
+starts `import()` of the element's source. It waits for that promise, checks that the iframe's
+`customElements` holds `bcd-compat-table`, and only then calls `document.write` for the element
+and the JSON script, one call per chunk, with `readyState` still `"loading"` after each. The
+element is then created already upgraded, and its `connectedCallback` runs when its start tag is
+parsed, which is the case #187 section 1 describes.
+
+With the wait for the parser removed, the test "script that comes after the element" times out
+and the test "fires nothing while the parser has not reached the script" fails, in Chromium. With
+the wait in place, all 30 end-to-end tests pass in all three engines.
+
+### The handling, and why `readystatechange`
+
+When the `id` matches nothing and `document.readyState` is `"loading"`, the element waits for the
+document's `readystatechange` event with `readyState` no longer `"loading"`, then reads once. A
+`readyState` of `"loading"` means the parser can still add elements. Once it is `"interactive"`,
+parsing has ended and a missing `id` will stay missing. The element listens for
+`readystatechange` instead of `DOMContentLoaded`, because `readystatechange` fires when parsing
+ends, before the deferred scripts run, so a module script that is waiting for the same moment
+does not delay the first render of an element that waits. The order is read from MDN's page on `Document.readyState`, not measured: the state becomes `interactive` and `readystatechange` fires, then deferred and module scripts run, then `DOMContentLoaded` fires. How much time that gap holds is unmeasured.
+
+### A pitfall in the stream test
+
+A `<link rel="stylesheet">` in the first chunk keeps the parser from running the inline script
+after it until the stylesheet has loaded, so `window.defined` was `undefined`, `await` returned
+at once, and the element was not defined before the next chunk. The first chunk therefore links
+no stylesheet. The test checks `customElements.get` before writing the element, so a regression
+fails loudly instead of testing the wrong order.
+
+### Review follow-up: the cancellation tests were checked by mutation
+
+The first versions of the two "stops waiting" tests passed with `#cancelSourceWait()` deleted,
+because a detached element holds its events back and a null `source` hides the element's state.
+They now count calls to `Document.prototype.getElementById` after the test ends parsing, which a
+leaked listener would make. With the body of `#cancelSourceWait()` replaced by a no-op, both
+tests failed in Chromium (6 failures in all, 4 of them the new tests for later fixes); with it
+restored, all 69 browser tests pass. The review also found that a wait ignored `data`; setting
+`data` now cancels the wait, and a test shows the script is never parsed.
+
+### Other results
+
+- A test document cannot hold a JSON script with `type` absent or `module` made with
+  `document.createElement("script")`: it runs the JSON as code when it gets text. The browser
+  tests build their scripts through `<template>.innerHTML`, which marks them "already started".
+- The element's events bubble but are not composed, so for an element inside a shadow root a
+  listener on the document does not hear them. This was already true; the shadow-root test
+  listens on the shadow root.
+
+### Measurement
+
+`dist/index.js` without Lit measures 8.69 kB with Brotli after `source` mode, against 8.26 kB
+before it (the limit was 8.5 kB, now 9 kB): +0.43 kB for the reader, the parser wait, and the
+state it needs.
+
+### Not verified
+
+- A document with a deferred module script and a `source` script after the element, where the
+  element is defined by that module (the first page above covers a module script, but not one
+  that waits for another).
+- `source` when the element is created by a framework while the page is still loading.
+- Real Safari and Chrome releases. The results are from Playwright's engine builds.
+
+### Sources checked
+
+- `lib.dom.d.ts` from TypeScript 7.0.2 (`@typescript/typescript-darwin-arm64`): `getElementById`
+  on `Document` and `DocumentFragment`, `NonElementParentNode`, `Node.getRootNode`,
+  `Document.readyState` and `DocumentReadyState`.
+- MDN, `Document.readyState`, for what `loading` and `interactive` mean and the order of `readystatechange`, deferred scripts, and `DOMContentLoaded`.
