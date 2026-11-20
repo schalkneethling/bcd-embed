@@ -1,15 +1,42 @@
 # `@bcd-embed/element`
 
 The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architecture.md`). The
-element renders in data mode: a page assigns a payload to its `data` property, and the element
-renders the table with no request. Fetch mode (the `query` attribute) and the `source` attribute
-are later issues. The package also holds the message table, the note tokenizer, the table model,
-the feature client, and the screen reader tests, which walk the element's own table.
+element renders in two modes. In fetch mode it requests the feature named by its `query`
+attribute from the API. In data mode a page assigns a payload to its `data` property, and the
+element renders the table with no request. The `source` attribute is a later issue (#205). The
+package also holds the message table, the note tokenizer, the table model, the feature client,
+and the screen reader tests, which walk the element's own table.
 
 ## Usage
 
 The package is not published yet (`private` is `true`), so this is how a page will use it once it
 is. Importing the package defines the element.
+
+In fetch mode, the only required input is `query`. The element asks the hosted API,
+`https://api.browser-compat.dev`, once it comes near the viewport:
+
+```html
+<bcd-compat-table query="css.properties.display">
+  <p>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/display#browser_compatibility"
+      >Browser compatibility for <code>display</code> on MDN Web Docs</a
+    >
+  </p>
+</bcd-compat-table>
+
+<script type="module">
+  import "@bcd-embed/element";
+
+  document.addEventListener("bcd-load", (event) => {
+    console.log(event.detail); // { mode: "fetch", snapshot: "bcd-8.1.9-gen-…" }
+  });
+  document.addEventListener("bcd-error", (event) => {
+    console.warn(event.detail); // { mode: "fetch", reason: "network", status: null, code: null }
+  });
+</script>
+```
+
+In data mode, a script assigns a payload obtained at build time:
 
 ```html
 <bcd-compat-table id="display" browsers="chrome firefox safari">
@@ -35,20 +62,48 @@ is. Importing the package defines the element.
 </script>
 ```
 
-| Input                  | Kind                   | What it does                                                                                                                                                                                                                                  |
-| ---------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `data`                 | Property only          | A contract 1.x feature response. Assigning one renders the table. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data.                                                       |
-| `browsers`             | Attribute and property | Space-separated support target ids, such as `chrome firefox`. Without it, the table shows `chrome firefox safari nodejs`, less any target the payload does not describe, or every target in the payload when it describes none of those four. |
-| `locale`               | Attribute and property | Selects the string table. Only English ships, and an unknown locale selects English.                                                                                                                                                          |
-| The element's children | Fallback content       | Shown until a table renders, and again after an error or `data = null`. The element never moves or removes them.                                                                                                                              |
+| Input                  | Kind                   | What it does                                                                                                                                                                                                                                                       |
+| ---------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `data`                 | Property only          | A contract 1.x feature response. Assigning one renders the table. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data. While `data` is set, `query` sends no request.                             |
+| `query`                | Attribute and property | The BCD dotted key to request, such as `css.properties.display`, while `data` is `null`. Changing it requests the new key; removing it removes the table.                                                                                                          |
+| `endpoint`             | Attribute and property | The API's base URL, for a self-hosted API. The default is `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query string, fragment, or credentials; anything else is the error `invalid-endpoint`.                          |
+| `loading`              | Attribute and property | `lazy`, the default, holds the first request back until the element is within 400 pixels of the viewport. `eager` requests as soon as the element is in the document. Any other value, set on the attribute or the property, means `lazy`, as for `<img loading>`. |
+| `browsers`             | Attribute and property | Space-separated support target ids, such as `chrome firefox`. Without it, the table shows `chrome firefox safari nodejs`, less any target the payload does not describe, or every target in the payload when it describes none of those four.                      |
+| `locale`               | Attribute and property | Selects the string table. Only English ships, and an unknown locale selects English.                                                                                                                                                                               |
+| The element's children | Fallback content       | Shown until a table renders, and again after an error or `data = null`. The element never moves or removes them.                                                                                                                                                   |
 
 The element fires two events. Both are `CustomEvent`s that bubble, so a listener on the element,
 an ancestor, or the document receives them, and neither can be cancelled.
 
-| Event       | When                                                                                           | `detail` in data mode                                                   |
-| ----------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `bcd-load`  | Once for each update that renders a newly assigned payload, after the table is in the document | `{ mode: "data", snapshot: null }`                                      |
-| `bcd-error` | Once for each update that rejects a newly assigned value                                       | `{ mode: "data", reason: "invalid-payload", status: null, code: null }` |
+| Event       | When                                                                                                                           | `detail` in data mode                                                   | `detail` in fetch mode                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `bcd-load`  | Once for each update that renders a newly assigned payload, or the answer to a new request, after the table is in the document | `{ mode: "data", snapshot: null }`                                      | `{ mode: "fetch", snapshot }`, where `snapshot` is the response's `bcd-embed-snapshot` header |
+| `bcd-error` | Once for each update that rejects a newly assigned value, or for each new request that fails                                   | `{ mode: "data", reason: "invalid-payload", status: null, code: null }` | `{ mode: "fetch", reason, status, code }`, with a `reason` from the next table                |
+
+| Fetch-mode `reason` | When                                                                                                     | `status` and `code`                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `invalid-query`     | `query` fails the key pattern. No request is sent, and the error fires at once, even for a lazy element. | Both `null`                                                                                        |
+| `invalid-endpoint`  | `endpoint` is not an `https:` or `http:` base URL. No request is sent.                                   | Both `null`                                                                                        |
+| `network`           | The request failed with no readable response, or took longer than 20 seconds.                            | Both `null`                                                                                        |
+| `http`              | The API answered with an error status.                                                                   | The status, and the contract's code, such as `feature_not_found`, or `null` when the body has none |
+| `invalid-payload`   | The answer is not a contract 1.x feature response that the table model can read.                         | Both `null`                                                                                        |
+
+**A failed request means "temporarily unavailable".** The API contract says so
+(`docs/planning/01-api-contract.md`, section 8). The hosted API's edge rate limit answers with a
+Cloudflare 429 that has no CORS header, so the browser hides it and the element reports
+`network`. The element shows its fallback, fires one `bcd-error`, and never retries by itself, so
+fifty tables cannot turn a refusal into a request loop. The page's feature client holds the
+failure for 10 seconds. After that, only a new request for the same feature asks again, such as a
+changed `query` or a new element; a page that offers a retry button sets `query` again.
+
+**Requests.** All elements on a page share one feature client, so fifty elements with the same
+`query` send one request. A new `query` or `endpoint` while a request is pending starts the new
+request, and the old answer neither renders nor fires an event. Removing the element while a
+request is pending stops its wait: no event fires when the answer arrives, and the viewport
+observer is disconnected. Adding the element back asks again, and the shared request answers it
+without a second request when it is still in flight or succeeded. `data` wins over `query`:
+setting `data` drops a pending request, and setting it back to `null` shows the fetched table
+again.
 
 A change to `browsers` or `locale` renders the table again without a second `bcd-load`. The one
 exception is a change that turns a rendered payload into a rejected one, or back: the model checks
@@ -59,12 +114,39 @@ assigned is no change, so nothing renders and nothing fires. An event never fire
 element is out of the document: the element holds it back and dispatches one event, for the state
 it is in, when it is connected again, so a listener on the document misses nothing.
 
-**After an error.** When the element has fallback content, it renders nothing of its own and the
-fallback is the message. When it has none, it renders
-`<p class="bcd-error">Browser compatibility data could not be shown.</p>` in its container, so it
-is never empty. The owner decided this on 20 November 2026. Fallback content is an element child,
-or text that is not only white space. The sentence is the message `error-no-query`; the `error`
-message names the query, and a value that is not a payload may have none.
+**While loading, and after an error.** When the element has fallback content, it renders nothing
+of its own and the fallback is the message. When it has none, it renders one sentence in its
+container, so it is never empty:
+
+| State                                                   | Markup (message id)                                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Fetch mode, waiting for the viewport or loading         | `<p class="bcd-loading">Loading browser compatibility data for {query}.</p>` (`loading`)         |
+| Fetch mode, error                                       | `<p class="bcd-error">Browser compatibility data for {query} could not be loaded.</p>` (`error`) |
+| Data mode, error, or a fetch error for an empty `query` | `<p class="bcd-error">Browser compatibility data could not be shown.</p>` (`error-no-query`)     |
+
+The owner decided the data-mode sentence on 20 November 2026. #203 chose the two fetch-mode
+sentences, because in fetch mode the query is always known. Fallback content is an element child,
+or text that is not only white space, and the element checks again whenever its children change.
+
+While a request is in flight the element carries `aria-busy="true"`, and it removes the attribute
+when the answer arrives. A lazy element that is still waiting for the viewport has no `aria-busy`,
+because that wait may never end. No state uses a live region and the element never moves focus,
+so a page with ten tables produces no announcement while they load; a page reacts through the
+events instead.
+
+The table below gives what each screen reader is expected to say when a reader moves onto a
+loading element that has no fallback content. **None of it is verified yet**: the CI walks in
+`screen-reader/` cover the loaded table only, and the owner's manual pass comes at the end.
+
+| Screen reader and browser | Expected on reaching a loading element                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| NVDA with Firefox         | The loading sentence, read as text. NVDA is not expected to announce `aria-busy` on an element with no role. |
+| VoiceOver with Safari     | The loading sentence. VoiceOver may add "busy", or skip the content of a busy element until it is ready.     |
+| Orca with Firefox         | The loading sentence, read as text.                                                                          |
+
+Nothing is announced when the table replaces the sentence, because there is no live region; a
+reader who stays on the element finds the table on the next move. After an error, each screen
+reader is expected to read the error sentence, or the author's fallback, as plain text.
 
 **What counts as invalid.** Anything the table model rejects with a `TablePayloadError`: a value
 that is not a contract 1.x feature response, and a payload in which two features share a key.
@@ -133,7 +215,7 @@ one fast machine, so measure again on a slow phone before relying on them for ve
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/index.ts`                             | The package entry. It defines the element, and everything the package exports passes through it.                                                                   |
 | `src/bcd-compat-table.ts`                  | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                     |
-| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the placeholder glyphs (`status.ts`), and the error sentence (`error.ts`).                       |
+| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the placeholder glyphs (`status.ts`), and the loading and error sentences (`error.ts`).          |
 | `src/model/table-model.ts`                 | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                    |
 | `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                                                                                             |
 | `src/strings/format.ts`                    | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                              |
@@ -147,7 +229,7 @@ one fast machine, so measure again on a slow phone before relying on them for ve
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                    |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
 | `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                    |
-| `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 7 kB with Brotli.                                                                      |
+| `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 8.5 kB with Brotli.                                                                    |
 | `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
 `private` stays `true`, so nothing publishes yet. The package already has the shape a published one
@@ -218,9 +300,10 @@ reorder the "Note:" label before it or the text after it.
 `{endpoint}/v1/current/features/{query}.json` and resolves with a classified result. It never
 throws for a failed request. A result is either `{ ok: true, payload, snapshot }`, where `snapshot`
 is the `bcd-embed-snapshot` header, or `{ ok: false, reason, status, code }` with a `reason` of
-`invalid-query`, `network`, `http`, or `invalid-payload`. Tests inject `fetch` and the clock, so no
-test touches the network. The element will call `getPageFeatureClient()`, which creates one client
-per page on first use (#203).
+`invalid-query`, `invalid-endpoint`, `network`, `http`, or `invalid-payload`. Tests inject `fetch`
+and the clock, so no test touches the network. The element calls `getPageFeatureClient()`, which
+creates one client per page on first use, and that client calls the page's `fetch` at the moment
+it sends each request.
 
 | Outcome                                                             | Cached for                       |
 | ------------------------------------------------------------------- | -------------------------------- |
@@ -248,12 +331,16 @@ does not freeze it, because a deep freeze costs time proportional to the payload
 one entry per distinct URL and never evicts a success. The default clock is `performance.now()`,
 which a change to the system time cannot move.
 
-Notes for #203: the client does not validate `endpoint`. An empty string, or one containing `?` or
-`#`, produces a URL that sends a query string or fragment, or a relative request. #203 should
-reject such values before calling the client.
+The client checks `endpoint` before it builds a URL. An endpoint must be an absolute `https:` or
+`http:` URL (`http:` serves a self-hosted API on a local machine) with no credentials, query
+string, or fragment. Anything else gives `invalid-endpoint`, with no request and no cache entry.
+Without the check an empty string would become a request relative to the page, and a `?` or `#`
+would turn the feature path into a query string or a fragment. The raw text is checked for `?`
+and `#`, because the URL parser reports `https://a.test/?` as having no query. A valid endpoint is
+normalized through the URL parser, so `https://Example.TEST` and `https://example.test/` share one
+cache entry.
 
-The client is not exported from `src/index.ts` yet, so it adds nothing to the size budget until the
-element uses it.
+The client is not exported from `src/index.ts`; the element is its only caller.
 
 ## Build and tests
 
@@ -261,8 +348,9 @@ element uses it.
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
 | `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                |
+| `pnpm --filter @bcd-embed/element test:live` | Runs the one test that calls the live, hosted API (`e2e/live-api.live.ts` with `playwright.live.config.ts`). It requests `css.properties.line-clamp` once, in Chromium, and is not part of `pnpm check` or of the Element browser workflow.                                                                                   |
 | `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                |
-| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists the `bcd-compat-table` element with its `browsers` and `locale` attributes and its two events.                                                                                                                                               |
+| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists the `bcd-compat-table` element with its `query`, `endpoint`, `loading`, `browsers`, and `locale` attributes and its two events.                                                                                                              |
 
 The Vitest tests include a production build into a temporary directory, which checks that
 `dist/index.js` has no mention of `zod`. The element reads the schema package's types only, because
@@ -271,8 +359,11 @@ directory under `node_modules/.cache` and follows every import from `index.d.ts`
 none of those files imports from `lit`.
 
 The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
-element, the table model, and the note tokenizer measure 6.43 kB with Brotli, without Lit, so the
-limit is now 7 kB. The entry's `name` in `.size-limit.json` records that measurement, so the
+element, the table model, and the note tokenizer measured 6.43 kB with Brotli, without Lit, so the
+limit became 7 kB. Fetch mode (#203) brings the feature client and the request cache into the
+bundle for the first time, and the total is now 8.07 kB, so the limit is 8.5 kB. Measured on their
+own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
+growth, and the element's fetch logic for the rest. The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
 packaging issue (#206).
 
@@ -311,7 +402,11 @@ prints one version of each when they agree.
 
 `browser/bcd-compat-table.browser.test.ts` holds the element's rendering tests: the markup against
 the Phase 1 page, the events, the fallback rules, notes that contain markup, and the bound on the
-size of the rendered tree.
+size of the rendered tree. `browser/fetch-mode.browser.test.ts` holds the fetch-mode lifecycle:
+the input priority, sharing, `aria-busy`, each error reason, a query changed while a request is
+pending, and an element removed while one is pending. It replaces the page's `fetch` in each test
+and gives each test a query of its own, because the page's request cache lives as long as the
+page.
 
 `e2e/fixtures/smoke.html` is an inert page, and `e2e/smoke.e2e.ts` runs axe on it, so the harness
 proves itself without the element. A violation fails the test with the rule's id and the
@@ -324,6 +419,18 @@ checks the fallback rule's computed styles, the Tab key's stops, and that a note
 runs, and it records the render time of a 2,000-feature table. The page imports TypeScript source,
 so `playwright.e2e.config.ts` starts Vite's dev server on port 5198 through `webServer` and stops
 it afterwards. The run fails at once if that port is taken.
+
+`e2e/fixtures/fetch-mode.html` holds each fetch-mode state still: a loading element and an error
+element, each with and without fallback content, a network error, and a loaded table. Its
+stand-in API, `e2e/fixtures/fixture-api.ts`, replaces the page's `fetch` for the origin
+`https://fixture.test` only, so the page sends no request to a real server. The query
+`fixture.pending` never answers, so the loading state lasts until the feature client's 20-second
+deadline turns it into `network`; a test or a manual pass that needs it for longer installs
+Playwright's fake clock first. `e2e/fetch-mode.e2e.ts` runs axe on those states. It also adds
+elements to the page's `#lab` to check lazy loading against the real `IntersectionObserver`,
+`eager`, one request for 50 elements, `data` with `query`, `endpoint`, a 404, and a failed
+request. Playwright's routing answers requests to the hosted API's origin and to
+`https://example.test`, with the API's CORS headers.
 
 The Element browser workflow (`.github/workflows/element-browser.yml`) has a `changes` job, one
 test job per engine, and a final `element-browser` job that is the required status check. It
