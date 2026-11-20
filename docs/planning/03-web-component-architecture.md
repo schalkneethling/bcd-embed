@@ -1,6 +1,6 @@
 # Document 3 — Web Component: Architecture, Accessibility, and Implementation Plan
 
-**Status:** Draft for review
+**Status:** Amended on 19 November 2026 (#192) with the findings of the component spikes (Document 10, `10-component-spikes.md`) and the owner's decisions of 18 November 2026. Amended again on 20 November 2026 with the owner's decisions of 19 and 20 November 2026: the column group order, how fallback content is retired, and running every manual screen reader pass at the end. The Phase 1 screen reader pass (#186) has not run yet, so the answers that only a person at a screen reader can give, including Document 7's open questions, are still pending.
 **Depends on:** Document 1 (API Contract). Independent of Document 2.
 
 ---
@@ -33,7 +33,13 @@ A hand-rolled element is feasible given the low dynamism, but correct attribute 
 
 **Constraint:** Lit is an implementation detail, not part of the public contract. No Lit type appears in any exposed attribute, property, event, or CSS surface. Replacing Lit later should require no consumer-facing change.
 
-The same budget discipline governs `@bcd-embed/schema`: the element imports its types only (`import type`), never Zod at runtime. Zod is roughly twice Lit's size, and its runtime validation earns its keep on the server and at build time, not in the browser (Document 2 §2) — a malformed payload here is an error state (§9), not a schema-validation report.
+**Rules the light-DOM render root imposes on the Lit code.** The Lit spike (#187) confirmed that overriding `createRenderRoot()` to append a `<div>` and return it keeps Lit's output inside that container and leaves the author's children untouched, in Chromium, Firefox, and WebKit ([Document 10, #187 section 1](10-component-spikes.md#1-createrenderroot-returning-an-appended-div)). Three rules follow for Phase 2:
+
+- The render container is created in `createRenderRoot()`, never in `connectedCallback()`. Lit calls `createRenderRoot()` only when no render root exists yet, so removing the element and adding it again reuses the one container; creating it in `connectedCallback()` would add a new container on every reconnection ([#187 section 8](10-component-spikes.md#8-removing-the-element-and-adding-it-again)).
+- The component does not use `static styles`. Lit adopts `static styles` inside `ReactiveElement.createRenderRoot()`, and the override does not call `super`, so the styles would never apply. This was read from the installed source, not run ([#187, "`static styles`"](10-component-spikes.md#static-styles-source-read-only)). Base styles stay an ordinary stylesheet, as §3 already plans.
+- Every reactive property is declared in `static properties`, typed with a `declare` field, and given its default in the constructor. A plain class field (`label = "default"`) shadowed Lit's accessor under TypeScript 7.0.2 and Vite 8.3.8: the development build threw on the first update, and the production build rendered the default once and then ignored every change without an error ([#187 section 4](10-component-spikes.md#4-declare-properties-in-static-properties-under-typescript-7-and-vite-8)).
+
+The same budget discipline governs `@bcd-embed/schema`: the element imports its types only (`import type`), never Zod at runtime. Zod is roughly twice Lit's size, and its runtime validation earns its keep on the server and at build time, not in the browser (Document 2 §2) — a malformed payload here is an error state (§4, "Fallback content"), not a schema-validation report.
 
 ---
 
@@ -55,16 +61,23 @@ Light DOM means base styles have no encapsulation and can collide with author st
 /* base.css, the opt-in stylesheet an author imports */
 @layer bcd-embed.base;
 
+@import "./properties.css"; /* the @property rules, deliberately not in a layer */
 @import "./table.css" layer(bcd-embed.base);
 @import "./tokens.css" layer(bcd-embed.base);
 @import "./container-queries.css" layer(bcd-embed.base);
 ```
 
+**`@property` rules are imported without `layer()`.** When the tooling spike (#188) flattened `@import ... layer()` into one file, every tool it tried (Vite's own CSS pipeline, `lightningcss` 1.33.0, and `postcss-import` 17.0.1) nested an `@property` rule inside its `@layer` block. Chromium, Firefox, and WebKit still register an `@property` rule inside `@layer` in a document stylesheet, but importing the file that holds the `@property` rules without `layer()` keeps them at the top level, which `lightningcss` and `postcss-import` both confirmed ([Document 10, #188 section 6](10-component-spikes.md#6-flattening-import--layer-into-one-basecss)). The spike did not check Vite's own pipeline with this unlayered import, so Phase 3 confirms it on the built file.
+
+**The published `base.css` is flattened with Vite's CSS pipeline and `build.cssMinify: false`.** In Vite 8.3.8 the default of `build.cssMinify` is `'lightningcss'` (`vite/dist/node/index.d.ts`, line 2798). The spike did not build with that default; it ran lightningcss directly and as Vite's CSS transformer, and in both runs lightningcss dropped the `@layer` order statement and rewrote values, so the default minifier would likely do the same. With `cssMinify: false`, Vite kept the order statement and left values unchanged ([#188 section 6](10-component-spikes.md#6-flattening-import--layer-into-one-basecss)). If a minified file is wanted, it is a separate, measured step.
+
+**`@property` does not register inside a shadow root today.** Chromium 159, Firefox 159, and WebKit 27.2 all ignored an `@property` rule in a shadow root's `<style>` element, inside `@layer` there, and in an adopted stylesheet, although the CSS Properties and Values API editor's draft (section 2.8) says registrations are not scoped to a tree scope ([#188 section 6](10-component-spikes.md#6-flattening-import--layer-into-one-basecss)). The component has no shadow root, so its own `base.css` is unaffected when the page loads it. It does matter to an author who places `<bcd-compat-table>` inside their own shadow root and loads `base.css` there: the custom properties then stay unregistered. The author documentation must say to load `base.css` from the document. Re-run the spike's `property-probe.mjs` when Playwright's browsers are upgraded, because this changes when the engines implement the draft.
+
 Declaring the layer name up front, separately from importing content into it, is deliberate rather than a stylistic preference: it fixes this layer's position in the cascade order the moment the stylesheet is parsed, before any of the actual rules are known, and it lets the base styles live as ordinary, layer-agnostic CSS files in the source tree — each `@import ... layer(...)` is what assigns a file to the layer, not a wrapping block inside it. This also scales cleanly if the base styles end up split across more than one concern (table structure, design tokens, container-query breakpoints) without needing repeated `@layer bcd-embed.base { }` wrappers in every file.
 
 Any un-layered author style overrides layered styles regardless of specificity, so authors override the component with ordinary CSS and no `!important`. Authors using layers themselves can order this layer explicitly relative to their own, since its name is declared and stable.
 
-Base styles are shipped as a separate, opt-in stylesheet. A consumer wanting only semantic markup imports nothing.
+Base styles are shipped as a separate, opt-in stylesheet. A consumer wanting only semantic markup imports nothing. That promise has one exception, accepted by the owner on 20 November 2026: without the stylesheet, the author's fallback content stays visible next to the loaded table, because the base stylesheet is what hides it (§4, "Fallback content").
 
 Two standing rules govern every line of CSS this project authors and ships, not just the base stylesheet: every custom property is registered via `@property` unless there is a specific, stated reason not to — the token surface in §4 is where this is worked through in detail — and every property and value is logical, not physical: `inline-size`/`block-size` rather than `width`/`height`, `margin-inline`/`margin-block` rather than `margin-left`/`margin-right`/`margin-top`/`margin-bottom`, `inset-inline-start` rather than `left`, and so on throughout. This is what makes the component's layout correct under RTL and vertical writing modes without separate handling, and it costs nothing extra to do from the start.
 
@@ -80,24 +93,101 @@ Two standing rules govern every line of CSS this project authors and ships, not 
 
 **Attributes/properties.**
 - `query` — BCD dotted key. Only required input.
-- `endpoint` — overrides the API base URL. This is the entire self-hosting mechanism.
+- `endpoint` — overrides the API base URL. This is the entire self-hosting mechanism. The default is `https://api.browser-compat.dev`, the hosted API's hostname (Document 9). The element requests `{endpoint}/v1/current/features/{query}.json`, the feature lookup route in Document 1 §4.1, and a trailing slash on `endpoint` does not produce a double slash. For the default, `query="css.properties.display"` requests exactly `https://api.browser-compat.dev/v1/current/features/css.properties.display.json` (#202).
 - `browsers` — optional space-separated override of the displayed support-target set (browsers and runtimes, Document 1 §5.1). The default is `chrome firefox safari nodejs` — the three independent rendering engines plus Node.js, not a popularity pick (§11) — **intersected with the support targets actually present in the payload**: Node.js appears on a `javascript.builtins.*` table and not on a `css.*` one, where a permanently empty column would be noise. An explicitly set `browsers` attribute is honored literally — a listed target absent from the payload renders as a "no data" column, because the author asked for it (§11). The API itself returns everything; this attribute is the only curation point.
 - `locale` — selects the string table ("Strings and localization readiness," below). v1 ships English only; the attribute exists from the start so adding a locale later is additive, not breaking.
 - `loading` — `lazy` (default) or `eager`. Mirrors native `<img loading>` rather than inventing new vocabulary. `lazy` is the `IntersectionObserver`-deferred behavior in §6, the right default given several tables per page is the stated design case; `eager` opts a specific instance out — a table already known to be above the fold, or test automation where waiting on intersection timing adds flakiness rather than value.
 - `.data` (property only) — a contract-conformant payload set directly. When present, no fetch occurs, so `loading` has no effect: there is nothing to defer. This is the build-time property-assignment path (§7).
-- `source` — the `id` of a sibling `<script type="application/json">` element carrying a contract-conformant payload. Read once in `connectedCallback`, synchronously, no fetch, no script execution required beyond the component's own (§7). If `query`, `.data`, and `source` are somehow set simultaneously, the documented total order is `.data`, then `source`, then `query`: an already-present payload is never discarded in favor of a network request, and between the two payload paths the directly assigned property wins — it is the more explicit act, and the only one that can be updated programmatically at runtime.
+- `source` — the `id` of a `<script type="application/json">` element carrying a contract-conformant payload. Read once in `connectedCallback`, synchronously, no fetch, no script execution required beyond the component's own (§7). The script element must come before `<bcd-compat-table>` in document order (§7 gives the reason). An `id` that matches no element, or an element that is not a `<script type="application/json">`, is the error `source-missing`; text that is not JSON is `source-invalid-json` (#205). If `query`, `.data`, and `source` are somehow set simultaneously, the documented total order is `.data`, then `source`, then `query`: an already-present payload is never discarded in favor of a network request, and between the two payload paths the directly assigned property wins — it is the more explicit act, and the only one that can be updated programmatically at runtime. A failed `source` does not fall through to `query`: the element reports the error and sends no request (#205).
 
 **Multiple features.** Use multiple elements rather than a `query` list attribute. Each element needs independent loading state, error state, and cache entry, and stacking several features into one table is an authoring decision, not a component default. BCD's own key nesting (a query returning a parent and its descendants) is already one table by definition and is handled without special-casing.
 
-**Events.** Lifecycle events for load and error, so a host page can detect and surface a failed table rather than let it fail silently.
+**Placement.** The element cannot be written directly inside `<table>`, `<tbody>`, `<thead>`, `<tfoot>`, or `<tr>` in HTML. The HTML parser moves it out, to just before the table, with its children; this happened in Chromium, Firefox, and WebKit with no script on the page. Inside a `<td>` it stays where it was written ([Document 10, #187 section 7](10-component-spikes.md#7-bcd-compat-table-written-directly-inside-a-table)). The spike tested a direct child of `<table>` only; the other four follow from the HTML Standard's "in table body" and "in row" insertion modes, which hand an unexpected start tag to the "in table" mode and its foster parenting. These parsing rules also apply to `innerHTML`, but not to a script that inserts the element with `appendChild`. The author documentation states this rule.
 
-**Slots.** Author-supplied fallback content for the no-JavaScript and error cases (§7). In light DOM this means rendering provided children rather than replacing them, distinct from shadow-DOM slotting but similar in authoring model.
+### Events
+
+The element dispatches two events, named by the owner on 18 November 2026: `bcd-load` and `bcd-error`. The `bcd-` prefix keeps them from colliding with the native `load` and `error` events. Each is a `CustomEvent` dispatched on the element with a plain-object `detail`. The plan's default is that both events bubble (`bubbles: true`) and keep every other event option at its default; nobody has decided this yet, so #198 confirms it. A host page uses `bcd-error` to detect a failed table rather than let it fail silently.
+
+```ts
+type BcdMode = "data" | "source" | "fetch"; // which input supplied the payload (or failed)
+
+type BcdLoadDetail = {
+  mode: BcdMode;
+  snapshot: string | null; // fetch mode: the response's `bcd-embed-snapshot` header (Document 1 §7); otherwise null
+};
+
+type BcdErrorReason =
+  | "invalid-query" // `query` fails the key pattern; no request is sent
+  | "network" // the request failed with no readable response, including the edge's 429 (Document 1 §8)
+  | "http" // the API answered with an error status
+  | "invalid-payload" // the body, the `source` JSON, or the `.data` value is not a contract-conformant payload
+  | "source-missing" // `source` names no `<script type="application/json">`
+  | "source-invalid-json"; // the `source` script's text is not JSON
+
+type BcdErrorDetail = {
+  mode: BcdMode;
+  reason: BcdErrorReason;
+  status: number | null; // the HTTP status for "http"; null for every other reason
+  code: string | null; // the contract's error code, such as "feature_not_found", when the body carries one; otherwise null
+};
+```
+
+`bcd-load` fires once per rendered payload, after the table is in the document. `bcd-error` fires once per failure, and the element never retries by itself. The detail values are fixed by the acceptance criteria of the issues that build them: #198 (`mode: "data"`, `snapshot: null`, and `invalid-payload` with `status: null` and `code: null`), #202 (`invalid-query`, `network` with `status: null`, `http` with `status: 404` and `code: "feature_not_found"`, a 404 with no `code` in its body giving `code: null`, and a non-JSON 200 body giving `invalid-payload`), #203 (`mode: "fetch"` with a non-empty `snapshot`), and #205 (`mode: "source"`, `source-missing`, `source-invalid-json`, and `invalid-payload`).
+
+### Fallback content
+
+The author's children are the fallback. The element renders its table into a render container it creates and owns (§2), next to the children, and never moves or removes them, because in the Lit spike React threw a `removeChild` error on its next update and unmounted the whole root when the element had removed children React rendered ([Document 10, #187 section 3](10-component-spikes.md#element-children-removing-them-the-contrast)). A `<slot>` is never used: outside a shadow tree it projects nothing and renders its own fallback text as `display: contents`, so it would show stray text ([#187 section 2](10-component-spikes.md#2-a-slot-in-a-light-dom-template)).
+
+**How the fallback is retired, decided by the owner on 20 November 2026.** The element sets a state attribute on itself, and a rule in the base stylesheet hides every child except the render container while that attribute is present. This amendment names the attribute `loaded`, a boolean attribute that only the element sets: it is present while a table is rendered and removed on an error or when `.data` becomes `null`. The render container carries the class `bcd-render-container`, which is part of the public class names (§4, "Styling surface"). An earlier draft set `hidden` on each element child once, when the table loaded; the Lit spike showed that this snapshot misses a child a framework adds later, which stays visible after the table, and a text-only fallback, because a text node cannot carry `hidden` ([#187 section 3](10-component-spikes.md#element-children-hiding-with-hidden), [#187 findings 3 and 4](10-component-spikes.md#findings-for-the-document-3-amendment-192)). A rule keyed on the host covers both, and also covers children the parser adds after the first render, because it applies to whatever children exist at any moment.
+
+CSS selectors match elements, not text nodes, so the rule needs two parts. The element children are removed with `display: none`, and the text is hidden by making the host invisible and the container visible again:
+
+```css
+bcd-compat-table[loaded] {
+  visibility: hidden; /* hides bare text children; the space they take remains */
+}
+
+bcd-compat-table[loaded] > :not(.bcd-render-container) {
+  display: none; /* removes element children, including ones added later */
+}
+
+bcd-compat-table[loaded] > .bcd-render-container {
+  visibility: visible; /* the table shows again */
+}
+```
+
+`visibility: hidden` also removes the text from the accessibility tree, but a bare text fallback keeps its line box, so a blank line can remain above or below the table. This rule is the shape of the decision, not tested code: #198 verifies it in Chromium, Firefox, and WebKit and records any residual space. #198 also replaces its acceptance criterion that the `<p>` fallback gets `hidden` with one that checks the attribute and the computed styles.
+
+**Without the stylesheet, the fallback stays visible next to the table.** The owner accepted this on 20 November 2026, because a page that loads the component but not its stylesheet is very rare. It changes Document 3's promise that a page importing nothing still gets usable output (§3): the table is still complete and accessible, but the fallback is no longer hidden.
+
+| State                        | Author's children                                        | The element adds                                                                           |
+| ---------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| No script, or before upgrade | Visible                                                  | Nothing                                                                                    |
+| Loading (fetch mode)         | Visible                                                  | `aria-busy="true"` on the element                                                          |
+| Loaded                       | Hidden by the base stylesheet, while `loaded` is present | The table, inside the render container, and the `loaded` attribute; `aria-busy` is removed |
+| Error                        | Visible again (`loaded` removed)                         | A `bcd-error` event                                                                        |
+
+Whether the element also renders a sentence of its own while loading or after an error, when the author gave no children, is proposed but not decided. The scaffold branch for #194 adds the message ids `loading` ("Loading browser compatibility data for {query}.") and `error` ("Browser compatibility data for {query} could not be loaded.") to `packages/element/src/strings/en.ts`. When the element shows them is for #198 (the data-mode error) and #203 (loading and fetch errors) to settle.
+
+`aria-busy` comes from #203. Setting `.data` to `null` after a render removes the table and shows the fallback again (#198). No live region announces loading, so a page with ten tables produces no status announcement (#203).
+
+The render container's position among the children is not fixed. It comes after the author's children when the element is upgraded after parsing, and before them when the element is defined before the parser reaches it, because the container is appended on the first connection and the parser then adds the children after it ([#187, "Where the container lands"](10-component-spikes.md#where-the-container-lands-depends-on-when-the-element-is-defined)). Base styles and tests must allow both orders. The rule above does, because it does not depend on order.
+
+**React replacing a string child is not solved by the state attribute.** When React changes a single string child, it assigns the element's `textContent`, which removes every child, the render container included. Lit keeps its reference to the detached container and renders into it, so the table silently stops appearing, with no error ([#187 section 3](10-component-spikes.md#a-single-string-child)). The stylesheet rule cannot help, because the container is no longer in the document. #198 must detect a detached container and put it back, for example with a `MutationObserver` on the element's child list that re-appends the container when it is no longer a child. It must re-append the same container node rather than create a new one, because Lit creates the render root only once and keeps rendering into that node ([#187 section 8](10-component-spikes.md#8-removing-the-element-and-adding-it-again)). A test in #198 or the React fixture (#207) shows the table surviving a changed string child. Authors under React can also avoid the case by writing the fallback as an element rather than a bare string (§8).
+
+### Support-target columns
+
+The `browsers` rules above decide which targets show. The table model (#196) groups the shown targets into column groups by their `type` in the payload (`desktop`, `mobile`, `xr`, or `server`, Document 1 §4.2). Three further rules are settled:
+
+- **The "Other" group.** A target named in an explicit `browsers` attribute but absent from the payload has no `type`, so it goes into a group named "Other", and every cell in its column is "No data for {target}". For `browsers="chrome deno"` and a payload with no `deno`, the table has an "Other" group with one column headed `deno` (#196).
+- **The empty intersection.** When `browsers` is not set and none of the default targets (`chrome firefox safari nodejs`) is in the payload, the model shows the payload's own targets instead of an empty table. A payload whose only target is `webview_android` shows that one target (#196).
+- **The column group order.** The groups appear in the order Desktop, Mobile, Server, XR, Other. The owner decided this on 20 November 2026, because it matches the compatibility tables on MDN Web Docs. A group with no shown target is left out, so the Phase 1 fixture still reads Desktop, then Server (Document 7). The table model (#196) applies this order.
 
 ### Strings and localization readiness
 
 v1 is English-only, but internationalization shares a property with accessibility: bolted on later, it means reopening every template. The door is held open structurally from the first line of code:
 
-- Every human-readable string the component renders — including the generated accessible names in §5, which are full sentences, not labels — lives in a single strings module keyed by message id, with placeholders for interpolated values (`supported-since: "Supported since {browser} {version}"`). No string literal appears in a template.
+- Every human-readable string the component renders — including the generated accessible names in §5, which are full sentences, not labels — lives in a single strings module keyed by message id, with placeholders for interpolated values (`supported-since: "Supported since {target} {version}"`, as in Document 7's string inventory). No string literal appears in a template.
 - Accessible-name sentences are messages with placeholders, never concatenated fragments — word order differs across languages, and concatenation is the classic mistake that turns later localization into a rewrite instead of a translation.
 - The `locale` attribute selects the string table; unknown locales fall back to English. Locale tables beyond English load on demand (dynamic import), so the English-only default pays no bundle cost for a capability it is not using.
 - The model to draw from is MDN's own localization pipeline (`mdn/content` with its `mdn/translated-content` counterpart, community-translated via Mozilla's Pontoon): a strings file in the repository first, Pontoon integration later if and when translation contributions are wanted. The strings-file format should be chosen with Pontoon's supported formats in mind — Fluent being the Mozilla-native choice — so that step is an integration, not a migration.
@@ -139,6 +229,10 @@ Every cell requires a programmatically determinable name stating the complete fa
 Lucide is a reasonable source for the icon set: MIT-licensed (matches the project's own licensing decision, Document 2 §2), plain SVG at its core rather than tied to a specific framework, so it fits a light-DOM component without needing a React-specific wrapper, and its line-icon style pairs cleanly with the shape-based non-color affordances this section already requires — a check for supported, an x for unsupported, a dash or slash for unknown, and so on. The specific icon-to-state mapping is an implementation detail to settle during Phase 3 (§10), alongside the ColorADD/ColorSym-informed palette (below), not a decision this document needs to fix in advance.
 
 Implementation: the icon is decorative and hidden from assistive technology; visible cell text carries the version; a visually hidden span carries the full accessible name. Modifiers (flag, prefix, alternative name, partial, removed) are part of that name, not separate icons requiring reconstruction by the reader.
+
+**The compact glyph span carries `hidden` as well as `aria-hidden="true"`.** The owner decided this on 18 November 2026, and the Phase 1 pages carry it since #216 (Document 7, "What is here"). With no stylesheet, the browser's own `hidden` rule removes the glyph-and-version span, so each cell reads as its full sentence, and a page that imports nothing (§3) still gets a usable table. The base stylesheet must give the span its `display` back, as the Phase 1 stylesheet does with `.bcd-table [aria-hidden="true"][hidden] { display: inline; }` (`docs/planning/phase1-markup/phase1.css`), or a sighted reader never sees the glyph. The attribute selector keeps that rule off every other hidden element.
+
+**"Or earlier" is shown only when the payload says so.** The table model reads `versionAddedIsApproximate` on the support summary as an optional field. It writes "Supported since {target} {version} or earlier", with a compact `≤` before the version, only when the field is present and `true`. When the field is absent, as in every contract 1.0.0 summary, or `false`, the cell reads as an exact version. The model never derives the flag from the branches, because selecting a statement repeats the API's logic in the component, which `CLAUDE.md` rules out (#196). Contract 1.1.0 adds the field to the summary (#191); until then, no summary carries it, because the 1.0.0 summary has `versionRemovedIsApproximate` but not its "added" twin (`packages/schema/src/schemas.ts`, lines 219–225).
 
 Color is never the sole carrier of meaning: each support state needs a distinguishable non-color affordance (shape, glyph, or text), and the default palette must meet WCAG 1.4.11 (non-text contrast) for icons and 1.4.3 for text. Both are asserted in automated tests. Two systems built specifically for this problem, worth designing from rather than inventing ad hoc: [ColorADD](https://www.coloradd.net/en/) and [ColorSym](https://colorsym.com/), both pairing color with shape for colorblind users. Directly relevant to the default support-state palette and its paired iconography (§4's token surface).
 
@@ -190,15 +284,24 @@ Expansion animation respects `prefers-reduced-motion`. Default palette respects 
 
 Multiple tables per page is the expected case.
 
-The component does not fetch until needed, by default: an `IntersectionObserver` defers both payload and rendering code until the section nears the viewport. This is the `loading="lazy"` default (§4); `loading="eager"` skips the observer and fetches immediately, for the specific cases where deferral costs more than it saves (§4).
+The component does not fetch until needed, by default: an `IntersectionObserver` defers both the payload request and the rendering until the section nears the viewport. It does not defer loading the rendering code, because the renderer is a static import (below). This is the `loading="lazy"` default (§4); `loading="eager"` skips the observer and fetches immediately, for the specific cases where deferral costs more than it saves (§4).
 
 Requests are deduplicated and cached at module level, so multiple tables querying overlapping keys on one page produce one fetch, not several.
 
 Rendering happens once from fully resolved data rather than progressively, avoiding layout thrash. Payloads are compressed at the service (Document 1 §9); this is load-bearing for the performance budget.
 
-The package ships as ESM, tree-shakeable, with the table renderer in a separate chunk from the element shell. `sideEffects` in `package.json` is deliberately **not** a blanket `false`: the element package's entry point calls `customElements.define(...)` at module scope — a genuine side effect a bundler must not remove, and exactly what a bare `"sideEffects": false` risks dropping ([rollup/rollup#5538](https://github.com/rollup/rollup/issues/5538) documents this happening for prototype-mutation side effects; the underlying `sideEffects`/`moduleSideEffects` confusion is tracked in [rollup/rollup#5987](https://github.com/rollup/rollup/issues/5987)). [vitejs/vite#14321](https://github.com/vitejs/vite/issues/14321) covers the equivalent gap for CSS imported via JS, relevant if base styles are ever distributed that way rather than as a plain `.css` file. Correct configuration: the array form, `"sideEffects": ["./dist/element.js"]` (or whichever file(s) call `customElements.define`), leaving `core`, `schema`, and the pure rendering helpers genuinely tree-shakeable. Worth verifying with an actual bundle-analyzer pass (Phase 7, §10), not assumed from the package.json alone.
+The package ships as ESM and tree-shakeable. `sideEffects` in `package.json` is deliberately **not** a blanket `false`: the element package's entry point calls `customElements.define(...)` at module scope — a genuine side effect a bundler must not remove, and exactly what a bare `"sideEffects": false` risks dropping ([rollup/rollup#5538](https://github.com/rollup/rollup/issues/5538) documents this happening for prototype-mutation side effects; the underlying `sideEffects`/`moduleSideEffects` confusion is tracked in [rollup/rollup#5987](https://github.com/rollup/rollup/issues/5987)). [vitejs/vite#14321](https://github.com/vitejs/vite/issues/14321) covers the equivalent gap for CSS imported via JS, relevant if base styles are ever distributed that way rather than as a plain `.css` file. Correct configuration: the array form, listing the file that calls `customElements.define` and the stylesheets, which the scaffold issue sets as `"sideEffects": ["./dist/index.js", "./dist/*.css"]` (#194), leaving `core`, `schema`, and the pure rendering helpers genuinely tree-shakeable. Worth verifying with an actual bundle-analyzer pass (Phase 7, §10), not assumed from the package.json alone.
 
-**Budget, in numbers.** General guidance for optimal web performance puts an initial JavaScript bundle under 250 KB uncompressed, 50–100 KB compressed — but that is a budget for a whole page, and this component is a guest on someone else's. Its own target: **25 KB compressed or less** for the initial import (element shell, Lit, and the renderer chunk together), excluding payload data, asserted by a size check in CI rather than observed informally. These limits are client-side limits specifically: server-side code (`generator`, `server`, Zod validation) carries no comparable ceiling, which is exactly why Zod stays out of the element bundle (§2, Document 2 §2) while remaining the right tool on the server.
+**The renderer boundary: one static import unless the renderer is large.** An earlier draft put the table renderer in a separate chunk from the element shell. The decision now is that the renderer stays a static import, so the package's entry is one file, unless the packaging check (#206) measures the renderer alone at more than 8 KB compressed with gzip, the same measure as the budget below (#206 says only "compressed", so this document fixes it as gzip to make the two numbers comparable); only then does #206 propose a lazy chunk as a follow-up issue. The reason to prefer one file: the tooling spike found that Vite 8.3.8's library mode emits a second, content-hashed chunk for every dynamic `import()`, and the entry refers to it by that hashed name, so a consumer who copies only the entry file loses the lazy code ([Document 10, #188 section 5](10-component-spikes.md#5-vite-library-mode-and-dynamic-import)). The renderer's measured size and the resulting decision are recorded here when #206 lands; no component code existed to measure when this section was amended. The same chunking applies to the locale tables that §4 loads on demand by dynamic import: each would ship as its own hashed file. v1 ships English only, so no locale chunk exists yet.
+
+**Budget, in numbers.** General guidance for optimal web performance puts an initial JavaScript bundle under 250 KB uncompressed, 50–100 KB compressed — but that is a budget for a whole page, and this component is a guest on someone else's. Its own target: **25 KB compressed with gzip, or less**, for the initial import (element shell, Lit, and the renderer together), excluding payload data, asserted by a `size-limit` check in continuous integration (CI) that fails the build when exceeded (#206), rather than observed informally. What the tooling spike measured about that check ([#188 section 4](10-component-spikes.md#4-size-limit)):
+
+- `size-limit` 14.3.0 with `@size-limit/preset-small-lib` exits 1 over the limit and 0 under it, so it can fail CI.
+- It counts an imported `lit` in the total unless the entry sets `ignore: ["lit"]`. A probe Lit element measured 5,341 B with Lit counted and 184 B without. This budget includes Lit, so the entry must not ignore it.
+- By default it adds every chunk the entry produces, including a dynamically imported one; `entry: ["main"]` limits the total to the main chunk and its static imports.
+- The preset measures with Brotli, not gzip. Every spike number above is Brotli. The budget is measured with gzip, so the `size-limit` entry sets `"gzip": true`. The review of this amendment read that option in `size-limit` 14.3.0's `index.d.ts` (`gzip?: boolean`, "With true it will use Gzip compression and disable Brotli compression"); the spike did not run it, so #206 confirms it against the installed copy.
+
+These limits are client-side limits specifically: server-side code (`generator`, `server`, Zod validation) carries no comparable ceiling, which is exactly why Zod stays out of the element bundle (§2, Document 2 §2) while remaining the right tool on the server.
 
 ---
 
@@ -208,7 +311,19 @@ Fetch-from-API and works-without-JavaScript are not simultaneously achievable wi
 
 **v1 priority is fetch mode, then data mode.** Full server-side rendering of the markup is deferred (see below) — it is a reasonable thing to want eventually, but committing to it now, before fetch mode has shipped and been used, is scope creep this document should not lock in.
 
-**Fetch mode (default).** Set `query`; the component fetches and renders. No-JavaScript fallback is author-supplied content rendered as the element's children, defaulting to a link to the corresponding MDN page.
+**Fetch mode (default).** Set `query`; the component fetches and renders. The no-JavaScript fallback is content the author writes as the element's children; the component supplies no default fallback and invents no link. The children show before the element upgrades, while it loads, and after an error, and are hidden once the table renders (§4, "Fallback content"). For example, an author who wants readers without JavaScript sent to MDN Web Docs (MDN) writes the link:
+
+```html
+<bcd-compat-table query="css.properties.display">
+  <p>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/display#browser_compatibility"
+      >Browser compatibility for <code>display</code> on MDN Web Docs</a
+    >
+  </p>
+</bcd-compat-table>
+```
+
+Prefer an element, such as the `<p>` above, to bare text. The base stylesheet hides both once the table loads, but a bare text fallback can leave a blank line, and under React a single string child that changes destroys the render container until the element restores it (§4, "Fallback content").
 
 **Data mode has two variants, both no-fetch, differing in how the payload arrives.**
 
@@ -223,7 +338,7 @@ The second, worth building because it removes that dependency, is an inline JSON
 <bcd-compat-table query="css.properties.display" source="bcd-data-css-properties-display"></bcd-compat-table>
 ```
 
-`source` takes the `id` of a JSON script element anywhere in the document; the component reads and parses it in `connectedCallback`, synchronously — no fetch, no property assignment from any script. A static-site generator only has to emit two plain HTML fragments — the script tag and the element referencing it — a lower bar than requiring a hydration script to run and set a property in the right order. `id` naming is the author's responsibility; a documented convention (`bcd-data-{query-with-dots-as-dashes}`) avoids collisions across multiple tables per page without the component enforcing anything. Both `.data` and `source` are no-fetch, no-loading-state paths; `source` is the one requiring no script execution at all beyond the component's own.
+`source` takes the `id` of a JSON script element that comes before the element in document order; the component reads and parses it in `connectedCallback`, synchronously — no fetch, no property assignment from any script. The order matters because the Lit spike found that when the element is defined before the parser reaches it, `connectedCallback()` runs before the parser has read anything after the element's start tag ([Document 10, #187 section 1](10-component-spikes.md#where-the-container-lands-depends-on-when-the-element-is-defined)). A script placed after the element would not exist yet, and the element would report `source-missing`. This is inferred from the observed order; the spike did not test `source` itself ([#187, finding 2](10-component-spikes.md#findings-for-the-document-3-amendment-192)), so the `source` issue (#205) tests it. The page's generator must also replace every `<` in the JSON with the six-character escape `\u003c` (a backslash, `u`, `0`, `0`, `3`, `c`), so a note containing a closing script tag cannot end the script element early (#205). A static-site generator only has to emit two plain HTML fragments — the script tag and the element referencing it — a lower bar than requiring a hydration script to run and set a property in the right order. `id` naming is the author's responsibility; a documented convention (`bcd-data-{query-with-dots-as-dashes}`) avoids collisions across multiple tables per page without the component enforcing anything. Both `.data` and `source` are no-fetch, no-loading-state paths; `source` is the one requiring no script execution at all beyond the component's own.
 
 **Server-side rendering of the markup — deferred, not v1.** Rendering the actual table HTML on the server (rather than just the data) would extend data mode's no-JavaScript story to cover markup as well, and Lit's SSR support makes it technically tractable. But it adds a real implementation and testing surface (Document 3 §9, §10) for a capability neither fetch mode nor the inline-JSON variant of data mode requires, and nothing in the project's stated goals (Document 0 §3) commits to it. It is left as a candidate future addition once the two v1 modes have shipped and are in use, rather than designed and built now on spec.
 
@@ -233,7 +348,24 @@ Fetch mode and both data-mode variants are one component with configurable data-
 
 ## 8. Framework interoperability
 
-React 19 handles custom elements correctly (non-primitive values as properties, primitives as attributes), so `.data` works without a wrapper. Older React versions do not handle this consistently; the props-vs-attributes distinction should be documented explicitly, since it affects `.data` directly.
+**React 19 decides by the element instance, not by the value's type.** In client rendering, React 19 assigns a prop as a property when the custom element instance has a property of that name, and as an attribute otherwise ([React 19 release post, "Support for Custom Elements"](https://react.dev/blog/2024/12/05/react-19)). The Lit spike confirmed this in React 19.3.1: React checks `key in domElement` at the moment it applies the prop, and the value's type matters only afterwards, on the attribute path ([Document 10, #187 section 5](10-component-spikes.md#5-react-19-setting-data-on-the-element)).
+
+**What this means for `data`.** React finds the `data` property only when Lit's accessor already exists, which is when the element has been defined before React renders it. In the Lit spike's words: "If the element is not defined before React renders it, `data` becomes the attribute `"[object Object]"` and the payload is lost" ([#187, finding 1](10-component-spikes.md#findings-for-the-document-3-amendment-192)). The spike recorded each load order:
+
+| When the element is defined           | What React 19.3.1 does with `data`                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------------- |
+| Before React renders it               | Sets the property; `el.data` is the same object                                        |
+| After React renders it                | Sets the attribute `data="[object Object]"`; after the upgrade `el.data` is `undefined`, so the payload is lost |
+| After, then React renders a new value | Sets the property, because the accessor now exists                                     |
+| After, with a `ref` callback          | The callback sets the property; Lit keeps it through the upgrade                       |
+
+The payload is lost in the second row because `data` is declared with `attribute: false`, so Lit never reads the attribute. So the element's module must run before React renders the element, for example by importing `@bcd-embed/element` at the top of the module that renders it. Where the load order cannot be guaranteed, the recommended form is a `ref` callback that assigns `data`, which works in every load order. One caveat applies: React runs a `ref` callback again only when it is a different function from the previous render, so an inline callback runs on every render, while a memoised one runs once and later changes to `data` need another path, such as the `data` prop once the element is defined ([#187 section 5](10-component-spikes.md#5-react-19-setting-data-on-the-element)). The spike did not test a primitive prop or repeated `ref` assignment. The plan expects React 19 to attach the event listeners through the props `onbcd-load` and `onbcd-error`. No spike has run that yet; the framework fixtures (#207) verify it in React 19.3.1, alongside Vue 3.5.45 and Svelte 5.57.3.
+
+**Server rendering is different.** The same release post says that in server-side rendering React renders primitive props as attributes and omits objects, so `data` never reaches server-rendered HTML. The spike tested client rendering only. A server-rendered page passes the payload through `source` (§7) or assigns `data` on the client.
+
+**String children.** React treats a single string child of a custom element as text content, and when that string changes it assigns `textContent`, which replaces every child, including the render container ([#187 section 3](10-component-spikes.md#a-single-string-child)). The element restores the container (§4, "Fallback content"), but under React the fallback is better written as an element than as a bare string.
+
+Older React versions do not handle custom element properties consistently; the documentation states the React 19 rule above and does not promise more for older versions.
 
 A thin React wrapper is a plausible future addition, not a `v1` deliverable.
 
@@ -243,11 +375,46 @@ A thin React wrapper is a plausible future addition, not a `v1` deliverable.
 
 Vitest for unit/integration, Playwright for end-to-end, component, and visual regression. Test-driven throughout.
 
+### Test layers
+
+Each layer runs where its cost fits, from cheapest to most expensive:
+
+| Layer                                  | What it tests                                                                                     | Where it runs                                                                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node unit tests (Vitest)               | The pure modules: the table model, the notes tokenizer, the request client and cache, the strings | `pnpm check`, in the required `check` job                                                                                                      |
+| Browser tests in Chromium (Vitest)     | The element's rendering, in files named `*.browser.test.ts`                                        | Whether it joins `pnpm check` is decided in #197; the tooling spike recommends yes, provisionally ([Document 10, #188 section 10](10-component-spikes.md#10-recommendation-does-the-chromium-vitest-project-join-pnpm-check)) |
+| Three-engine tests with axe (Playwright) | Chromium, Firefox, and WebKit, with axe, in files named `*.e2e.ts`                                | The `element-browser` job, which #197 will add as a required check, outside the 10-minute `check` job                                                                   |
+| Screen reader walks (Guidepup, a library that drives real screen readers from tests) | VoiceOver in Playwright's WebKit, Orca and NonVisual Desktop Access (NVDA) in Playwright's Firefox                            | The required `screen-readers` job (`.github/workflows/screen-readers.yml`)                                                                     |
+| Manual screen reader pass              | VoiceOver with Safari, by the owner; the release gate below                                       | By hand, per release                                                                                                                           |
+
+The Node project must exclude `**/*.browser.test.ts`, because a browser project that only lists an `include` does not stop the Node project from collecting those files ([#188 section 3](10-component-spikes.md#3-a-browser-project-beside-the-node-tests)). Firefox and WebKit stay out of `pnpm check`, because three engines took 12.7 s to 38.8 s for 20 tests locally and needed a 1.2 GB browser install ([#188 section 10](10-component-spikes.md#10-recommendation-does-the-chromium-vitest-project-join-pnpm-check)).
+
 Rendering logic is tested against the golden fixtures from Document 2 Phase 1: given a fixture payload, verify the markup produced. This allows the component to be built and tested to completion before the service exists, proceeding in parallel with Document 2 and converging at integration.
 
 Required non-happy-path fixtures: a feature with three parallel prefixed branches; a feature supported only behind a flag; a feature added, removed, and re-added; a support target absent from the payload versus present with `state: "unknown"` (covering at least one runtime, not only browsers); a 404 response; a malformed payload; a `source` reference to a missing element id; a `source` script containing invalid JSON; `query`, `.data`, and `source` all set at once, asserting the documented priority order (§4) is actually what runs.
 
-Accessibility: automated auditing (axe) via Playwright on every state — loading, loaded, error, expanded, narrow container, wide container. Automated tooling covers a subset of what matters; manual verification with a screen reader is a release gate, particularly for header association and cell-naming (§5). The gate names its combinations rather than leaving "a screen reader" to interpretation: NVDA with Firefox and VoiceOver with Safari are required per release; JAWS with Chrome is best-effort. Keyboard-only traversal of the full table, including the scroll region and every disclosure, is a scripted test.
+Accessibility: automated auditing (axe) via Playwright on every state — loading, loaded, error, expanded, narrow container, wide container. Automated tooling covers a subset of what matters; screen reader verification is a release gate, particularly for header association and cell-naming (§5). Keyboard-only traversal of the full table, including the scroll region and every disclosure, is a scripted test.
+
+### Release gate
+
+The gate names its combinations rather than leaving "a screen reader" to interpretation. Two pairs are required per release, and each is tested differently; JAWS with Chrome is best-effort.
+
+| Required pair           | How it is tested                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| VoiceOver with Safari   | A manual pass by the owner, running Document 7's script against the built component.                                                                  |
+| NVDA with Firefox       | The NVDA walk in the `screen-readers` CI job (#215) passes on the release commit, and the owner reviews its transcripts (the `screen-reader-results-nvda` artifact) step by step. |
+
+The owner decided the NVDA arrangement on 18 November 2026, because the owner has no Windows machine. The NVDA walk runs on a GitHub-hosted `windows-2025` runner through Guidepup, and it passed five consecutive manual runs with no retry before it joined the required check ([Document 10, #215](10-component-spikes.md#results-of-the-manual-runs)). Its checks are written from NVDA's recorded wording, such as "Node dot js", not from the markup's spelling (Document 7, "NVDA in CI").
+
+What the NVDA CI walk does not cover, so the owner's review must keep it in mind:
+
+- **Release Firefox.** CI runs Playwright's Firefox build on Windows Server, not a released Firefox on a desktop Windows (`packages/element/README.md`, "What each pairing covers").
+- **Document 7's step 4, in part.** The walk moves down the Node.js column and down the Chrome column in shorter runs, not down the Chrome column for five rows as the step is written, so the step is asserted only in those other moves (Document 7, "NVDA in CI").
+- **Document 7's step 7.** The walk tabs only to the first disclosure; a full Tab traversal of the table is left manual, because it tests the page's tab order more than NVDA ([Document 10, #215](10-component-spikes.md#how-many-manual-steps-nvda-performs)). The scripted keyboard test checks where focus stops, but not what NVDA says at each stop.
+- **Judgment.** Steps 10, 13, and 14 ask whether two announcements are "clearly different", whether ancestor headers help or are noise, and what differs between variants. The transcript informs these answers, but no check gives them.
+- **A new NVDA release.** The checks pin NVDA's exact wording, so a release installed by `@guidepup/setup` may change it; the transcript then shows the new wording ([#215, "Still unverified"](10-component-spikes.md#still-unverified)).
+
+VoiceOver's CI walk runs in Playwright's WebKit, which is not Safari, so it does not replace the manual Safari pass. The owner decided on 19 November 2026 to run every manual screen reader pass at the end, so the Phase 1 pass (#186), which answers Document 7's open questions, has not run yet and runs with the release gate on the built component (#212). It holds no implementation issue.
 
 Visual regression covers the support-state palette and container-query breakpoints. Contrast ratios are asserted in tests, not checked visually.
 
@@ -255,13 +422,13 @@ Visual regression covers the support-state palette and container-query breakpoin
 
 ## 10. Implementation plan
 
-**Phase 1 — semantic structure, statically.** Hand-write target table markup for a set of fixtures chosen for complexity, not familiarity, with no component code. Establish header association, cell naming, and disclosure structure; validate against a screen reader before any Lit code is written. This ordering is deliberate: the accessible structure is the load-bearing constraint and should not be retrofitted around a rendering approach chosen for other reasons.
+**Phase 1 — semantic structure, statically.** Hand-write target table markup for a set of fixtures chosen for complexity, not familiarity, with no component code. Establish header association, cell naming, and disclosure structure; validate against a screen reader before any Lit code is written. This ordering is deliberate: the accessible structure is the load-bearing constraint and should not be retrofitted around a rendering approach chosen for other reasons. The owner decided on 18 November 2026 that only work holding no table markup could merge before the Phase 1 pass (#186) closed, and then on 19 November 2026 to run every manual screen reader pass at the end. So #186 no longer holds any issue, the element's template (#198) included. #198 builds the Phase 1 markup with variant A, by Document 7's rule that "Variant A is the simpler markup, so it wins unless a screen reader announces variant B more completely"; the pass at the end can still reverse that. The CI walks have so far shown no advantage for variant B (Document 7, "First automated results"). The fallback rule in §4 is decided, so nothing in it holds #198 either.
 
-**Phase 2 — element in data mode.** Lit element taking `.data`, producing the Phase 1 markup. No fetching. Fully testable against fixtures; completable before the service exists.
+**Phase 2 — element in data mode.** Lit element taking `.data`, producing the Phase 1 markup, with the fallback rules and the `bcd-load` and `bcd-error` events (§4). No fetching. Fully testable against fixtures; completable before the service exists.
 
 **Phase 3 — styling.** Base styles in the cascade layer, registered custom properties, container queries under Shared First, `light-dark()` for dark mode, print styles. Verify that un-layered author CSS overrides every base style, since this is the core assumption behind the light-DOM decision.
 
-**Phase 4 — fetch mode.** Async task, loading/error states, request cache and deduplication, `IntersectionObserver` deferral and the `loading` attribute that controls it, `endpoint` override. Integrate against the live service. A request that fails without a readable response is a temporary failure, not a bug in the page: the hosted service's rate limit answers with a Cloudflare 429 that has no CORS header, so the browser reports it as a network error (Document 1 §8, Document 9). The element renders its fallback content, emits its error event, and does not retry on its own.
+**Phase 4 — fetch mode.** Async task, loading/error states, request cache and deduplication, `IntersectionObserver` deferral and the `loading` attribute that controls it, `endpoint` override. Integrate against the live service. A request that fails without a readable response is a temporary failure, not a bug in the page: the hosted service's rate limit answers with a Cloudflare 429 that has no CORS header, so the browser reports it as a network error (Document 1 §8, Document 9). The element shows its fallback content, fires `bcd-error` with `reason: "network"` and `status: null` (§4), and does not retry on its own.
 
 **Phase 5 — interaction.** Disclosure, focus management, keyboard paths, reduced motion.
 

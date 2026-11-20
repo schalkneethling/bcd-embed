@@ -96,8 +96,10 @@ together.
 
 ### What each pairing covers
 
-Document 3 §9 makes NVDA with Firefox and VoiceOver with Safari a release gate. The three
-pairings here cover that gate to different degrees, and none of them replaces it.
+Document 3 §9 makes NVDA with Firefox and VoiceOver with Safari a release gate. VoiceOver with
+Safari stays a manual pass by the owner, which no pairing here replaces. NVDA with Firefox is met
+by the NVDA walk here passing on the release commit and the owner reviewing its transcripts. The
+three pairings cover the gate to different degrees.
 
 | Pairing                        | Stands in for         | What it covers, and what it leaves out                                                                                                                                                                         |
 | ------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
