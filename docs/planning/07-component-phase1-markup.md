@@ -247,8 +247,10 @@ this first inventory. The message ids are proposals.
 | `supported-prefixed`        | Supported since {target} {version} with the prefix {prefix}                |
 | `supported-flagged`         | Supported since {target} {version} behind a flag                           |
 | `supported-preview`         | Supported in {target} {version}, a preview release                         |
+| `supported-preview-unversioned` | Supported in a preview release of {target}                             |
 | `partial-since`             | Partial support since {target} {version}                                   |
 | `partial-preview`           | Partial support in {target} {version}, a preview release                   |
+| `partial-preview-unversioned` | Partial support in a preview release of {target}                         |
 | `no-support`                | No support in {target}                                                     |
 | `unknown`                   | Support unknown in {target}                                                |
 | `no-data`                   | No data for {target}                                                       |
@@ -263,8 +265,9 @@ this first inventory. The message ids are proposals.
 | `history-partial-removed`   | Partially supported from {target} {added}, removed in {target} {removed}.  |
 | `history-last-supported`    | Last supported in {target} {version}.                                      |
 | `flag-preference`           | To enable it, set the preference {name} to {value}.                        |
-| `flag-runtime`              | To enable it, start the runtime with the flag {name}.                      |
-| `flag-runtime-value`        | To enable it, start the runtime with the flag {name} set to {value}.       |
+| `flag-preference-no-value`  | To enable it, set the preference {name}.                                   |
+| `flag-runtime`              | To enable it, start {target} with the command-line flag {name}.            |
+| `flag-runtime-value`        | To enable it, start {target} with the command-line flag {name} set to {value}. |
 | `note`                      | Note: {text}                                                               |
 | `loading`                   | Loading browser compatibility data for {query}.                            |
 | `error`                     | Browser compatibility data for {query} could not be loaded.                |
@@ -273,7 +276,12 @@ The inventory is complete for the cases Document 3 describes. The Phase 1 fixtur
 XR (extended reality) target, no runtime flag, no full-support preview, and no `versionLast` value, so
 the messages for those cases (`platform-mobile`, `platform-xr`, `flag-runtime`, `flag-runtime-value`,
 `supported-preview`, and `history-last-supported`) were written in Issue #194 and are exercised by the
-named fixtures in `packages/element/tests/fixtures/message-cases.ts`. The same issue added the
+named fixtures in `packages/element/tests/fixtures/message-cases.ts`. A runtime flag is a
+command-line option that BCD uses for browsers (Chrome's `--enable-blink-features`) as well as for
+runtimes, so `flag-runtime` names the support target. BCD's `value_to_set` is optional, so
+`flag-preference-no-value` covers a preference without a value (66 preferences in BCD 8.1.9 have
+none), and the literal `version_added: "preview"` names no version, so `supported-preview-unversioned`
+and `partial-preview-unversioned` cover it. The same issue added the
 `platform-other` group for a support target whose `type` the component does not know, and the
 `loading` and `error` sentences. The table in `packages/element/src/strings/en.ts` holds exactly these
 ids, and a test fails when the two differ.

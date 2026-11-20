@@ -60,10 +60,13 @@ export const formatMessage = <Id extends MessageId>(
 const stringTables: Readonly<Record<string, StringTable>> = { en };
 
 /**
- * Selects the string table for a `locale` attribute value. A region or script suffix is ignored
- * (`en-GB` selects `en`), and an unknown or missing tag selects English.
+ * Selects the string table for a `locale` value. A region or script suffix is ignored (`en-GB`
+ * and `en_GB` select `en`), and an unknown tag selects English. The parameter is `unknown`
+ * because a script can set the `locale` property to anything, and a value that is not a string
+ * selects English too.
  */
-export const selectStrings = (locale: string | null | undefined): StringTable => {
-  const language = locale?.trim().split("-")[0]?.toLowerCase() ?? "";
+export const selectStrings = (locale: unknown): StringTable => {
+  if (typeof locale !== "string") return en;
+  const language = locale.trim().split(/[-_]/)[0]?.toLowerCase() ?? "";
   return Object.hasOwn(stringTables, language) ? (stringTables[language] ?? en) : en;
 };

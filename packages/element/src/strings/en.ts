@@ -21,8 +21,12 @@ export const en = {
   "supported-prefixed": "Supported since {target} {version} with the prefix {prefix}",
   "supported-flagged": "Supported since {target} {version} behind a flag",
   "supported-preview": "Supported in {target} {version}, a preview release",
+  // For BCD's literal `version_added: "preview"`, which names no version, so `{version}` would
+  // read "Supported in Safari preview, a preview release".
+  "supported-preview-unversioned": "Supported in a preview release of {target}",
   "partial-since": "Partial support since {target} {version}",
   "partial-preview": "Partial support in {target} {version}, a preview release",
+  "partial-preview-unversioned": "Partial support in a preview release of {target}",
   "no-support": "No support in {target}",
   unknown: "Support unknown in {target}",
   "no-data": "No data for {target}",
@@ -45,11 +49,15 @@ export const en = {
     "Partially supported from {target} {added}, removed in {target} {removed}.",
   "history-last-supported": "Last supported in {target} {version}.",
 
-  // Flag details inside a disclosure. A preference is a browser setting, and a runtime flag is a
-  // command-line option of a runtime such as Node.js.
+  // Flag details inside a disclosure. A preference is a setting that the user changes inside the
+  // browser. A runtime flag is a command-line option, and BCD uses it for browsers (Chrome's
+  // `--enable-blink-features`) as well as for runtimes (Node.js). BCD's `value_to_set` is optional,
+  // so a preference has a message without a value, and so does a runtime flag.
   "flag-preference": "To enable it, set the preference {name} to {value}.",
-  "flag-runtime": "To enable it, start the runtime with the flag {name}.",
-  "flag-runtime-value": "To enable it, start the runtime with the flag {name} set to {value}.",
+  "flag-preference-no-value": "To enable it, set the preference {name}.",
+  "flag-runtime": "To enable it, start {target} with the command-line flag {name}.",
+  "flag-runtime-value":
+    "To enable it, start {target} with the command-line flag {name} set to {value}.",
 
   note: "Note: {text}",
 

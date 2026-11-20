@@ -34,4 +34,23 @@ describe("the named fixtures that the schema package lacks", () => {
     ).toBe(true);
     expect(statements("versionLast").map((s) => s.versionLast)).toEqual(["10.1"]);
   });
+
+  it("has a runtime flag on a browser, a preference without a value, and an unversioned preview", () => {
+    const statements = (name: keyof typeof messageCases): SupportStatement[] =>
+      Object.values(messageCases[name].features[0]?.support ?? {}).flatMap((support) =>
+        support.branches.flatMap((branch): SupportStatement[] => [...branch.statements]),
+      );
+    const browserTypes = Object.values(messageCases.browserRuntimeFlag.browsers).map((t) => t.type);
+
+    expect(browserTypes).toEqual(["desktop"]);
+    expect(statements("browserRuntimeFlag").flatMap((s) => s.flags)).toEqual([
+      { type: "runtime_flag", name: "--enable-blink-features", valueToSet: "AudioSession" },
+    ]);
+    expect(statements("preferenceWithoutValue").flatMap((s) => s.flags)).toEqual([
+      { type: "preference", name: "#enable-tls13-early-data", valueToSet: null },
+    ]);
+    expect(statements("previewWithoutVersion").map((s) => [s.versionAdded, s.isPreview])).toEqual([
+      ["preview", true],
+    ]);
+  });
 });

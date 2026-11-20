@@ -38,6 +38,9 @@ describe("the English message table", () => {
       "history-last-supported",
       "flag-runtime",
       "flag-runtime-value",
+      "flag-preference-no-value",
+      "supported-preview-unversioned",
+      "partial-preview-unversioned",
       "loading",
       "error",
     ];
@@ -101,6 +104,27 @@ describe("formatMessage", () => {
     ).toThrow(MissingPlaceholderError);
   });
 
+  it("reads correctly for a flag on a browser, a preference without a value, and an unversioned preview", () => {
+    expect(
+      formatMessage(en, "flag-runtime-value", {
+        target: "Chrome",
+        name: "--enable-blink-features",
+        value: "AudioSession",
+      }),
+    ).toBe(
+      "To enable it, start Chrome with the command-line flag --enable-blink-features set to AudioSession.",
+    );
+    expect(
+      formatMessage(en, "flag-preference-no-value", { name: "#enable-tls13-early-data" }),
+    ).toBe("To enable it, set the preference #enable-tls13-early-data.");
+    expect(formatMessage(en, "supported-preview-unversioned", { target: "Safari" })).toBe(
+      "Supported in a preview release of Safari",
+    );
+    expect(formatMessage(en, "partial-preview-unversioned", { target: "Safari" })).toBe(
+      "Partial support in a preview release of Safari",
+    );
+  });
+
   it("keeps braces that sit inside a value", () => {
     expect(formatMessage(en, "note", { text: "use {target} here" })).toBe(
       "Note: use {target} here",
@@ -123,6 +147,16 @@ describe("selectStrings", () => {
     expect(selectStrings("en")).toBe(en);
     expect(selectStrings("en-GB")).toBe(en);
     expect(selectStrings("EN-gb")).toBe(en);
+  });
+
+  it("treats an underscore as a region separator, like a hyphen", () => {
+    expect(selectStrings("en_GB")).toBe(en);
+  });
+
+  it("selects English for a value that is not a string, as a script can set one", () => {
+    for (const value of [42, true, {}, [], ["en"], Symbol("en"), () => "en"]) {
+      expect(selectStrings(value)).toBe(en);
+    }
   });
 
   it("treats names from Object.prototype as unknown locales", () => {

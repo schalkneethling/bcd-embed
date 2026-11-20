@@ -110,6 +110,48 @@ export const fullSupportPreview: FeatureResponse = response(
   { firefox: support("preview", statement({ versionAdded: "151", isPreview: true })) },
 );
 
+/**
+ * Full support in BCD's literal `version_added: "preview"`. Core turns it into
+ * `versionAdded: "preview"` with `isPreview: true`, so there is no version to name.
+ */
+export const previewWithoutVersion: FeatureResponse = response(
+  "fixture.preview-without-version",
+  { safari: { name: "Safari", type: "desktop", previewName: "Technology Preview" } },
+  { safari: support("preview", statement({ versionAdded: "preview", isPreview: true })) },
+);
+
+/** A runtime flag on a browser, as BCD records for Chrome's `--enable-blink-features`. */
+export const browserRuntimeFlag: FeatureResponse = response(
+  "fixture.browser-runtime-flag",
+  { chrome: { name: "Chrome", type: "desktop", previewName: "Canary" } },
+  {
+    chrome: support(
+      "supported",
+      statement({
+        versionAdded: "130",
+        flags: [
+          { type: "runtime_flag", name: "--enable-blink-features", valueToSet: "AudioSession" },
+        ],
+      }),
+    ),
+  },
+);
+
+/** A preference without a `value_to_set`, as BCD records for Opera's `#enable-tls13-early-data`. */
+export const preferenceWithoutValue: FeatureResponse = response(
+  "fixture.preference-without-value",
+  { opera: { name: "Opera", type: "desktop", previewName: "Developer" } },
+  {
+    opera: support(
+      "supported",
+      statement({
+        versionAdded: "50",
+        flags: [{ type: "preference", name: "#enable-tls13-early-data", valueToSet: null }],
+      }),
+    ),
+  },
+);
+
 /** A statement with a `versionLast` value, which needs the last-supported message. */
 export const versionLastCase: FeatureResponse = response(
   "fixture.version-last",
@@ -128,5 +170,8 @@ export const messageCases = {
   xrTarget,
   runtimeFlag: runtimeFlagCase,
   fullSupportPreview,
+  previewWithoutVersion,
+  browserRuntimeFlag,
+  preferenceWithoutValue,
   versionLast: versionLastCase,
 } as const;

@@ -22,7 +22,10 @@ public types, and the screen reader tests for the Phase 1 static markup in
 `private` stays `true`, so nothing publishes yet. The package already has the shape a published one
 needs: `exports` for `.` and `./package.json`, `files` set to `dist`, and `sideEffects` in array
 form (`["./dist/index.js", "./dist/*.css"]`), so a bundler keeps the entry and any stylesheet and
-drops the rest of an unused import.
+drops the rest of an unused import. Before the package publishes, note that the emitted
+`dist/public-types.d.ts` imports types from `@bcd-embed/schema`, which is only a development
+dependency here. A consumer's type checker cannot resolve it unless that package is published and
+listed as a dependency, or the types are inlined.
 
 ## Message table
 
@@ -37,12 +40,12 @@ A test reads that table and fails when the two differ, so change both together.
 
 ## Build and tests
 
-| Command                                      | What it does                                                                                                   |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` with Vite, emits the type declarations with `tsc`, then checks the size budget.         |
-| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                 |
-| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's. |
-| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists nothing until a class exists. |
+| Command                                      | What it does                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
+| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                |
+| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                |
+| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists nothing until a class exists.                                                                                                                                                                                                                |
 
 The Vitest tests include a production build into a temporary directory, which checks that
 `dist/index.js` has no mention of `zod`. The element reads the schema package's types only, because
