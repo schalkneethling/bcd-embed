@@ -2,16 +2,42 @@
   "name": "@bcd-embed/element",
   "version": "0.0.0",
   "private": true,
+  "description": "The bcd-compat-table web component and its message table.",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
+    "build": "vite build --mode lib && tsc --project tsconfig.build.json && size-limit",
+    "cem": "cem analyze",
     "test:nvda": "playwright test --config playwright.nvda.config.ts",
     "test:orca": "playwright test --config playwright.orca.config.ts",
     "test:voiceover": "playwright test --config playwright.voiceover.config.ts",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@lit/task": "1.0.3",
+    "lit": "3.3.3"
+  },
   "devDependencies": {
+    "@bcd-embed/schema": "workspace:*",
+    "@custom-elements-manifest/analyzer": "0.11.0",
     "@guidepup/guidepup": "0.39.0",
     "@guidepup/playwright": "0.21.0",
-    "@playwright/test": "1.65.1"
+    "@playwright/test": "1.65.1",
+    "@size-limit/preset-small-lib": "14.3.0",
+    "size-limit": "14.3.0"
   }
 }

@@ -1,0 +1,7 @@
+[
+  {
+    "path": "dist/index.js",
+    "ignore": ["lit", "@lit/task"],
+    "limit": "2 kB"
+  }
+]
