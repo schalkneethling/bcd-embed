@@ -1,8 +1,55 @@
 # `@bcd-embed/element`
 
 The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architecture.md`). The
-component itself does not exist yet. The workspace currently holds the screen reader tests for
-the Phase 1 static markup in `docs/planning/phase1-markup/`.
+component class does not exist yet. The package currently holds the build, the message table, the
+public types, and the screen reader tests for the Phase 1 static markup in
+`docs/planning/phase1-markup/`.
+
+## Layout
+
+| Path                                       | Holds                                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `src/index.ts`                             | The package entry. Everything the package exports passes through it.                          |
+| `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                        |
+| `src/strings/format.ts`                    | `formatMessage`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English. |
+| `src/public-types.ts`                      | The public types. `@bcd-embed/schema` is imported with `import type` only.                    |
+| `tests/`                                   | Vitest tests, and `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks.   |
+| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests (below).                                                              |
+| `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                  |
+| `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`.                   |
+| `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                             |
+
+`private` stays `true`, so nothing publishes yet. The package already has the shape a published one
+needs: `exports` for `.` and `./package.json`, `files` set to `dist`, and `sideEffects` in array
+form (`["./dist/index.js", "./dist/*.css"]`), so a bundler keeps the entry and any stylesheet and
+drops the rest of an unused import. Before the package publishes, note that the emitted
+`dist/public-types.d.ts` imports types from `@bcd-embed/schema`, which is only a development
+dependency here. A consumer's type checker cannot resolve it unless that package is published and
+listed as a dependency, or the types are inlined.
+
+## Message table
+
+Every sentence the component renders is a message in `src/strings/en.ts`. The type checker checks a
+message's placeholders: `formatMessage(table, "supported-since", { target })` fails to compile
+without `version`. At run time, a missing value throws a `MissingPlaceholderError` that names the
+message and the placeholder. `selectStrings("xx")` returns the English table, and
+`selectStrings("en-GB")` returns it too, because only the language subtag counts.
+
+The ids and the text match the string inventory in `docs/planning/07-component-phase1-markup.md`.
+A test reads that table and fails when the two differ, so change both together.
+
+## Build and tests
+
+| Command                                      | What it does                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
+| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                |
+| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                |
+| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists nothing until a class exists.                                                                                                                                                                                                                |
+
+The Vitest tests include a production build into a temporary directory, which checks that
+`dist/index.js` has no mention of `zod`. The element reads the schema package's types only, because
+Zod would roughly double the bundle.
 
 ## Screen reader tests
 

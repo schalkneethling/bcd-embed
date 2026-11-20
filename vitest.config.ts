@@ -5,6 +5,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@bcd-embed/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
+      "@bcd-embed/element": fileURLToPath(
+        new URL("./packages/element/src/index.ts", import.meta.url),
+      ),
       "@bcd-embed/generator": fileURLToPath(
         new URL("./packages/generator/src/index.ts", import.meta.url),
       ),
