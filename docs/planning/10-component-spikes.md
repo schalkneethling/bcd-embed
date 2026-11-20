@@ -1331,10 +1331,12 @@ skew page, so how Cloudflare handles that request is unverified.
 **Question.** Do the VoiceOver, Orca and NVDA walks test what ships, and do they cover the cases
 the first walk skipped?
 
-**Answer.** They now test what ships, with one gap and one open check. The walks load a built page
-that renders `<bcd-compat-table>`. The gap is that variant B has no counterpart in the element, so
-steps 13 and 14 are no longer run in CI. The open check is the `<bdi>` around each note, which no
-screen reader has heard yet: the first CI transcripts of the component settle it.
+**Answer.** They now test what ships, with one gap. The walks load a built page that renders
+`<bcd-compat-table>` from the library build, `dist/index.js`. The gap is that variant B has no
+counterpart in the element, so steps 13 and 14 are no longer run in CI. The `<bdi>` around each
+note, which no screen reader had heard, is settled for NVDA: run 44788533467 read it as the static
+page's note. That run also changed two phrases and exposed an Orca bug, listed under "What the
+first CI run showed".
 
 ### What was measured
 
@@ -1364,29 +1366,48 @@ phrase for the static page applies to the component, and only the note's `<bdi>`
 - **Variant B is gone from CI.** The NVDA walk loses its variant B steps (13 and 14) and the
   `headers-id.html` test.
 
-### A build pitfall: the page rendered no table
+### A build pitfall: importing the source rendered no table
 
-The first build rendered nothing. `package.json` lists `./dist/index.js` and `./dist/*.css` as
-the only files with side effects, and Vite passes that list to Rolldown. The page imports
-`src/index.ts`, which defines the element and exports nothing the page uses, so Rolldown dropped
-the import. The bundle held 104 kB and no element, and no error appeared. Setting
-`treeshake.moduleSideEffects: true` in `rolldownOptions` left the output byte for byte the same.
-Rolldown's documented order puts a plugin hook's answer above that option, and above the
-`package.json` field, so a hook was the next thing to try. I did not find which hook first sets
-the value. A small plugin in `vite.screen-reader.config.ts` marks `src/index.ts` as having side
-effects from its `transform` hook, and the bundle then holds the element (142 kB). A test pins
-`sideEffects` in `package.json`, and the published `dist/index.js` is listed, so the manifest is
-unchanged.
+The first version of the page imported `src/index.ts`, and its build rendered nothing.
+`package.json` lists `./dist/index.js` and `./dist/*.css` as the only files with side effects, and
+Vite passes that list to Rolldown. `src/index.ts` defines the element and exports nothing the page
+uses, so Rolldown dropped the import. The bundle held 104 kB and no element, and no error appeared.
+Setting `treeshake.moduleSideEffects: true` left the output byte for byte the same, and a plugin
+that forced the side effect fixed it, but that tested a path no consumer takes. The page now
+imports `@bcd-embed/element`, which `vite.screen-reader.config.ts` maps to the library build
+(`dist/index.js`). That file is in the `sideEffects` list, so the page needs no workaround, and the
+walks exercise the path a consumer's bundler takes. `tsconfig.json` maps the same name to the
+source, so `tsc` needs no build first. The 142 kB bundle holds the element.
 
-### Derived expectations
+### What the first CI run showed (run 44788533467)
 
-These checks are not recordings of the component. The first CI transcripts should replace each
-with the recorded phrase.
+- **VoiceOver passed**, which confirms its checks below. Orca and NVDA failed.
+- **Orca.** `orca.act()` said "On-screen speech. read only text" and opened nothing. After it,
+  every move said "Not in a table", because Orca had entered Focus mode on the summary. Orca's walk
+  now presses Enter, as the shared walk does ("expanded", "collapsed"), and closes each disclosure
+  it opens, as the shared walk does for the first one. The retry then failed at the first Tab with
+  an empty transcript, which follows from the first attempt leaving Orca in that state. The fix is
+  unverified until a new run.
+- **NVDA, wording.** The component drops the empty item before a cell's sentence ("column 2, ,
+  Supported" is now "column 2, Supported", for the first cell and steps 8 and 9), and
+  "from(part of Array)" is now "from (part of Array)". The checks use the new wording and are as
+  strict as before. The `<bdi>` note and the heading read as expected.
+- **NVDA, lag.** In the first attempt, the moves from "Array" on were empty or one move behind (for
+  example "move left to from in Opera" held the speech for the move to `from`). The second attempt,
+  with the same route, spoke every step as expected. Main's walk opened the same two disclosures
+  and did not close them, so the route is not the cause. I judge it a capture timing fault in one
+  attempt. Nothing was changed for it, and no check was loosened. A second occurrence would call for
+  a wait after each move.
+- **Walk.** The wait for the table now times out after 30 seconds, so a failed render fails there,
+  not after the test's ten minutes.
+
+### Expectations that are not recordings
+
+The VoiceOver checks passed in that run. Orca's step 8 text is in its transcript, and Orca did not
+reach the cells of steps 9 to 11. A new run confirms or replaces each remaining one.
 
 | Reader      | Step                                                         | Derived from                                                     |
 | ----------- | ------------------------------------------------------------ | ---------------------------------------------------------------- |
-| NVDA        | Step 9, the `removed_partial` note                           | The static page's recording, without the `<bdi>`                 |
-| NVDA        | Move to the top of the page                                  | The fixture page's own heading, "Component fixture: data mode"   |
 | VoiceOver, Orca | Step 8, `AudioTrackList` in Chrome                       | The string table: "Supported since Chrome 37 behind a flag"      |
 | VoiceOver, Orca | Step 9, `removed_partial` in Chrome                      | The string table: "Supported from Chrome 11.1, then removed in Chrome 12.1" |
 | VoiceOver, Orca | Step 10, `missing_target` in Opera and `unknown_runtime` in Node.js | The string table: "No data for Opera" and "Support unknown in Node.js" |
@@ -1401,7 +1422,7 @@ the transcripts show.
 No screen reader ran, because they run only in CI. The checks were verified only for type
 correctness (`pnpm --filter @bcd-embed/element typecheck`), and the page for its content in
 Chromium: every sentence above is in the built page, the fallback is hidden, there are 14 body
-rows and one region, and the first Tab focuses the region.
+rows and one region, and the first Tab focuses the region. The page imports the library build.
 
 ### Sources checked
 

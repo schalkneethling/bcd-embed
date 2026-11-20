@@ -102,7 +102,9 @@ export async function walkTable(
     // The path is relative to the `baseURL` of the config, which points at the preview server.
     await page.goto(fixturePath);
     // The table is in the page once the element has set `loaded`, which also hides the fallback.
-    await page.locator("bcd-compat-table[loaded]").getByRole("table").waitFor();
+    // The timeout is short so that a page that fails to render fails here, not after the test's
+    // ten minutes.
+    await page.locator("bcd-compat-table[loaded]").getByRole("table").waitFor({ timeout: 30_000 });
     await reader.navigateToWebContent();
 
     await reader.clearSpokenPhraseLog();

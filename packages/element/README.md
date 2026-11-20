@@ -344,7 +344,10 @@ which renders `<bcd-compat-table>` from the adversarial fixture (`v1NormalizedFi
 `@bcd-embed/schema`), with a fallback paragraph inside the element. The page is a built page: Vite
 builds it into `dist-screen-reader/` (`vite.screen-reader.config.ts`), and each Playwright config
 starts `vite preview` on port 5199 to serve it (`screen-reader/server.ts`). The walks therefore
-hear the table the element renders, including the `<bdi>` around each note. They no longer load
+hear the table the element renders, including the `<bdi>` around each note. The page imports
+`@bcd-embed/element` as a consumer does, and the config maps that name to the library build,
+`dist/index.js`, so the package's `sideEffects` list applies. The build script therefore builds
+the library first. They no longer load
 the static pages in `docs/planning/phase1-markup/`, which are a record of the Phase 1 decision.
 Because the element renders variant A only, the walks do not cover Document 7's steps 13 and 14,
 which compare variant B with variant A. Those stay with the manual pass (#186).
@@ -384,13 +387,13 @@ wording are soft: a mismatch still fails the test, but only after the walk has f
 transcript is complete. Where the wording is the screen reader's own and is not yet known, the
 step has no check and is performed for the transcript alone.
 
-Two kinds of expectation are not recordings. The first cell's check reads the string table
-(`src/strings/en.ts`) and builds the cell's sentence from it, so the sentence is written once.
-VoiceOver's and Orca's checks for steps 8 to 11 do the same, for the cell's fact, because no
-transcript of those cells exists yet. The first CI transcripts replace those with recorded
-phrases. NVDA's checks are recordings of the static page, except the two that depend on the
-fixture page's own heading and on the `<bdi>` in the note, which the comments in
-`screen-reader/table.nvda.ts` mark `DERIVED`.
+Some expectations are not recordings of the screen reader. The first cell's check reads the
+string table (`src/strings/en.ts`) and builds the cell's sentence from it, so the sentence is
+written once. VoiceOver's and Orca's checks for steps 8 to 11 do the same, for the cell's fact.
+VoiceOver's passed in CI run 44788533467, and Orca's step 8 text appears in that run's transcript,
+but Orca never reached steps 9 to 11 on the cells, so those are unconfirmed. NVDA's checks are
+recordings: of the static page, and of the component in that run, which changed three phrases
+(Document 7, "NVDA in CI").
 
 To run them locally, set the machine up once with `pnpm dlx @guidepup/setup@0.29.3 setup`. Then,
 in `packages/element`, install the assets with `pnpm dlx @guidepup/setup@0.29.3 install` and the

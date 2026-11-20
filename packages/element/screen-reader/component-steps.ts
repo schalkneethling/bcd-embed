@@ -33,13 +33,34 @@ export const disclosureIn = (page: Page, feature: string) =>
     .filter({ has: page.locator("th", { hasText: feature }) })
     .locator("details");
 
-const expandStep = (page: Page, moves: CellMoves, feature: string): ExtraStep => ({
-  step: `expand ${feature} in Chrome`,
-  perform: moves.activate,
-  // Soft, so that a disclosure the screen reader fails to open still leaves the later steps in
-  // the transcript.
-  check: () => expect.soft(disclosureIn(page, feature)).toHaveJSProperty("open", true),
-});
+/**
+ * Opens a cell's disclosure and, when `close` is set, closes it again, as the shared walk does
+ * with the first one. Orca needs the close: it enters Focus mode on the summary, and the walk's
+ * later table moves answered "Not in a table" until a second Return toggled the summary back.
+ */
+const expandSteps = (
+  page: Page,
+  moves: CellMoves,
+  feature: string,
+  close: boolean,
+): ExtraStep[] => [
+  {
+    step: `expand ${feature} in Chrome`,
+    perform: moves.activate,
+    // Soft, so that a disclosure the screen reader fails to open still leaves the later steps in
+    // the transcript.
+    check: () => expect.soft(disclosureIn(page, feature)).toHaveJSProperty("open", true),
+  },
+  ...(close
+    ? [
+        {
+          step: `close ${feature} in Chrome`,
+          perform: moves.activate,
+          check: () => expect.soft(disclosureIn(page, feature)).toHaveJSProperty("open", false),
+        },
+      ]
+    : []),
+];
 
 /**
  * The cells' sentences, from the string table. The targets, versions and feature names are those
@@ -66,7 +87,11 @@ const sentences = {
  * The steps, starting where the shared walk ends: the cursor on `preview_partial` in Node.js, the
  * fourth body row.
  */
-export const componentSteps = (page: Page, moves: CellMoves): ExtraStep[] => [
+export const componentSteps = (
+  page: Page,
+  moves: CellMoves,
+  { closeDisclosures }: { closeDisclosures: boolean },
+): ExtraStep[] => [
   { step: "move up to AudioTrackList in Node.js", perform: moves.up },
   { step: "move left to AudioTrackList in Opera", perform: moves.left },
   {
@@ -74,14 +99,14 @@ export const componentSteps = (page: Page, moves: CellMoves): ExtraStep[] => [
     perform: moves.left,
     expected: sentences.flagged,
   },
-  expandStep(page, moves, "AudioTrackList"),
+  ...expandSteps(page, moves, "AudioTrackList", closeDisclosures),
   { step: "move down to preview_partial in Chrome", perform: moves.down },
   {
     step: "step 9: read removed_partial in Chrome",
     perform: moves.down,
     expected: sentences.removed,
   },
-  expandStep(page, moves, "removed_partial"),
+  ...expandSteps(page, moves, "removed_partial", closeDisclosures),
   { step: "move down to localName in Chrome", perform: moves.down },
   {
     step: "step 11: read localName in Opera",

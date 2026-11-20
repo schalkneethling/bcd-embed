@@ -7,12 +7,13 @@
 // only record of NVDA's output. Steps 13 and 14 compare variant B with variant A, and the
 // component renders only variant A, so they are not performed here.
 //
-// Every expected phrase below is NVDA's own wording, copied from the transcripts of CI runs
-// 44345867416 to 44354307768, which were identical in every run and on every retry. Those runs
-// read the static Phase 1 page (`docs/planning/phase1-markup/index.html`), whose markup is the
-// element's markup except for the `<bdi>` around each note and the page's own heading. The
-// phrases that depend on either are not recordings of the component, and the comments below mark
-// them. NVDA speaks the text as a user hears it at its default punctuation level: "Node.js" is
+// Every expected phrase below is NVDA's own wording, copied from a CI transcript. Most come from
+// runs 44345867416 to 44354307768, which read the static Phase 1 page
+// (`docs/planning/phase1-markup/index.html`) and were identical in every run and on every retry.
+// Run 44788533467 read the component and confirmed them, with three differences that are now
+// recorded here: the empty item NVDA read for the hidden glyph span ("column 2, , Supported")
+// is gone ("column 2, Supported"), the row header "from(part of Array)" is now "from (part of
+// Array)", and the note inside `<bdi>` and the fixture page's heading read as expected. NVDA speaks the text as a user hears it at its default punctuation level: "Node.js" is
 // "Node dot js", an underscore is a pause ("missing_target" is "missing target"), and a
 // camel-case identifier is split into words ("AudioTrackList" is "Audio Track List"). The checks
 // keep that wording rather than the markup's spelling, so a change in what a user hears fails
@@ -82,7 +83,7 @@ const tableAnnouncement = ({ caption, size }: Spoken) =>
  */
 const sharedWording = (spoken: Spoken, rows: readonly [string, string, string]): Wording => ({
   "Tab to the scroll region": tableAnnouncement(spoken),
-  "Tab to the fit-content cell in Chrome": `fit-content, row 3, ${spoken.chrome}, column 2, , Supported since Chrome 46. History for fit-content in Chrome, button, collapsed`,
+  "Tab to the fit-content cell in Chrome": `fit-content, row 3, ${spoken.chrome}, column 2, Supported since Chrome 46. History for fit-content in Chrome, button, collapsed`,
   "open the fit-content disclosure": "expanded",
   "close the fit-content disclosure": "collapsed",
   "move right to Opera": `${spoken.opera}, column 3, No data for Opera`,
@@ -122,8 +123,7 @@ const enterTable = (moves: Moves, spoken: Spoken, heading: string): ExtraStep[] 
   {
     step: "move to the top of the page",
     perform: moves.top,
-    // DERIVED, not recorded: the phrase before the heading's text is from the static page's
-    // recording, and the heading's text is this fixture's own.
+    // Recorded in run 44788533467, with this fixture page's own heading.
     expected: `out of table, out of region, heading, level 1, ${heading}`,
   },
   {
@@ -152,7 +152,7 @@ const nvdaSteps = (page: Page, moves: Moves): ExtraStep[] => [
     step: "step 8: read AudioTrackList in Chrome",
     perform: moves.left,
     expected:
-      "Chrome Desktop, column 2, button, collapsed, , Supported since Chrome 37 behind a flag. Flag details for Audio Track List in Chrome",
+      "Chrome Desktop, column 2, button, collapsed, Supported since Chrome 37 behind a flag. Flag details for Audio Track List in Chrome",
   },
   expandStep(page, moves, "AudioTrackList"),
   ...audioTrackListItems(moves),
@@ -165,7 +165,7 @@ const nvdaSteps = (page: Page, moves: Moves): ExtraStep[] => [
     step: "step 9: read removed_partial in Chrome",
     perform: moves.down,
     expected:
-      "removed partial, row 7, button, collapsed, , Supported from Chrome 11.1, then removed in Chrome 12.1. History and notes for removed partial in Chrome",
+      "removed partial, row 7, button, collapsed, Supported from Chrome 11.1, then removed in Chrome 12.1. History and notes for removed partial in Chrome",
   },
   expandStep(page, moves, "removed_partial"),
   {
@@ -177,9 +177,8 @@ const nvdaSteps = (page: Page, moves: Moves): ExtraStep[] => [
   {
     step: "step 9: read the removed_partial note",
     perform: moves.nextListItem,
-    // DERIVED, not recorded: the recording is of the note without the `<bdi>` element that the
-    // component wraps around the note's text. `<bdi>` has no role, so NVDA should read the note
-    // as before. The first CI transcript of the component shows whether it does.
+    // Recorded in run 44788533467. The component wraps the note's text in `<bdi>`, and NVDA reads
+    // it exactly as it read the note on the static page.
     expected: "bullet Note: The initial implementation did not abort fetch requests.",
   },
   {
@@ -213,9 +212,10 @@ const nvdaSteps = (page: Page, moves: Moves): ExtraStep[] => [
       ["notes_only", "notes only, row 12"],
       ["prefixed_only", "prefixed only, row 13"],
       ["Array", "Array, row 14"],
-      // NVDA runs the row header's two parts together when the row changes, and separates them
-      // with a pause when the column changes (step 12).
-      ["from", "from(part of Array), row 15"],
+      // On a row change NVDA says the row header's two parts with a space between them. On a
+      // column change it separates them with a pause (step 12). On the static page it ran them
+      // together ("from(part of Array)"); the component's markup says it with a space.
+      ["from", "from (part of Array), row 15"],
     ] as const
   ).map(([feature, header]) => ({
     step: `move down to ${feature} in Node.js`,

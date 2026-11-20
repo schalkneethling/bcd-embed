@@ -12,7 +12,9 @@ test("Orca walks the component", async ({ page, orca }, testInfo) => {
     down: () => orca.perform(MoveDown, { capture: true }),
     up: () => orca.perform(MoveUp, { capture: true }),
     left: () => orca.perform(MoveLeft, { capture: true }),
-    activate: () => orca.act({ capture: true }),
+    // The same key the shared walk uses on the first disclosure, which Orca answered with
+    // "expanded" and "collapsed". `orca.act()` said "read only text" and opened nothing.
+    activate: () => orca.press("Enter", { capture: true }),
   };
   await walkTable(
     page,
@@ -23,6 +25,6 @@ test("Orca walks the component", async ({ page, orca }, testInfo) => {
     // navigation changes the column, so the support target's name in each cell is what
     // identifies the column.
     { "Tab to the fit-content cell in Chrome": "Desktop" },
-    { extraSteps: componentSteps(page, moves) },
+    { extraSteps: componentSteps(page, moves, { closeDisclosures: true }) },
   );
 });

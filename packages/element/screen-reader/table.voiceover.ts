@@ -20,6 +20,7 @@ test("VoiceOver walks the component", async ({ page, voiceOver }, testInfo) => {
     testInfo,
     // VoiceOver announces the platform header above a column on entering it.
     { "move right to Node.js": "Server and Node.js" },
-    { extraSteps: componentSteps(page, moves) },
+    // VoiceOver passed with the disclosures left open, so the route stays as it ran.
+    { extraSteps: componentSteps(page, moves, { closeDisclosures: false }) },
   );
 });
