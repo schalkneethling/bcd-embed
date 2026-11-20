@@ -53,6 +53,12 @@ jobs:
           pnpm exec oxfmt --check .github/freshness-approvals.json
           node scripts/validate-freshness-approvals.mjs
 
+      # `pnpm check` runs the Chromium Vitest project, which fails without the browser. Only the
+      # headless shell is needed, and the root workspace owns the `playwright` binary.
+      - name: Install Chromium for the Vitest browser project
+        if: steps.scope.outputs.approvals_only != 'true'
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
       - name: Check repository
         if: steps.scope.outputs.approvals_only != 'true'
         run: pnpm check

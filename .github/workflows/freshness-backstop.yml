@@ -45,6 +45,7 @@ jobs:
         id: candidate
         run: |
           pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps --only-shell chromium
           pnpm check
           node --expose-gc packages/generator/scripts/full-volume-check.mjs
           pnpm --recursive --filter @bcd-embed/generator... run build

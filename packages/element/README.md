@@ -17,6 +17,8 @@ note tokenizer, the public types, and the screen reader tests for the Phase 1 st
 | `src/public-types.ts`                      | The public types. `@bcd-embed/schema` is imported with `import type` only.                    |
 | `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.      |
 | `tests/`                                   | Vitest tests, and `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks.   |
+| `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                     |
+| `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.    |
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests (below).                                                              |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                  |
 | `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`.                   |
@@ -139,6 +141,47 @@ element uses it.
 The Vitest tests include a production build into a temporary directory, which checks that
 `dist/index.js` has no mention of `zod`. The element reads the schema package's types only, because
 Zod would roughly double the bundle.
+
+## Browser tests
+
+Two harnesses run the component in a real browser. Each was run once by the implementer of issue
+#197 on macOS with Playwright 1.65.1, and the Element browser workflow runs the three-engine one on
+every pull request that changes this package.
+
+| Harness                                      | Engines                   | Runs in         | Command                                                           |
+| -------------------------------------------- | ------------------------- | --------------- | ----------------------------------------------------------------- |
+| Vitest browser project (`*.browser.test.ts`) | Chromium (headless shell) | `pnpm check`    | `pnpm exec vitest run --project browser` from the repository root |
+| Playwright Test with axe (`*.e2e.ts`)        | Chromium, Firefox, WebKit | Element browser | `pnpm --filter @bcd-embed/element test:e2e`                       |
+
+Install the browsers before the first run. Chromium's headless shell is enough for the Vitest
+project, and it is a smaller download than the full browser. Use the workspace's own Playwright,
+because a browser build is tied to the Playwright version.
+
+```sh
+pnpm exec playwright install --only-shell chromium
+pnpm --filter @bcd-embed/element exec playwright install firefox webkit
+```
+
+Add `--project=firefox` (or `chromium`, `webkit`) to `test:e2e` to run one engine. On Linux, add
+`--with-deps` to the install commands to install the engines' system libraries.
+
+The root `vitest.config.ts` has two projects, `node` and `browser`. The `node` project excludes
+`**/*.browser.test.ts`, and the `browser` project includes only that pattern, so each file runs in
+one project and the list of Node tests does not change. The `*.e2e.ts` files match neither, so
+`vitest run` never collects them. Name a new test by where it must run, not by what it tests.
+
+`playwright` and `@playwright/test` are pinned to the same exact version, in the root
+`package.json` and in this package. Update them together. `pnpm why playwright @playwright/test -r`
+prints one version of each when they agree.
+
+`e2e/fixtures/smoke.html` is an inert page, and `e2e/smoke.e2e.ts` runs axe on it, so the harness
+proves itself before the element exists. A violation fails the test with the rule's id and the
+elements it flags, for example `image-alt` with `img`.
+
+The Element browser workflow (`.github/workflows/element-browser.yml`) has a `changes` job, one
+test job per engine, and a final `element-browser` job that is the required status check. It
+reports on every pull request, passes when the tests passed or had nothing to test, and fails when
+any engine failed or was cancelled. A failed run uploads `test-results/` with the traces.
 
 ## Screen reader tests
 

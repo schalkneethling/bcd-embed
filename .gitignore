@@ -34,3 +34,6 @@ dist-ssr
 # HTML reporter, which the configs do not use today, would write playwright-report/.
 packages/element/test-results/
 packages/element/playwright-report/
+
+# Failure screenshots from the Vitest browser project
+**/__screenshots__/

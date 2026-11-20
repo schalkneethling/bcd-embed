@@ -1,0 +1,146 @@
+name: Element browser
+
+# Browser tests for the web component in Chromium, Firefox, and WebKit, run with Playwright Test and
+# axe (packages/element/README.md). The Chromium Vitest project is separate: it runs inside
+# `pnpm check` in ci.yml.
+#
+# The `element-browser` job at the end is a required status check, so a failed or cancelled browser
+# run blocks the merge. A required check must report on every pull request, so the workflow has no
+# `paths` filter: a filtered workflow does not run on a pull request outside the filter, and GitHub
+# then leaves the required check pending forever. The `changes` job decides whether the tests need
+# to run instead, and when they do not, `element-browser` still reports success.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: element-browser-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Decides whether anything a browser test depends on changed: the element package, the schema and
+  # core packages it reads or will read, the root package.json and vitest.config.ts, the lockfile and
+  # workspace file, and this workflow. Manual runs always test.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      browser: ${{ steps.diff.outputs.browser }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] ||
+            git diff --name-only "$BASE...$HEAD" | grep -qE \
+              '^(packages/(element|schema|core)/|package\.json$|vitest\.config\.ts$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/element-browser\.yml$)'
+          then
+            echo "browser=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "browser=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  browser:
+    needs: changes
+    if: needs.changes.outputs.browser == 'true'
+    strategy:
+      # One engine failing says nothing about the others, so every one always finishes.
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    name: browser (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 26.13.0
+          cache: pnpm
+
+      - name: Install the element workspace
+        run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
+
+      # The install runs through the workspace so it uses the same Playwright version as the tests,
+      # because a browser build is tied to it.
+      #
+      # Chromium needs only its headless shell, which saves about 27 seconds against the full
+      # browser (docs/planning/10-component-spikes.md, Issue #188).
+      #
+      # Chromium and WebKit install their system libraries with `--with-deps`, which took 26 and 49
+      # seconds. Firefox does not. Playwright 1.65.1 lists `libavcodec62` and 12 font packages
+      # among Firefox's dependencies on Ubuntu 26.04 (`deps["ubuntu26.04-x64"]` in
+      # playwright-core's coreBundle.js). `libavcodec62` pulls in 14 more ffmpeg libraries, so
+      # `apt-get` fetched 39 packages (54 MB) from the Azure mirror, which served about one package
+      # a minute, and the job hit its timeout (run 44728957783). Firefox loads FFmpeg only to play
+      # media, and a test of the page's markup plays none. The runner image already has the
+      # libraries Firefox needs to start, because the image ships Firefox 160 itself
+      # (actions/runner-images, images/ubuntu/Ubuntu2604-Readme.md). So Firefox installs the
+      # browser alone, and the dry run below lists any library still missing in the job log. If
+      # Firefox ever fails to launch, that list names the package to install.
+      - name: Install the browser
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          playwright="pnpm --filter @bcd-embed/element exec playwright"
+          case "$BROWSER" in
+            chromium) $playwright install --with-deps --only-shell chromium ;;
+            firefox)
+              $playwright install firefox
+              $playwright install-deps --dry-run firefox || true
+              ;;
+            *) $playwright install --with-deps "$BROWSER" ;;
+          esac
+
+      - name: Run the browser tests
+        run: >-
+          pnpm --filter @bcd-embed/element run test:e2e
+          --project=${{ matrix.browser }} --forbid-only --reporter=list,github
+
+      # Only after a failure, because a pass leaves nothing worth keeping. The traces show the page
+      # at each step.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with:
+          name: element-browser-results-${{ matrix.browser }}
+          path: packages/element/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The required status check. It passes when the browsers passed or had nothing to test, and
+  # fails when any engine failed or was cancelled, or when `changes` itself failed.
+  element-browser:
+    needs: [changes, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          BROWSERS: ${{ needs.browser.result }}
+        run: |
+          case "$CHANGES/$BROWSERS" in
+            success/success | success/skipped) echo "Element browser: $BROWSERS" ;;
+            *) echo "::error::Browser tests did not pass (changes: $CHANGES, browsers: $BROWSERS)"; exit 1 ;;
+          esac

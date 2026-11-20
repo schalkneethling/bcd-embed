@@ -51,7 +51,7 @@ Each package and app has its own README with the details of its behavior.
 
 ## Automation
 
-Six GitHub Actions workflows live in `.github/workflows/`, and the scripts they
+Seven GitHub Actions workflows live in `.github/workflows/`, and the scripts they
 call live in `scripts/`:
 
 - `ci.yml` runs `pnpm check`, a generation check at full BCD volume, and the
@@ -89,6 +89,12 @@ call live in `scripts/`:
   or were not needed, and fails when they fail. Each run records what the screen
   reader said. The details are in
   [`packages/element/README.md`](./packages/element/README.md).
+- `element-browser.yml` runs the web component's browser tests with axe in
+  Chromium, Firefox, and WebKit. It tests when a pull request or a push to
+  `main` changes `packages/element`, `packages/schema`, `packages/core`, the
+  root `package.json` or `vitest.config.ts`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml`, or the workflow itself, and always on manual dispatch. Its `element-browser` job is a required check that
+  reports on every pull request, like `screen-readers`.
 
 The design behind the freshness workflows is in
 [`docs/planning/06-phase5-freshness.md`](./docs/planning/06-phase5-freshness.md).
@@ -175,8 +181,13 @@ Install dependencies and run the complete repository check:
 ```sh
 corepack enable
 pnpm install
+pnpm exec playwright install --only-shell chromium
 pnpm check
 ```
+
+`pnpm check` runs a Chromium browser project through Vitest, so Chromium's
+headless shell must be installed once, and again after the Playwright version
+changes.
 
 Useful commands:
 

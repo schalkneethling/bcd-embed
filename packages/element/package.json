@@ -22,6 +22,7 @@
   "scripts": {
     "build": "vite build --mode lib && tsc --project tsconfig.build.json && size-limit",
     "cem": "cem analyze",
+    "test:e2e": "playwright test --config playwright.e2e.config.ts",
     "test:nvda": "playwright test --config playwright.nvda.config.ts",
     "test:orca": "playwright test --config playwright.orca.config.ts",
     "test:voiceover": "playwright test --config playwright.voiceover.config.ts",
@@ -32,6 +33,7 @@
     "lit": "3.3.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@bcd-embed/schema": "workspace:*",
     "@custom-elements-manifest/analyzer": "0.11.0",
     "@guidepup/guidepup": "0.39.0",

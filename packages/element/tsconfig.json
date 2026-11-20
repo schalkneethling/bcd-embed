@@ -5,5 +5,12 @@
       "@bcd-embed/schema": ["../schema/src/index.ts"]
     }
   },
-  "include": ["*.ts", "src/**/*.ts", "tests/**/*.ts", "screen-reader/**/*.ts"]
+  "include": [
+    "*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "screen-reader/**/*.ts",
+    "browser/**/*.ts",
+    "e2e/**/*.ts"
+  ]
 }
