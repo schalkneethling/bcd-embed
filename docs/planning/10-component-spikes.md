@@ -880,6 +880,24 @@ Also record, in the same throwaway workflow, an `actions/cache` restore on a hit
 browser directory, and the first and later `vitest run --project browser` times, because those are the costs
 the section 10 arithmetic is missing.
 
+#### Added by issue #197 (the browser harness)
+
+Issue #197 put the Chromium Vitest project into the root `vitest.config.ts`, so `pnpm check` now runs
+it, and added the Element browser workflow. The root `package.json` owns `playwright` and
+`@vitest/browser-playwright`, both pinned (1.65.1 and 5.1.0), and `ci.yml` and `freshness-backstop.yml`
+run `pnpm exec playwright install --with-deps --only-shell chromium` before `pnpm check`. The root form
+of the `--only-shell` install, which condition 1 asked someone to run once, worked on macOS.
+
+Local numbers, one run each on the machine described above, on a quiet system: the new Node project
+lists the same 341 tests as the old root config, the browser project lists the 1 smoke test,
+`pnpm check` took 66 s end to end, and the three-engine Playwright Test run took 4.2 s for 3 tests.
+
+| What the spike asked CI to measure | Value |
+| ---------------------------------- | ----- |
+| `check` job duration on the #197 pull request, against the 347 s baseline and the 600 s limit | Pending. Fill in from the pull request's `check` job (`gh api repos/schalkneethling/bcd-embed/actions/runs/<id>/jobs`, `started_at` to `completed_at`) once CI has run, then confirm or reverse the recommendation in section 10. |
+| `Install Chromium for the Vitest browser project` step | Pending, from the same run's log. |
+| Element browser job per engine | Pending, from the same run's log. |
+
 ### Open items for the owner
 
 - The CI numbers above.

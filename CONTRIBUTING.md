@@ -1,8 +1,9 @@
 # Contributing to bcd-embed
 
 Thank you for helping improve bcd-embed. Install the package manager version
-declared in `package.json`, run `pnpm install`, and run `pnpm check` before
-submitting a pull request.
+declared in `package.json`, run `pnpm install`, install Chromium's headless shell once with
+`pnpm exec playwright install --only-shell chromium`, and run `pnpm check`
+before submitting a pull request.
 
 ## Normalization code and licensing
 

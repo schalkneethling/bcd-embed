@@ -6,6 +6,9 @@ are documented in `docs/planning/`.
 ## Getting started
 
 - Run `pnpm install` after pulling changes and before starting work.
+- Run `pnpm exec playwright install --only-shell chromium` once, and again when
+  the Playwright version changes. `pnpm check` runs a Chromium Vitest project,
+  which fails without the browser.
 - Use the package manager version declared in the root `package.json`.
 - Run `pnpm check` before handing work back. It formats-checks, lints,
   type-checks, tests, and builds all implemented workspaces.
