@@ -16,6 +16,10 @@
  * - Space is O(F × T + S): one cell for each feature and target, and one history line for each
  *   statement, flag, and note. The depth stack holds at most one key per level.
  *
+ * Notes are tokenized in time proportional to their length, so with C the total characters of the
+ * notes in the displayed cells, both bounds are more exactly O(F × T + S + C). BCD's notes are
+ * short, which is why C is folded into S above.
+ *
  * A test counts the feature visits, target lookups, and statement visits through the `onVisit`
  * option, and checks that doubling the features exactly doubles each count.
  */
@@ -28,7 +32,9 @@ import {
   assertTableModelFeature,
   assertTableModelPayload,
   assertTableModelSupport,
+  TablePayloadError,
 } from "./payload-guard.js";
+import type { TableModelPayload } from "./payload-guard.js";
 import {
   COLUMN_GROUP_MESSAGES,
   groupTargets,
@@ -38,7 +44,7 @@ import {
 import type { ColumnGroupId, TableTarget } from "./targets.js";
 
 export type { CellCompact, CellDisclosure, HistoryItem, TableCell, TableMessage } from "./cell.js";
-export { TablePayloadError } from "./payload-guard.js";
+export { TablePayloadError };
 export type { TablePayloadErrorReason, TableModelPayload } from "./payload-guard.js";
 export type { ColumnGroupId, TableTarget } from "./targets.js";
 
@@ -89,11 +95,23 @@ const noVisit = (): void => {};
 /**
  * Builds the table model.
  *
- * @throws {TablePayloadError} when `payload` is not a contract 1.x feature response. Nothing else
- * is thrown for a payload that passes the guard.
+ * @throws {TablePayloadError} when `payload` is not a contract 1.x feature response, and for
+ * nothing else. The guard checks the envelope, each feature, and each displayed support entry.
+ * Deeper fields, such as a statement's flags, are not checked one by one: any error that a
+ * malformed field causes while the model reads it is rethrown as a `TablePayloadError` with the
+ * reason `invalid-content` and the original error as its `cause`.
  */
 export const buildTableModel = (payload: unknown, options: TableModelOptions = {}): TableModel => {
   assertTableModelPayload(payload);
+  try {
+    return buildFromPayload(payload, options);
+  } catch (error) {
+    if (error instanceof TablePayloadError) throw error;
+    throw new TablePayloadError("invalid-content", undefined, { cause: error });
+  }
+};
+
+const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions): TableModel => {
   const strings = options.strings ?? en;
   const onVisit = options.onVisit ?? noVisit;
   const countStatement = () => onVisit("statement");
@@ -117,18 +135,20 @@ export const buildTableModel = (payload: unknown, options: TableModelOptions = {
     onVisit("feature");
     assertTableModelFeature(feature, index);
     const { key, name, depth } = feature;
+    // A row is at most one level deeper than the row before it, so its parent is on the stack.
+    if (depth > ancestors.length) {
+      throw new TablePayloadError("invalid-feature", `features[${index}].depth`);
+    }
 
     let partOf: TableMessage | null = null;
-    if (depth === 0) {
+    const parentKey = depth === 0 ? undefined : ancestors[depth - 1];
+    if (parentKey === undefined) {
       rootPrefix = key.endsWith(name) ? key.slice(0, key.length - name.length) : "";
     } else {
-      const parentKey = ancestors[depth - 1];
-      if (parentKey !== undefined) {
-        const parent = parentKey.startsWith(rootPrefix)
-          ? parentKey.slice(rootPrefix.length)
-          : parentKey;
-        partOf = tableMessage(strings, "part-of", { parent });
-      }
+      const parent = parentKey.startsWith(rootPrefix)
+        ? parentKey.slice(rootPrefix.length)
+        : parentKey;
+      partOf = tableMessage(strings, "part-of", { parent });
     }
     ancestors.length = depth;
     ancestors[depth] = key;

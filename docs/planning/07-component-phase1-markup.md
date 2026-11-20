@@ -333,8 +333,9 @@ release behind a flag, and 11 statements whose removal or last-supported version
   placeholder for an approximate version, so "or earlier" needs no extra sentence for each form.
   The plain supported sentence keeps its own `supported-since-or-earlier`. A removal or
   last-supported version that is the literal "preview" becomes the target's preview name, such as
-  "Nightly", or `version-preview` for a target with none, so no sentence reads "removed in Firefox
-  preview".
+  "Nightly", so a sentence reads "removed in Firefox Nightly". A target with no preview name gets
+  `version-preview` and reads "removed in Node.js preview", which is awkward; BCD 8.1.9 has no
+  such case, because every "preview" removal is on a target with a preview name.
 - **Compact text.** `compact-or-earlier`, `compact-range`, `compact-preview`, and
   `compact-preview-unversioned` give the short visible text beside the icon, such as "≤12.1",
   "11.1 – 12.1", and "25 (preview)".

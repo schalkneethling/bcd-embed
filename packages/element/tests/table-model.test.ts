@@ -245,6 +245,10 @@ describe("an approximate version", () => {
       expect(cell.name.id).toBe("supported-since");
       expect(cell.name.text).toBe("Supported since Opera 12.1");
       expect(cell.compact.text).toBe("12.1");
+      // The statement's own "or earlier" stays reachable in the history, without changing the name.
+      expect(cell.disclosure?.items.map((item) => item.message.text)).toEqual([
+        "Supported since Opera 12.1 or earlier.",
+      ]);
     }
     // The branch still says approximate, and nothing was derived from it.
     const feature = v1NormalizedFixture.features.find(
@@ -287,6 +291,48 @@ describe("the payload guard", () => {
     const badSupport = copy(v1NormalizedFixture);
     (badSupport.features[0]!.support as Record<string, unknown>).chrome = { summary: {} };
     rejects(badSupport, "invalid-support");
+  });
+
+  it("rejects a depth that skips a level, because its parent is not on the stack", () => {
+    const payload = copy(v1NormalizedFixture) as unknown as { features: { depth: number }[] };
+    payload.features[1]!.depth = 2;
+    rejects(payload, "invalid-feature");
+    payload.features[1]!.depth = 2 ** 32;
+    rejects(payload, "invalid-feature");
+  });
+
+  it("rethrows an error from a malformed field below the support entry as the payload error", () => {
+    const malformations: ((support: Record<string, unknown>) => void)[] = [
+      (support) => {
+        (support.branches as Record<string, unknown>[])[0]!.statements = undefined;
+      },
+      (support) => {
+        support.branches = [null];
+      },
+      (support) => {
+        const statement = (support.branches as { statements: Record<string, unknown>[] }[])[0]!
+          .statements[0]!;
+        statement.flags = undefined;
+      },
+      (support) => {
+        const statement = (support.branches as { statements: Record<string, unknown>[] }[])[0]!
+          .statements[0]!;
+        statement.notes = [5];
+      },
+    ];
+    for (const malform of malformations) {
+      const payload = copy(v1NormalizedFixture);
+      malform(payload.features[0]!.support.chrome as unknown as Record<string, unknown>);
+      let thrown: unknown;
+      try {
+        buildTableModel(payload, { browsers: "chrome" });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(TablePayloadError);
+      expect(thrown).toMatchObject({ reason: "invalid-content" });
+      expect((thrown as Error).cause).toBeInstanceOf(Error);
+    }
   });
 
   it("accepts a contract 1.1.0 payload and a contract 1.0.0 payload that share a feature", () => {

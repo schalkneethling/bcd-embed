@@ -21,7 +21,8 @@ export type TablePayloadErrorReason =
   | "missing-browsers"
   | "no-features"
   | "invalid-feature"
-  | "invalid-support";
+  | "invalid-support"
+  | "invalid-content";
 
 /**
  * Thrown when the table model receives a value that is not a contract-conformant payload. The
@@ -31,8 +32,8 @@ export type TablePayloadErrorReason =
 export class TablePayloadError extends Error {
   readonly reason: TablePayloadErrorReason;
 
-  constructor(reason: TablePayloadErrorReason, detail?: string) {
-    super(detail === undefined ? reason : `${reason}: ${detail}`);
+  constructor(reason: TablePayloadErrorReason, detail?: string, options?: ErrorOptions) {
+    super(detail === undefined ? reason : `${reason}: ${detail}`, options);
     this.name = "TablePayloadError";
     this.reason = reason;
   }

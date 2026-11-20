@@ -338,10 +338,20 @@ export const buildCell = (
   let hasFlags = false;
   let hasNotes = false;
   let hasEnded = false;
+  let approximationDiffers = false;
   for (const branch of support.branches) {
     for (const statement of branch.statements as readonly SupportStatement[]) {
       onStatement();
       statementCount += 1;
+      // The name reads the summary's approximation. A statement that says otherwise, as in a
+      // contract 1.0.0 payload, keeps its disclosure, so its "or earlier" is not lost. This
+      // compares the statement with the name; it never changes the name.
+      if (
+        typeof statement.versionAdded === "string" &&
+        statement.versionAddedIsApproximate !== (summary.versionAddedIsApproximate === true)
+      ) {
+        approximationDiffers = true;
+      }
       for (const sentence of statementSentences(context, statement)) {
         items.push({ message: sentence, note: null });
       }
@@ -373,7 +383,7 @@ export const buildCell = (
   }
 
   // A single statement that the name already states in full needs no history of its own.
-  const restatesName = statementCount === 1 && !hasEnded && namesIdentity;
+  const restatesName = statementCount === 1 && !hasEnded && namesIdentity && !approximationDiffers;
   let disclosure: CellDisclosure | null = null;
   if (!restatesName || hasFlags || hasNotes) {
     const labelId =
