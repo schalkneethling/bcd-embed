@@ -1,6 +1,6 @@
 ---
-title: Deploying the Worker
-description: What must exist before a deploy, how Varlock supplies the Worker's configuration, and what a deploy changes.
+title: Deploying the Worker and the site
+description: What must exist before a deploy, how Varlock supplies the Worker's configuration, what a deploy changes, and how the documentation site is deployed and rolled back.
 ---
 
 The Worker is the program on Cloudflare's network that answers API requests by
@@ -12,7 +12,9 @@ deploy changes. For where the Worker sits in the whole pipeline, see
 The Worker's code is in
 [`apps/worker`](https://github.com/schalkneethling/bcd-embed/tree/main/apps/worker).
 Its [README](https://github.com/schalkneethling/bcd-embed/blob/main/apps/worker/README.md)
-describes how it caches, negotiates compression, and reports errors.
+describes how it caches, negotiates compression, and reports errors. The last
+sections cover [deploying this documentation site](#deploying-the-documentation-site),
+which is a separate Cloudflare deploy with its own commands.
 
 ## What must exist before a deploy
 
@@ -229,6 +231,161 @@ Two commands exercise the Worker without touching a Cloudflare account:
 | -------------------------------------------------- | --------------------------------------------------------------------- |
 | `pnpm --filter @bcd-embed/worker wrangler:dry-run` | Builds the deployable bundle and validates it                         |
 | `pnpm --filter @bcd-embed/worker test`             | Runs the integration tests against a local R2 bucket and local Worker |
+
+## Deploying the documentation site
+
+The documentation site is a different kind of deploy from the Worker. It has no
+script and reads no bucket: Cloudflare serves the files in
+`apps/website/dist`, which `astro build` writes. It answers only on
+`https://docs.browser-compat.dev`, a Workers Custom Domain, and its
+configuration is in
+[`apps/website`](https://github.com/schalkneethling/bcd-embed/tree/main/apps/website).
+
+### Where the site answers
+
+`apps/website/wrangler.jsonc` sets the same three fields as the Worker's
+configuration, with the same reasons. The Worker's [table of those fields](#where-the-worker-answers)
+applies here with the hostname `docs.browser-compat.dev` and the Worker name
+`bcd-embed-website`. The zone must have no DNS record of its own for `docs`,
+because Cloudflare creates it on the first deploy.
+
+| Field                 | Value                                        |
+| --------------------- | -------------------------------------------- |
+| `routes`              | `docs.browser-compat.dev` as a Custom Domain |
+| `workers_dev: false`  | No `workers.dev` address                     |
+| `preview_urls: false` | No preview or version addresses              |
+
+The `assets` block sets `not_found_handling` to `404-page`, so a path that
+matches no file gets Starlight's `404.html` with a `404` status.
+
+The zone's rate limiting rule matches `/v1/` on every hostname. A top-level
+`v1` entry in the site would be answered by the rule instead of the site, so
+`tests/website-deploy.test.ts` builds the site into a temporary directory and
+fails if that build has one.
+
+### The headers file
+
+`apps/website/public/_headers` is copied into `dist/` by the build.
+Cloudflare reads it from the assets directory and applies it to static asset
+responses; it does not serve the file itself. A request that matches several
+rules gets the headers of all of them, and a header name set by two rules is
+joined with a comma. So each header name appears under one rule only.
+
+| Path        | Header                                | Value                                                                                                           |
+| ----------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `/*`        | `X-Content-Type-Options`              | `nosniff`                                                                                                       |
+| `/*`        | `Referrer-Policy`                     | `strict-origin-when-cross-origin`                                                                               |
+| `/*`        | `Content-Security-Policy-Report-Only` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:` |
+| `/_astro/*` | `Cache-Control`                       | `public, max-age=31536000, immutable`                                                                           |
+
+Astro puts a content hash in the name of every file under `_astro/`, so a file
+at one address never changes and can be cached for a year. HTML keeps
+Cloudflare's default, `public, max-age=0, must-revalidate`, so a reader gets a
+new page on the next visit.
+
+The policy is report-only: a browser reports each violation in its console and
+blocks nothing. The policy is the one Starlight needs, found by the
+[#189 measurement](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md):
+`default-src 'self'` alone reports about 380 violations per page, all inline
+scripts, inline styles and `data:` images. With the policy above, a local run
+of the built site reported no violation on the home page, the page with
+diagrams, or the open search dialog. The policy allows `'unsafe-inline'` for
+scripts and styles, so it would not stop injected inline script. An enforcing
+policy needs a hash for each inline script, and the hashes change whenever
+Starlight or the content does, so that is separate work.
+
+### Deploying
+
+Run these from the repository root, on an up-to-date `main`. `wrangler login`
+opens a browser for an interactive sign-in, so no API token is involved.
+
+```sh
+pnpm install
+pnpm --filter @bcd-embed/website exec wrangler login
+pnpm --filter @bcd-embed/website exec wrangler whoami
+pnpm --filter @bcd-embed/website run deploy:dry-run
+pnpm --filter @bcd-embed/website run deploy
+```
+
+`whoami` shows which account the deploy will use, so check it before the last
+command. The dry run builds the site and validates the upload, but it never
+mentions the route, so only the real deploy attaches the hostname. The deploy
+output should list `docs.browser-compat.dev` as a Custom Domain and no
+`workers.dev` address.
+
+### Checking a deploy
+
+Each command below states what a correct answer looks like. A certificate for
+a new hostname can take a minute, so retry a failed connection once before
+treating it as a fault.
+
+```sh
+# 1. The home page: 200, the three headers, and no immutable cache lifetime.
+curl -sS -D - -o /dev/null https://docs.browser-compat.dev/
+curl -sS https://docs.browser-compat.dev/ | grep -o '<title>[^<]*'
+
+# 2. A hashed file: Cache-Control is public, max-age=31536000, immutable.
+ASSET=$(curl -sS https://docs.browser-compat.dev/ | grep -o '/_astro/[^"]*\.js' | head -1)
+curl -sS -D - -o /dev/null "https://docs.browser-compat.dev$ASSET"
+
+# 3. A path with no page: 404 and Starlight's page.
+curl -sS -o /dev/null -w '%{http_code}\n' https://docs.browser-compat.dev/no-such-page
+curl -sS https://docs.browser-compat.dev/no-such-page | grep -o '<title>[^<]*'
+
+# 4. The sitemap, robots file and the /v1/ guard.
+curl -sS -o /dev/null -w '%{http_code}\n' https://docs.browser-compat.dev/sitemap-index.xml
+curl -sS https://docs.browser-compat.dev/robots.txt
+curl -sS -o /dev/null -w '%{http_code}\n' https://docs.browser-compat.dev/v1/meta.json
+
+# 5. Plain HTTP redirects to HTTPS (Always Use HTTPS is on for the zone).
+curl -sS -D - -o /dev/null http://docs.browser-compat.dev/
+```
+
+| Check | Expected                                                                                                                                                                                                                                                                                     |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `HTTP/2 200`; `x-content-type-options: nosniff`; `referrer-policy: strict-origin-when-cross-origin`; a `content-security-policy-report-only` line; `cache-control: public, max-age=0, must-revalidate`; no `content-security-policy:` line. The title is `How bcd-embed works \| bcd-embed`. |
+| 2     | `HTTP/2 200`, `cache-control: public, max-age=31536000, immutable`, and the same three security headers.                                                                                                                                                                                     |
+| 3     | `404`, and the title `404 \| bcd-embed`.                                                                                                                                                                                                                                                     |
+| 4     | `200` for the sitemap; the robots file ends with `Sitemap: https://docs.browser-compat.dev/sitemap-index.xml`; `404` for `/v1/meta.json`, which is the site's own 404 and confirms nothing named `v1` is served.                                                                             |
+| 5     | A redirect (`3xx`) with a `location` of `https://docs.browser-compat.dev/`. Cloudflare's Always Use HTTPS page names no status code.                                                                                                                                                         |
+
+Then open the site in a browser with the developer console open, load the home
+page, a page with diagrams (`/publication/`), and the search dialog. The
+console should show no Content-Security-Policy violation. In the Cloudflare
+dashboard, the Worker's domain and route settings should list only
+`docs.browser-compat.dev`, with `workers.dev` and preview URLs off.
+
+### Rolling back
+
+A second deploy creates a version that a rollback can return to. Run these
+from `apps/website` after choosing a version ID from the list:
+
+```sh
+pnpm exec wrangler versions list
+pnpm exec wrangler rollback <version-id> --message "<reason>"
+```
+
+Without a version ID, `wrangler rollback` returns to the version uploaded
+before the latest one. Cloudflare keeps the 100 most recent versions and can
+delete versions older than 30 days. In the dashboard, the route is Workers &
+Pages, the Worker, Deployments, the three-dot menu on a version, then Rollback.
+
+A reader who loaded a page just before a rollback may then request a hashed
+file that only the newer version has. Each version holds its own copy of the
+assets, so the older version cannot serve that file. Cloudflare's
+[version skew page](https://developers.cloudflare.com/workers/versions-and-deployments/version-skew/)
+describes the problem. What the reader sees, most likely a broken page until a
+reload, has not been observed on this site.
+
+The first deploy has no earlier version, so there is nothing to roll back to.
+To take the site down after a first deploy that went wrong, remove the
+`docs.browser-compat.dev` Custom Domain from the Worker in the dashboard
+(in the Worker's settings in Workers & Pages), and also remove
+the Advanced Certificate Cloudflare issued for it, because Cloudflare does not
+delete the certificate when you delete a Custom Domain. Check the zone's DNS
+page afterwards: the `docs` record should be gone. `wrangler delete` deletes
+the Worker itself, and this repository has not checked whether it also
+removes the Custom Domain, so prefer the dashboard.
 
 ## What is still open before a public launch
 

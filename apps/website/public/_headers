@@ -1,0 +1,18 @@
+# Cloudflare reads this file from the assets directory and applies it to static
+# asset responses. It is not served itself. A request that matches several
+# rules receives the headers of all of them, and Cloudflare joins repeated
+# header names with a comma, so each header name appears under one rule only.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Report-only: browsers report each violation in their console and block
+  # nothing. Starlight writes inline scripts, inline styles and `data:` images,
+  # so this policy allows each of them. Move to an enforcing policy only after
+  # the three views in docs/planning/10-component-spikes.md report no violation.
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
+
+# Astro writes a content hash into the name of every file in `_astro/`, so a
+# file at one address never changes.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable

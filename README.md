@@ -44,8 +44,9 @@ workspaces are:
   against the contract.
 - `apps/website` — `@bcd-embed/website`, the documentation site, built with
   [Starlight](https://starlight.astro.build). Its pages are the Markdown files
-  in `apps/website/src/content/docs`. It is configured for Cloudflare hosting
-  and has not been deployed.
+  in `apps/website/src/content/docs`. It is deployed manually with
+  `pnpm --filter @bcd-embed/website run deploy` and answers on
+  `https://docs.browser-compat.dev`.
 
 Each package and app has its own README with the details of its behavior.
 
