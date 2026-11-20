@@ -273,14 +273,18 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
    * `data` is set, `query` is absent, or the element is lazy and has not come near the viewport.
    * A query that fails the key pattern sends no request, so nothing is held back for it, and its
    * error arrives at once.
+   *
+   * The checks read property values, which a script or a framework binding can set without the
+   * attribute converter: `undefined` counts as absent, as it does for `data`, and any `loading`
+   * value other than `eager` counts as `lazy`, as the attribute does.
    */
   #fetchArgs(): FetchArgs | null {
     const { data, query } = this;
-    if ((data !== null && data !== undefined) || query === null) return null;
-    if (this.loading === "lazy" && !this.#nearViewport && FEATURE_KEY_PATTERN.test(query)) {
+    if ((data !== null && data !== undefined) || query === null || query === undefined) return null;
+    if (this.loading !== "eager" && !this.#nearViewport && FEATURE_KEY_PATTERN.test(query)) {
       return null;
     }
-    return [query, this.endpoint];
+    return [query, this.endpoint ?? null];
   }
 
   /**
@@ -315,7 +319,8 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
       this.isConnected &&
       (data === null || data === undefined) &&
       query !== null &&
-      this.loading === "lazy" &&
+      query !== undefined &&
+      this.loading !== "eager" &&
       !this.#nearViewport;
     if (waiting && this.#viewportObserver === null) {
       this.#viewportObserver = new IntersectionObserver(
@@ -369,7 +374,7 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
       return this.#buildTable(payload, { mode: "data", snapshot: null }, null);
     }
     const { query } = this;
-    if (query === null) return EMPTY;
+    if (query === null || query === undefined) return EMPTY;
     const args = this.#fetchArgs();
     // No run counts yet: the element waits for the viewport, or to be connected again.
     if (args === null || !sameArgs(args, this.#runArgs)) return { status: "deferred", query };

@@ -466,6 +466,94 @@ describe("removing the element while a request is pending", () => {
 
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
+
+  it("fires no bcd-error when the request fails after the element was removed", async () => {
+    const query = freshQuery();
+    const answer = settleLater<Response>();
+    stubFetch(() => answer.promise);
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+
+    element.remove();
+    answer.resolve(notFoundResponse(query));
+    await settle();
+    await element.updateComplete;
+
+    expect(events.errors).toEqual([]);
+    expect(events.loads).toEqual([]);
+    events.stop();
+  });
+
+  it("sends one request and fires one bcd-load when moved within the page in one task", async () => {
+    const query = freshQuery();
+    const answer = settleLater<Response>();
+    const fetchSpy = stubFetch(() => answer.promise);
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+    const other = document.createElement("div");
+    document.body.append(other);
+
+    // Appending a connected element to another parent removes it and adds it again, in one task.
+    other.append(element);
+    answer.resolve(okResponse(query));
+    await vi.waitFor(() => expect(events.loads).toHaveLength(1));
+    await settle();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(events.loads).toEqual([{ mode: "fetch", snapshot: SNAPSHOT }]);
+    events.stop();
+  });
+
+  it("sends nothing new from the error state on return or when a fallback child arrives", async () => {
+    const query = freshQuery();
+    const fetchSpy = stubFetch(async (url) => notFoundResponse(queryOf(url)));
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+    await vi.waitFor(() => expect(events.errors).toHaveLength(1));
+
+    element.remove();
+    document.body.append(element);
+    element.append(document.createElement("p"));
+    await settle();
+    await element.updateComplete;
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(events.errors).toHaveLength(1);
+    events.stop();
+  });
+});
+
+describe("values set on the properties", () => {
+  it("treats a loading value other than eager as lazy", async () => {
+    const fetchSpy = stubFetch(async (url) => okResponse(queryOf(url)));
+    const element = document.createElement("bcd-compat-table") as BcdCompatTable;
+    element.query = freshQuery();
+    // A script or a framework binding can bypass the attribute converter.
+    element.loading = "Lazy" as unknown as BcdCompatTable["loading"];
+    const spacer = document.createElement("div");
+    spacer.style.blockSize = "20000px";
+    document.body.append(spacer, element);
+    await element.updateComplete;
+    await settle();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("treats an undefined query as absent, and sends no request", async () => {
+    const fetchSpy = stubFetch(async (url) => okResponse(queryOf(url)));
+    const events = recordEvents();
+    const element = document.createElement("bcd-compat-table") as BcdCompatTable;
+    element.loading = "eager";
+    element.query = undefined as unknown as string;
+    document.body.append(element);
+    await element.updateComplete;
+    await settle();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(events.errors).toEqual([]);
+    expect(element.querySelector(".bcd-loading, .bcd-error")).toBeNull();
+    events.stop();
+  });
 });
 
 describe("the endpoint attribute", () => {
