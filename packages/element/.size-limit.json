@@ -1,6 +1,6 @@
 [
   {
-    "name": "dist/index.js without lit (measured 8.07 kB with Brotli on 20 November 2026, after fetch mode)",
+    "name": "dist/index.js without lit (measured 8.26 kB with Brotli on 20 November 2026, after fetch mode)",
     "path": "dist/index.js",
     "ignore": ["lit", "@lit/task"],
     "limit": "8.5 kB"

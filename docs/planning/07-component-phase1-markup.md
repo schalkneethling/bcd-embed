@@ -349,6 +349,7 @@ this first inventory. The message ids are proposals.
 | `flag-runtime-value`        | To enable it, start {target} with the command-line flag {name} set to {value}. |
 | `note`                      | Note: {text}                                                               |
 | `loading`                   | Loading browser compatibility data for {query}.                            |
+| `not-loaded`                | Browser compatibility data for {query} has not loaded yet.                 |
 | `error`                     | Browser compatibility data for {query} could not be loaded.                |
 | `error-no-query`            | Browser compatibility data could not be shown.                             |
 
@@ -365,7 +366,9 @@ and `partial-preview-unversioned` cover it. The same issue added the
 `platform-other` group for a support target whose `type` the component does not know, and the
 `loading` and `error` sentences. Issue #198 added `error-no-query`, which the owner decided on
 20 November 2026: the element shows it after a data-mode error when the author gave no fallback
-content, because a value that is not a payload may have no query to name. The table in `packages/element/src/strings/en.ts` holds exactly these
+content, because a value that is not a payload may have no query to name. Issue #203 added
+`not-loaded`, which a lazy element without fallback content shows before it has sent a request,
+because `loading` would claim a load that has not started. The table in `packages/element/src/strings/en.ts` holds exactly these
 ids, and a test fails when the two differ.
 
 The table model (Issue #196) added the rest, chosen from the statement combinations that occur in

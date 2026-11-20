@@ -2,8 +2,12 @@ import { Task, TaskStatus } from "@lit/task";
 import { LitElement, nothing } from "lit";
 import type { PropertyValues, TemplateResult } from "lit";
 
-import { FEATURE_KEY_PATTERN, getPageFeatureClient } from "./data/feature-client.js";
-import type { FeatureRequest, FeatureResult } from "./data/feature-client.js";
+import {
+  FEATURE_KEY_PATTERN,
+  getPageFeatureClient,
+  isValidEndpoint,
+} from "./data/feature-client.js";
+import type { FeatureRequest, FeatureResult, FeatureSuccess } from "./data/feature-client.js";
 import { buildTableModel, TablePayloadError } from "./model/table-model.js";
 import type { TableModel } from "./model/table-model.js";
 import type {
@@ -168,6 +172,16 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   // It never goes back, so switching `loading` to `lazy` does not unload a table, and a later
   // `query` requests at once.
   #nearViewport = false;
+  // The arguments of the task's latest run, so a status is only read for the run it belongs to.
+  #taskArgs: FetchArgs | null = null;
+  // The latest successful answer and the arguments it answered. Restoring those arguments, after
+  // `query` was cleared or `data` was set and cleared, shows the table again in the same update,
+  // with no pending state and no request. It holds one payload that the page's request cache
+  // holds anyway, so it costs O(1) extra space. Failures are not kept, so that a restored
+  // `query` after a failure asks the request cache again and its 10-second window applies.
+  #lastSuccess: { readonly args: FetchArgs; readonly result: FeatureSuccess } | null = null;
+  // Whether the `aria-busy` attribute is the element's own, so it never removes an author's.
+  #ownsBusy = false;
   #viewportObserver: IntersectionObserver | null = null;
   // Puts the render container back when a script removes it. React does this when it changes a
   // single string child: it assigns `textContent`, which replaces every child (Issue #187,
@@ -269,22 +283,47 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   }
 
   /**
-   * The arguments the element should request with now, or `null` when it should not request:
-   * `data` is set, `query` is absent, or the element is lazy and has not come near the viewport.
-   * A query that fails the key pattern sends no request, so nothing is held back for it, and its
-   * error arrives at once.
-   *
-   * The checks read property values, which a script or a framework binding can set without the
-   * attribute converter: `undefined` counts as absent, as it does for `data`, and any `loading`
-   * value other than `eager` counts as `lazy`, as the attribute does.
+   * The query and endpoint the element is in fetch mode for, or `null` when it is not: `data` is
+   * set, or `query` is absent. The checks read property values, which a script or a framework
+   * binding can set without the attribute converter, so `undefined` counts as absent, as it does
+   * for `data`.
    */
-  #fetchArgs(): FetchArgs | null {
+  #fetchInputs(): FetchArgs | null {
     const { data, query } = this;
     if ((data !== null && data !== undefined) || query === null || query === undefined) return null;
-    if (this.loading !== "eager" && !this.#nearViewport && FEATURE_KEY_PATTERN.test(query)) {
-      return null;
-    }
     return [query, this.endpoint ?? null];
+  }
+
+  /**
+   * Whether a request could go out for these inputs. A query that fails the key pattern, or an
+   * endpoint that is not a base URL, never sends one, so there is nothing to hold back for it:
+   * its error arrives at once, and no observer waits. O(q + e) for a query of q characters and an
+   * endpoint of e.
+   */
+  static #canSend([query, endpoint]: FetchArgs): boolean {
+    return FEATURE_KEY_PATTERN.test(query) && (endpoint === null || isValidEndpoint(endpoint));
+  }
+
+  /**
+   * Whether the element holds its first request back until it nears the viewport. Any `loading`
+   * value other than `eager` counts as `lazy`, as the attribute does.
+   */
+  #waitsForViewport(inputs: FetchArgs | null): boolean {
+    return (
+      inputs !== null &&
+      this.loading !== "eager" &&
+      !this.#nearViewport &&
+      BcdCompatTable.#canSend(inputs)
+    );
+  }
+
+  /**
+   * The arguments the element should request with now, or `null` when it should not request:
+   * it is not in fetch mode, or it is lazy and has not come near the viewport.
+   */
+  #fetchArgs(): FetchArgs | null {
+    const inputs = this.#fetchInputs();
+    return this.#waitsForViewport(inputs) ? null : inputs;
   }
 
   /**
@@ -303,25 +342,32 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     }
     if (!this.isConnected) return;
     this.#runArgs = args;
-    if (FEATURE_KEY_PATTERN.test(args[0])) this.#nearViewport = true;
+    if (BcdCompatTable.#canSend(args)) this.#nearViewport = true;
+    const shown = this.#lastSuccess;
+    if (shown !== null && sameArgs(args, shown.args)) {
+      // The answer is already known, so `#buildOutcome` shows it. A run still pending for other
+      // arguments is dropped.
+      this.#task.abort();
+      return;
+    }
+    this.#taskArgs = args;
     // `run` never rejects: `Task` catches the task's rejection and records it as the error.
     void this.#task.run(args);
   }
 
   /**
    * Observes the element while it waits for the viewport, and stops once it no longer waits:
-   * when it has come near, when `data` is set or `query` is absent, when `loading` is `eager`, or
-   * when it leaves the document. Each element owns one observer with one target, so a call is O(1).
+   * when it has come near, when `data` is set or `query` is absent, when `loading` is `eager`,
+   * when no request can be sent, or when it leaves the document. Each element owns one observer
+   * with one target, so a call is O(1) apart from the O(q + e) check in `#canSend`.
+   *
+   * An observer reports only on an element that has a box. A host with `display: none` or
+   * `display: contents` never intersects, so a lazy element there waits for good. And the
+   * `rootMargin` applies to the viewport, not to a scrolling ancestor, so inside an
+   * `overflow: auto` box the request starts only when the element is visible in that box.
    */
   #syncViewportObserver(): void {
-    const { data, query } = this;
-    const waiting =
-      this.isConnected &&
-      (data === null || data === undefined) &&
-      query !== null &&
-      query !== undefined &&
-      this.loading !== "eager" &&
-      !this.#nearViewport;
+    const waiting = this.isConnected && this.#waitsForViewport(this.#fetchInputs());
     if (waiting && this.#viewportObserver === null) {
       this.#viewportObserver = new IntersectionObserver(
         (entries) => {
@@ -378,9 +424,18 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     const args = this.#fetchArgs();
     // No run counts yet: the element waits for the viewport, or to be connected again.
     if (args === null || !sameArgs(args, this.#runArgs)) return { status: "deferred", query };
+    const shown = this.#lastSuccess;
+    if (shown !== null && sameArgs(args, shown.args)) {
+      const detail: BcdLoadDetail = { mode: "fetch", snapshot: shown.result.snapshot };
+      return this.#buildTable(shown.result.payload, detail, query);
+    }
+    // The task's status belongs to its latest run, which may be one the element dropped in favour
+    // of a remembered success. Until a run for these arguments starts, nothing is pending.
+    if (!sameArgs(args, this.#taskArgs)) return { status: "deferred", query };
     if (this.#task.status === TaskStatus.COMPLETE) {
       const result = this.#task.value;
       if (result !== undefined && result.ok) {
+        this.#lastSuccess = { args, result };
         const detail: BcdLoadDetail = { mode: "fetch", snapshot: result.snapshot };
         return this.#buildTable(result.payload, detail, query);
       }
@@ -433,15 +488,24 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     const strings = selectStrings(this.locale);
     return outcome.status === "error"
       ? renderErrorMessage(strings, outcome.query)
-      : renderLoadingMessage(strings, outcome.query);
+      : renderLoadingMessage(strings, outcome.query, outcome.status === "pending");
   }
 
   protected override updated(): void {
     const { status } = this.#outcome;
     this.toggleAttribute(LOADED_ATTRIBUTE, status === "loaded");
     // `aria-busy` marks a request in flight, not the lazy wait before it, which may never end.
-    if (status === "pending") this.setAttribute("aria-busy", "true");
-    else this.removeAttribute("aria-busy");
+    // The element removes only the value it set, so an author's own `aria-busy` stays, and it
+    // never overwrites one that is already there.
+    if (status === "pending") {
+      if (!this.hasAttribute("aria-busy")) {
+        this.setAttribute("aria-busy", "true");
+        this.#ownsBusy = true;
+      }
+    } else if (this.#ownsBusy) {
+      this.removeAttribute("aria-busy");
+      this.#ownsBusy = false;
+    }
     this.#syncViewportObserver();
     this.#dispatchPendingEvent();
   }

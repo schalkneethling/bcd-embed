@@ -167,6 +167,12 @@ const parseEndpoint = (endpoint: string): URL | null => {
 };
 
 /**
+ * Whether `requestFeature` would accept `endpoint`, so the element can tell that no request will
+ * ever go out and stop waiting for the viewport. O(n) for an endpoint of n characters.
+ */
+export const isValidEndpoint = (endpoint: string): boolean => parseEndpoint(endpoint) !== null;
+
+/**
  * Builds `{endpoint}/v1/current/features/{query}.json`. The caller has validated `query` and
  * `endpoint`.
  */

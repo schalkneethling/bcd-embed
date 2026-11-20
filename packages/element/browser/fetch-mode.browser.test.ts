@@ -378,33 +378,44 @@ describe("the error state", () => {
 });
 
 describe("a change while a request is pending", () => {
-  it("renders only the new query's table, and fires nothing for the old one, whichever answer comes first", async () => {
-    const oldQuery = freshQuery();
-    const newQuery = freshQuery();
-    const answers = new Map([
-      [oldQuery, settleLater<Response>()],
-      [newQuery, settleLater<Response>()],
-    ]);
-    stubFetch((url) => answers.get(queryOf(url))?.promise ?? Promise.reject(new Error(url)));
-    const events = recordEvents();
-    const element = await mount({ query: oldQuery, loading: "eager" });
+  for (const order of ["old answer first", "new answer first"] as const) {
+    it(`renders only the new query's table, and fires nothing for the old one: ${order}`, async () => {
+      const oldQuery = freshQuery();
+      const newQuery = freshQuery();
+      const answers = new Map([
+        [oldQuery, settleLater<Response>()],
+        [newQuery, settleLater<Response>()],
+      ]);
+      stubFetch((url) => answers.get(queryOf(url))?.promise ?? Promise.reject(new Error(url)));
+      const events = recordEvents();
+      const element = await mount({ query: oldQuery, loading: "eager" });
 
-    element.setAttribute("query", newQuery);
-    await element.updateComplete;
-    answers.get(oldQuery)?.resolve(okResponse(oldQuery));
-    await settle();
+      element.setAttribute("query", newQuery);
+      await element.updateComplete;
+      if (order === "old answer first") {
+        answers.get(oldQuery)?.resolve(okResponse(oldQuery));
+        await settle();
 
-    expect(element.querySelector("table")).toBeNull();
-    expect(element.getAttribute("aria-busy")).toBe("true");
-    expect(events.loads).toEqual([]);
+        expect(element.querySelector("table")).toBeNull();
+        expect(element.getAttribute("aria-busy")).toBe("true");
+        expect(events.loads).toEqual([]);
 
-    answers.get(newQuery)?.resolve(okResponse(newQuery));
-    await vi.waitFor(() => expect(events.loads).toHaveLength(1));
+        answers.get(newQuery)?.resolve(okResponse(newQuery));
+        await vi.waitFor(() => expect(events.loads).toHaveLength(1));
+      } else {
+        answers.get(newQuery)?.resolve(okResponse(newQuery));
+        await vi.waitFor(() => expect(events.loads).toHaveLength(1));
+        answers.get(oldQuery)?.resolve(okResponse(oldQuery));
+        await settle();
+        await element.updateComplete;
+      }
 
-    expect(captionOf(element)).toBe(`Browser compatibility: ${newQuery}`);
-    expect(events.errors).toEqual([]);
-    events.stop();
-  });
+      expect(captionOf(element)).toBe(`Browser compatibility: ${newQuery}`);
+      expect(events.loads).toEqual([{ mode: "fetch", snapshot: SNAPSHOT }]);
+      expect(events.errors).toEqual([]);
+      events.stop();
+    });
+  }
 
   it("fires no error for an old query that fails after the new one rendered", async () => {
     const oldQuery = freshQuery();
@@ -599,4 +610,219 @@ describe("the endpoint attribute", () => {
     ]);
     events.stop();
   });
+});
+
+describe("an author's own aria-busy", () => {
+  it("is left in place before, during, and after a request", async () => {
+    const query = freshQuery();
+    const answer = settleLater<Response>();
+    stubFetch(() => answer.promise);
+    const element = document.createElement("bcd-compat-table") as BcdCompatTable;
+    element.setAttribute("query", query);
+    element.setAttribute("loading", "eager");
+    element.setAttribute("aria-busy", "false");
+    document.body.append(element);
+    await element.updateComplete;
+
+    // The element does not overwrite a value the author set.
+    expect(element.getAttribute("aria-busy")).toBe("false");
+
+    answer.resolve(okResponse(query));
+    await vi.waitFor(() => expect(element.hasAttribute(LOADED_ATTRIBUTE)).toBe(true));
+
+    expect(element.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("is left in place on an element in data mode", async () => {
+    const element = document.createElement("bcd-compat-table") as BcdCompatTable;
+    element.setAttribute("aria-busy", "true");
+    element.data = v1NormalizedFixture;
+    document.body.append(element);
+    await element.updateComplete;
+
+    expect(element.getAttribute("aria-busy")).toBe("true");
+  });
+});
+
+describe("the lazy wait", () => {
+  it("says the data has not loaded yet, not that it is loading, before any request", async () => {
+    const query = freshQuery();
+    const fetchSpy = stubFetch(async (url) => okResponse(queryOf(url)));
+
+    const element = await mount({ query, offset: 20_000 });
+    await settle();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(element.hasAttribute("aria-busy")).toBe(false);
+    expect(element.querySelector("p.bcd-loading")?.textContent).toBe(
+      `Browser compatibility data for ${query} has not loaded yet.`,
+    );
+  });
+
+  it("switches to the loading sentence once the request is in flight", async () => {
+    const query = freshQuery();
+    stubFetch(() => new Promise<Response>(() => {}));
+    const element = await mount({ query, offset: 20_000 });
+
+    element.loading = "eager";
+    await element.updateComplete;
+
+    expect(element.getAttribute("aria-busy")).toBe("true");
+    expect(element.querySelector("p.bcd-loading")?.textContent).toBe(
+      `Loading browser compatibility data for ${query}.`,
+    );
+  });
+
+  for (const [name, options] of [
+    ["an invalid query", { query: "a b" }],
+    ["an invalid endpoint", { query: "fixture.never-sent", endpoint: "https://example.test/?x" }],
+  ] as const) {
+    it(`observes nothing and errors at once for ${name}, because no request can be sent`, async () => {
+      const fetchSpy = stubFetch(async (url) => okResponse(queryOf(url)));
+      const observe = vi.spyOn(IntersectionObserver.prototype, "observe");
+      const events = recordEvents();
+
+      await mount({ ...options, offset: 20_000 });
+      await vi.waitFor(() => expect(events.errors).toHaveLength(1));
+
+      expect(observe).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      events.stop();
+    });
+  }
+
+  it("disconnects the observer when a waiting element's query becomes invalid", async () => {
+    stubFetch(() => new Promise<Response>(() => {}));
+    const disconnect = vi.spyOn(IntersectionObserver.prototype, "disconnect");
+    const element = await mount({ query: freshQuery(), offset: 20_000 });
+
+    element.setAttribute("query", "a b");
+    await element.updateComplete;
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("restoring an input whose answer the element already shows", () => {
+  it("renders the table again without a pending state or a request, and fires one bcd-load", async () => {
+    const query = freshQuery();
+    const fetchSpy = stubFetch(async (url) => okResponse(queryOf(url)));
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+    await vi.waitFor(() => expect(events.loads).toHaveLength(1));
+
+    element.removeAttribute("query");
+    await element.updateComplete;
+    expect(element.querySelector("table")).toBeNull();
+
+    const busy: Array<string | null> = [];
+    const watcher = new MutationObserver(() => busy.push(element.getAttribute("aria-busy")));
+    watcher.observe(element, { attributes: true, attributeFilter: ["aria-busy"] });
+    element.setAttribute("query", query);
+    await element.updateComplete;
+    await settle();
+    watcher.disconnect();
+
+    // The table is back in the same update, with no aria-busy in between.
+    expect(captionOf(element)).toBe(`Browser compatibility: ${query}`);
+    expect(busy).toEqual([]);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(events.loads).toEqual([
+      { mode: "fetch", snapshot: SNAPSHOT },
+      { mode: "fetch", snapshot: SNAPSHOT },
+    ]);
+    events.stop();
+  });
+
+  it("shows the fetched table in the same update when data is set and cleared", async () => {
+    const query = freshQuery();
+    stubFetch(async (url) => okResponse(queryOf(url)));
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+    await vi.waitFor(() => expect(events.loads).toHaveLength(1));
+
+    element.data = v1NormalizedFixture;
+    await element.updateComplete;
+    element.data = null;
+    await element.updateComplete;
+
+    expect(captionOf(element)).toBe(`Browser compatibility: ${query}`);
+    expect(element.hasAttribute("aria-busy")).toBe(false);
+    expect(events.loads).toEqual([
+      { mode: "fetch", snapshot: SNAPSHOT },
+      { mode: "data", snapshot: null },
+      { mode: "fetch", snapshot: SNAPSHOT },
+    ]);
+    events.stop();
+  });
+
+  it("asks again after a failure, which the request cache answers inside its window", async () => {
+    const query = freshQuery();
+    const fetchSpy = stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+    await vi.waitFor(() => expect(events.errors).toHaveLength(1));
+
+    element.removeAttribute("query");
+    await element.updateComplete;
+    element.setAttribute("query", query);
+    await vi.waitFor(() => expect(events.errors).toHaveLength(2));
+
+    // Inside the 10-second window the held failure answers, so nothing is sent.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    events.stop();
+  });
+
+  it("does nothing when the same query is assigned again", async () => {
+    const query = freshQuery();
+    const fetchSpy = stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+    const events = recordEvents();
+    const element = await mount({ query, loading: "eager" });
+    await vi.waitFor(() => expect(events.errors).toHaveLength(1));
+
+    element.setAttribute("query", query);
+    element.query = query;
+    await element.updateComplete;
+    await settle();
+
+    expect(events.errors).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    events.stop();
+  });
+});
+
+describe("two elements sharing one request", () => {
+  for (const order of ["removed, then the answer", "the answer, then removed"] as const) {
+    it(`fires nothing for the removed element and one bcd-load for the other: ${order}`, async () => {
+      const query = freshQuery();
+      const answer = settleLater<Response>();
+      const fetchSpy = stubFetch(() => answer.promise);
+      const removed = await mount({ query, loading: "eager" });
+      const kept = await mount({ query, loading: "eager" });
+      const onRemoved: string[] = [];
+      const onKept: string[] = [];
+      removed.addEventListener("bcd-load", (event) => onRemoved.push(event.type));
+      kept.addEventListener("bcd-load", (event) => onKept.push(event.type));
+
+      if (order === "removed, then the answer") {
+        removed.remove();
+        answer.resolve(okResponse(query));
+      } else {
+        // The answer settles, but the elements only learn of it in a later microtask, so the
+        // removal comes first from the element's point of view.
+        answer.resolve(okResponse(query));
+        removed.remove();
+      }
+      await vi.waitFor(() => expect(onKept).toEqual(["bcd-load"]));
+      await settle();
+      await removed.updateComplete;
+
+      expect(onRemoved).toEqual([]);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      document.body.append(removed);
+      await vi.waitFor(() => expect(onRemoved).toEqual(["bcd-load"]));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+  }
 });
