@@ -1,10 +1,11 @@
 # `@bcd-embed/element`
 
 The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architecture.md`). The
-element renders in two modes. In fetch mode it requests the feature named by its `query`
+element renders in three modes. In fetch mode it requests the feature named by its `query`
 attribute from the API. In data mode a page assigns a payload to its `data` property, and the
-element renders the table with no request. The `source` attribute is a later issue (#205). The
-package also holds the message table, the note tokenizer, the table model, the feature client,
+element renders the table with no request. In source mode the `source` attribute names a
+`<script type="application/json">` that holds the payload, and the element renders it with no
+request and no script of the page's own (see "Source mode"). The package also holds the message table, the note tokenizer, the table model, the feature client,
 and the screen reader tests, which walk the element's own table.
 
 ## Usage
@@ -65,6 +66,7 @@ In data mode, a script assigns a payload obtained at build time:
 | Input                  | Kind                   | What it does                                                                                                                                                                                                                                                                                                                                                                |
 | ---------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `data`                 | Property only          | A contract 1.x feature response. Assigning one renders the table. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data. While `data` is set, `query` sends no request.                                                                                                                                      |
+| `source`               | Attribute and property | The `id` of a `<script type="application/json">` that holds a payload, while `data` is `null`. The element reads it once and sends no request, and a `source` that fails never falls through to `query`. See "Source mode".                                                                                                                                                 |
 | `query`                | Attribute and property | The BCD dotted key to request, such as `css.properties.display`, while `data` is `null`. Changing it requests the new key; removing it removes the table.                                                                                                                                                                                                                   |
 | `endpoint`             | Attribute and property | The API's base URL, for a self-hosted API. The default is `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL, on any host, with no query string, fragment, or credentials; anything else is the error `invalid-endpoint`. A browser blocks an `http:` request from an `https:` page as mixed content, which the element reports as `network`. |
 | `loading`              | Attribute and property | `lazy`, the default, holds the first request back until the element is within 400 pixels of the viewport. `eager` requests as soon as the element is in the document. Any other value, set on the attribute or the property, means `lazy`, as for `<img loading>`.                                                                                                          |
@@ -200,6 +202,84 @@ Phase 3 chooses icons.
 hand-written interface, and `addEventListener("bcd-load", …)` types `event.detail`. No type from
 Lit is public: the entry does not export the element's class, and a test fails when any
 declaration file the entry reaches imports from `lit`.
+
+### Source mode
+
+Source mode needs no script of the page's own. A build step writes two plain HTML fragments, the
+JSON script and the element that names it:
+
+```html
+<script type="application/json" id="bcd-data-css-properties-display">
+  { "contract": "1.1.0", "query": "css.properties.display", … }
+</script>
+<bcd-compat-table source="bcd-data-css-properties-display">
+  <p>Browser compatibility for <code>display</code> on MDN Web Docs</p>
+</bcd-compat-table>
+```
+
+**Naming the script.** The `id` is the page author's to choose, and the element enforces nothing.
+Use `bcd-data-` followed by the query with each dot written as a dash, as in
+`bcd-data-css-properties-display`, so that several tables on one page cannot share an `id`.
+
+**Escaping the JSON.** The page's generator must replace every `<` in the JSON with the six
+characters `\u003c` (a backslash, `u`, `0`, `0`, `3`, `c`). A note in a payload can contain a
+closing script tag, and the HTML parser ends a script at the first one, before the element sees
+any text. `JSON.parse` turns `\u003c` back into `<`, so the note arrives unchanged. One line does
+it:
+
+```js
+const scriptJson = JSON.stringify(payload).replaceAll("<", "\\u003c");
+```
+
+The element cannot repair JSON that the parser has already cut. An unescaped note gives the error
+`source-invalid-json`, and the rest of the JSON becomes text in the page.
+
+**What the element reads.** It looks the `id` up in its own tree, which is the shadow root that
+holds it or else the document, and accepts one kind of target: an HTML `<script>` whose `type` is
+`application/json`, in any letter case, with no parameters. An `id` that matches no element, or
+whose first match in the tree is anything else, such as a `<div>` or a `<script>` of another type,
+gives `source-missing`. The element never reads the text of another kind of element. It passes the
+script's `textContent` to `JSON.parse`, so nothing in it is evaluated.
+
+**Where the script goes.** A script before the element always works. A script after it works too
+while the page is still being parsed: when the `id` is not in the page yet, the element waits for
+the end of parsing and reads then, and during the wait it shows nothing and fires no event. This
+covers the case where the element is defined before the parser reaches it, because then its
+`connectedCallback` runs before the parser has read anything after the element's start tag. A
+script that inserts both fragments into a page that has finished loading must insert the JSON
+script first, because nothing is left to wait for, and the element reports `source-missing`.
+
+**Read once.** The first read happens when the element connects. The element keeps what it read
+until `source` changes, so editing or removing the script afterwards changes nothing, and moving
+the element does not read again. Setting `source` to another `id` reads that script and fires one
+event. While `data` is set, the element does not read `source` at all, so a broken reference
+reports nothing; clearing `data` reads it then.
+
+**Order of inputs.** `data` wins over `source`, and `source` wins over `query`. When `source` is
+present the element never sends a request, even when the read fails: it reports the error and
+shows the fallback, so a wrong `id` cannot hide behind a working `query`. Remove the `source`
+attribute to fall back to `query`.
+
+| Event       | `detail`                                                                |
+| ----------- | ----------------------------------------------------------------------- |
+| `bcd-load`  | `{ mode: "source", snapshot: null }`                                    |
+| `bcd-error` | `{ mode: "source", reason, status: null, code: null }`, with a `reason` |
+
+| Source-mode `reason`  | When                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------- |
+| `source-missing`      | No element has the `id`, or the first one is not a `<script type="application/json">` |
+| `source-invalid-json` | The script's text is empty or is not JSON                                             |
+| `invalid-payload`     | The JSON is not a contract 1.x feature response that the table model can read         |
+
+Everything else works as in data mode: one event for each update in which the input changed, the
+event held while the element is out of the document, the `loaded` attribute, the render
+container's guard, the error sentence when the page gave no fallback content, and an author's own
+`aria-busy` left alone. The element never sets `aria-busy` in source mode, because nothing is in
+flight.
+
+**Cost.** Parsing is O(n) time and space for n characters of script text, and the lookup is
+expected O(1). It happens once for each `id`, so later updates do not parse again. The table
+model then costs what it costs in data mode (see "Size of the rendered table").
 
 ### Size of the rendered table
 
