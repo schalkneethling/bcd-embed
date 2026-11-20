@@ -892,11 +892,20 @@ Local numbers, one run each on the machine described above, on a quiet system: t
 lists the same 341 tests as the old root config, the browser project lists the 1 smoke test,
 `pnpm check` took 66 s end to end, and the three-engine Playwright Test run took 4.2 s for 3 tests.
 
+Measured in CI on pull request #228 (the `check` job is run 44728957761, the Element browser workflow is run
+44728957783). Firefox's row is filled in below once the fix has run.
+
 | What the spike asked CI to measure | Value |
 | ---------------------------------- | ----- |
-| `check` job duration on the #197 pull request, against the 347 s baseline and the 600 s limit | Pending. Fill in from the pull request's `check` job (`gh api repos/schalkneethling/bcd-embed/actions/runs/<id>/jobs`, `started_at` to `completed_at`) once CI has run, then confirm or reverse the recommendation in section 10. |
-| `Install Chromium for the Vitest browser project` step | Pending, from the same run's log. |
-| Element browser job per engine | Pending, from the same run's log. |
+| `check` job duration, against the 228 s to 347 s of the three earlier `main` runs and the 600 s limit | 261 s (11:36:20Z to 11:40:41Z), run [44728957761](https://github.com/schalkneethling/bcd-embed/actions/runs/44728957761). Headroom 339 s. |
+| `Install Chromium for the Vitest browser project` step (`--with-deps --only-shell chromium`) | 11 s, same run. |
+| `Check repository` step (`pnpm check`, including the Chromium Vitest project) | 56 s, same run. |
+| Element browser, Chromium job | 55 s: install 26 s (`--with-deps --only-shell`), tests 3 s, run [44728957783](https://github.com/schalkneethling/bcd-embed/actions/runs/44728957783). |
+| Element browser, WebKit job | 72 s: install 49 s (`--with-deps`), tests 3 s, same run. |
+| Element browser, Firefox job, `--with-deps` | Hit the 15 minute timeout inside the install, same run, both attempts. `libavcodec62` and the 12 font packages in Playwright's Firefox list on Ubuntu 26.04 made `apt-get` fetch 39 packages (54 MB) from a mirror that served about one a minute. |
+| Element browser, Firefox job, without `--with-deps` | Pending. |
+
+The recommendation in section 10 holds: Chromium joins `pnpm check`, which finished 339 s under its limit.
 
 ### Open items for the owner
 

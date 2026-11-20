@@ -82,17 +82,36 @@ jobs:
       - name: Install the element workspace
         run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
 
+      # The install runs through the workspace so it uses the same Playwright version as the tests,
+      # because a browser build is tied to it.
+      #
       # Chromium needs only its headless shell, which saves about 27 seconds against the full
-      # browser (docs/planning/10-component-spikes.md, Issue #188). `--with-deps` installs the
-      # engine's system libraries on the runner. The install runs through the workspace so it
-      # uses the same Playwright version as the tests, because a browser build is tied to it.
+      # browser (docs/planning/10-component-spikes.md, Issue #188).
+      #
+      # Chromium and WebKit install their system libraries with `--with-deps`, which took 26 and 49
+      # seconds. Firefox does not. Playwright 1.65.1 lists `libavcodec62` and 12 font packages
+      # among Firefox's dependencies on Ubuntu 26.04 (`deps["ubuntu26.04-x64"]` in
+      # playwright-core's coreBundle.js). `libavcodec62` pulls in 14 more ffmpeg libraries, so
+      # `apt-get` fetched 39 packages (54 MB) from the Azure mirror, which served about one package
+      # a minute, and the job hit its timeout (run 44728957783). Firefox loads FFmpeg only to play
+      # media, and a test of the page's markup plays none. The runner image already has the
+      # libraries Firefox needs to start, because the image ships Firefox 160 itself
+      # (actions/runner-images, images/ubuntu/Ubuntu2604-Readme.md). So Firefox installs the
+      # browser alone, and the dry run below lists any library still missing in the job log. If
+      # Firefox ever fails to launch, that list names the package to install.
       - name: Install the browser
         env:
           BROWSER: ${{ matrix.browser }}
         run: |
-          flags=()
-          if [ "$BROWSER" = "chromium" ]; then flags=(--only-shell); fi
-          pnpm --filter @bcd-embed/element exec playwright install --with-deps "${flags[@]}" "$BROWSER"
+          playwright="pnpm --filter @bcd-embed/element exec playwright"
+          case "$BROWSER" in
+            chromium) $playwright install --with-deps --only-shell chromium ;;
+            firefox)
+              $playwright install firefox
+              $playwright install-deps --dry-run firefox || true
+              ;;
+            *) $playwright install --with-deps "$BROWSER" ;;
+          esac
 
       - name: Run the browser tests
         run: >-
