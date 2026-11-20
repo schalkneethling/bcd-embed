@@ -1182,9 +1182,12 @@ curl -sS -D - -o /dev/null -H 'Origin: https://example.com' https://api.browser-
 ```
 
 The first command may not make request number 301 the one that is blocked, because the 40 parallel requests
-finish in no fixed order. Document 9's threshold is 300 requests in 10 seconds, so the tally should show some
-`429` responses once the counter passes 300, and the second command should show the blocked response's
-headers if the block is still active (it lasts 10 seconds). Whoever runs it should record both outputs here.
+finish in no fixed order. Document 9's threshold is 300 requests in 10 seconds, but Document 9 also recorded 304 requests answered
+`200` before the first `429`, because the rule's counter lags. A tally of 301 requests with no `429` is
+therefore plausible and does not show the rule has stopped working; it is inconclusive. If that happens,
+send a bounded second burst of 400 requests, as Document 9 did, and record whether `429` responses appear.
+The second command shows the blocked response's headers only while a block is active (it lasts 10
+seconds). Whoever runs it should record every output here.
 
 ### Rollback for a static-assets Worker
 
