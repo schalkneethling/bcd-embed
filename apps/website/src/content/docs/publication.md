@@ -404,10 +404,16 @@ A change to the response contract, such as contract 1.1.0 adding
 `versionAddedIsApproximate` to every summary, changes every feature file at
 once. Three things make it different from a BCD update.
 
-**The Worker goes first.** The Worker parses `v1/meta.json` on every request
-except an uncompressed request for `meta.json` itself. Before contract 1.1.0, it accepted only the
-contract it was built with, so a Worker built for 1.0.0 cannot read a 1.1.0
-`meta.json`. Nothing in the publisher or the workflow checks which Worker is
+**The Worker goes first.** The Worker parses `v1/meta.json` before it reads any
+snapshot file: for every feature, raw, `browsers.json` and index request, and
+for a compressed request for `meta.json`. Some requests never reach that read:
+an uncompressed request for `meta.json` itself, `OPTIONS`, an unknown route, an
+invalid key, a method other than `GET` or `HEAD`, an unacceptable encoding, a
+rate-limited request, and an edge cache hit for `meta.json` or a `current`
+route. Before contract 1.1.0, the Worker accepted only the contract it was
+built with, so a Worker built for 1.0.0 cannot read a 1.1.0 `meta.json`. Cache
+hits can hide that failure for up to a day, which is why a rollback can look
+fine at first and then fail as entries expire. Nothing in the publisher or the workflow checks which Worker is
 live, so this order is the operator's responsibility. Every Worker from 1.1.0
 on reads any contract listed in
 `STORED_CONTRACT_VERSIONS` in `@bcd-embed/schema`, so it serves the 1.0.0
@@ -431,9 +437,11 @@ The local output-diff commands cannot load a tree from an earlier contract:
 they reject it at its `meta.json`, before the magnitude gate, and that check
 stays strict. To preview the publication's diff on your own machine, compare
 the earlier tree by its pointers alone, the way the publisher reads the live
-snapshot:
+snapshot. The script imports the built generator and schema packages, so build
+them first:
 
 ```sh
+pnpm --recursive --filter @bcd-embed/generator... run build
 node scripts/compare-contract-change.mjs --baseline <tree from the earlier contract> --candidate <tree from this code>
 ```
 
@@ -511,21 +519,31 @@ The raw files do not change, because they are BCD's own entries.
 6. **Publish.** Run the same command as step 4. The candidate's digest is the
    hash of its root, which holds no timestamp, so the rerun produces the
    approved digest.
-7. **Verify.** Run the endpoint verifier, then check the new field and the
-   retained 1.0.0 snapshot:
+7. **Verify.** Check the bucket and the pinned routes, which the edge cache
+   never holds, before anything that may be cached:
 
    ```sh
-   node packages/server/scripts/verify-endpoint.mjs --base-url https://api.browser-compat.dev --allow-remote
-   curl -s https://api.browser-compat.dev/v1/meta.json
-   curl -s https://api.browser-compat.dev/v1/current/features/api.Attr.localName.json
+   pnpm --filter @bcd-embed/worker exec wrangler r2 object get bcd-embed-artifacts/v1/meta.json --remote --pipe
+   curl -s https://api.browser-compat.dev/v1/bcd-8.1.9-gen-0.1.0/features/api.Attr.localName.json
    curl -s https://api.browser-compat.dev/v1/bcd-8.1.9-gen-0.0.0/features/api.Attr.localName.json
+   node packages/server/scripts/verify-endpoint.mjs --base-url https://api.browser-compat.dev --allow-remote
    ```
 
-   `meta.json` should name contract `1.1.0` and current
-   `bcd-8.1.9-gen-0.1.0`. In the current answer, Opera's summary should have
-   `"versionAdded":"12.1"` and `"versionAddedIsApproximate":true`, because BCD
-   records `≤12.1`. The pinned 1.0.0 answer should be unchanged and have no
-   such field.
+   The bucket's `meta.json` should name contract `1.1.0` and current
+   `bcd-8.1.9-gen-0.1.0`. That file is the publication's outcome. In the
+   pinned 1.1.0 answer, Opera's summary should have `"versionAdded":"12.1"`
+   and `"versionAddedIsApproximate":true`, because BCD records `≤12.1`. A
+   pinned request reads `meta.json` from the bucket every time, so it answers
+   `snapshot_not_found` if the switch did not happen. The pinned 1.0.0 answer
+   should be unchanged and have no such field.
+
+   The Worker keeps `/v1/meta.json` and every `/v1/current/…` answer in each
+   data center's edge cache for up to a day
+   (`max-age=86400, stale-while-revalidate=604800`). For that day a data center
+   can still return the 1.0.0 `meta.json` or a 1.0.0 current answer, with a
+   `bcd-embed-snapshot: bcd-8.1.9-gen-0.0.0` header. That is the cache, not a
+   failed publication, and it is no reason to roll back. Judge the publication
+   by the bucket's `meta.json` and the pinned routes above.
 
 ### Rolling back
 
@@ -533,16 +551,27 @@ Document 8 lists "`v1/meta.json` as the only mutable file, switched last by
 compare-and-swap." Every other object is immutable, so the 1.0.0 snapshot stays
 complete in the bucket, and its pinned URLs keep working, until it expires.
 
-Before step 6, nothing in the bucket has changed. To undo step 3, return to the
-version recorded in step 2:
+The boundary is the compare-and-swap of `v1/meta.json` near the end of step 6,
+not the start of the step. Read the bucket's file to see which side you are on:
+
+```sh
+pnpm --filter @bcd-embed/worker exec wrangler r2 object get bcd-embed-artifacts/v1/meta.json --remote --pipe
+```
+
+While it still names contract `1.0.0`, the switch has not happened, and
+returning to the version recorded in step 2 is safe:
 
 ```sh
 pnpm --filter @bcd-embed/worker exec wrangler rollback <version-id>
 ```
 
-After step 6, do not roll the Worker back to a version from before contract
-1.1.0. That version cannot read the 1.1.0 `meta.json`, so it would answer every
-request with a 500 error, except an uncompressed request for `meta.json`. The publisher has no command that
+Once it names `1.1.0`, or if the publisher reported that the switch's outcome
+is unknown and you have not read the file, do not roll the Worker back to a
+version from before contract 1.1.0. That version cannot read the 1.1.0
+`meta.json`, so every request that reaches that read gets a 500 error, as the
+edge cache entries expire over the following day. `wrangler rollback` without
+a version ID returns to the previous deployment, which is a version from
+before 1.1.0 until the Worker is deployed again. The publisher has no command that
 makes an earlier snapshot current again, because it refuses to publish a
 snapshot that is older than the live one. A problem in the 1.1.0 data is
 therefore fixed forward: correct the generator, raise its version, and publish

@@ -51,6 +51,15 @@ its configuration and what must exist in the R2 bucket first, is documented in
 [`apps/website/src/content/docs/deployment.md`](../website/src/content/docs/deployment.md).
 Run `pnpm dev:website` from the repository root to read it with its diagrams.
 
+Do not roll the Worker back to a version from before contract 1.1.0 once the
+bucket's `v1/meta.json` is at contract 1.1.0: that version cannot parse it, so
+it answers every request that reads `meta.json` with a 500 error, which the edge
+cache can hide for up to a day. `wrangler rollback` without a version ID picks
+the previous deployment, which stays a pre-1.1.0 version until the next deploy.
+Check the bucket first with
+`pnpm --filter @bcd-embed/worker exec wrangler r2 object get bcd-embed-artifacts/v1/meta.json --remote --pipe`.
+The deployment page's "Rolling a deploy back" section has the steps.
+
 ## Runtime behavior
 
 The Worker serves offline variants with `encodeBody: "manual"`; no large-body
