@@ -281,15 +281,26 @@ joined with a comma. So each header name appears under one rule only.
 Astro puts a content hash in the name of every file under `_astro/`, so a file
 at one address never changes and can be cached for a year. HTML keeps
 Cloudflare's default, `public, max-age=0, must-revalidate`, so a reader gets a
-new page on the next visit.
+new page on the next visit. Cloudflare's
+[static assets headers page](https://developers.cloudflare.com/workers/static-assets/headers/)
+lists that value among its default headers for static asset responses in
+general, and says Cloudflare sends it when the request has no `Authorization`
+or `Range` header. The page also says Cloudflare may add default headers at any
+time, so this value is Cloudflare's documented behavior, not a setting this
+site controls. No response from the deployed site has been checked.
 
 The policy is report-only: a browser reports each violation in its console and
 blocks nothing. The policy is the one Starlight needs, found by the
 [#189 measurement](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md):
 `default-src 'self'` alone reports about 380 violations per page, all inline
 scripts, inline styles and `data:` images. With the policy above, a local run
-of the built site reported no violation on the home page, the page with
-diagrams, or the open search dialog. The policy allows `'unsafe-inline'` for
+of the built site reported no `securitypolicyviolation` event on the home page,
+the page with diagrams, or the search dialog with a query typed, in Chromium
+159.0.8154.6, Firefox 159.0 and WebKit 27.2 (all through Playwright 1.65.1).
+WebKit logged one console message per page load saying the policy has no
+reporting directive; that is not a violation. The
+[measurement](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md)
+lists each engine's counts. The policy allows `'unsafe-inline'` for
 scripts and styles, so it would not stop injected inline script. An enforcing
 policy needs a hash for each inline script, and the hashes change whenever
 Starlight or the content does, so that is separate work.
@@ -366,8 +377,14 @@ pnpm exec wrangler rollback <version-id> --message "<reason>"
 ```
 
 Without a version ID, `wrangler rollback` returns to the version uploaded
-before the latest one. Cloudflare keeps the 100 most recent versions and can
-delete versions older than 30 days. In the dashboard, the route is Workers &
+before the latest one. Cloudflare's
+[rollback page](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/)
+says you can only roll back to the 100 most recently published versions, and
+that a version older than 30 days can be deleted under version retention, after
+which you cannot roll back to it. The
+[versions and deployments page](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/)
+adds that Cloudflare keeps a version for 30 days and then deletes it, unless it
+is one of the 100 most recent or is currently deployed. In the dashboard, the route is Workers &
 Pages, the Worker, Deployments, the three-dot menu on a version, then Rollback.
 
 A reader who loaded a page just before a rollback may then request a hashed
