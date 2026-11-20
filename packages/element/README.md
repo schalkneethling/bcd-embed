@@ -222,26 +222,39 @@ Use `bcd-data-` followed by the query with each dot written as a dash, as in
 `bcd-data-css-properties-display`, so that several tables on one page cannot share an `id`.
 
 **Escaping the JSON.** The page's generator must replace every `<` in the JSON with the six
-characters `\u003c` (a backslash, `u`, `0`, `0`, `3`, `c`). A note in a payload can contain a
-closing script tag, and the HTML parser ends a script at the first one, before the element sees
-any text. `JSON.parse` turns `\u003c` back into `<`, so the note arrives unchanged. One line does
-it:
+characters `\u003c` (a backslash, `u`, `0`, `0`, `3`, `c`). `JSON.parse` turns `\u003c` back
+into `<`, so every note arrives unchanged. One line does it:
 
 ```js
 const scriptJson = JSON.stringify(payload).replaceAll("<", "\\u003c");
 ```
 
-The element cannot repair JSON that the parser has already cut. An unescaped note gives the error
-`source-invalid-json`, and the rest of the JSON becomes text in the page.
+Escaping only a closing script tag is not enough. The HTML parser decides where a script ends,
+before the element sees any text, and two sequences in a note can cut or swallow it:
+
+- A closing script tag, `</script>`, ends the script at the note. The rest of the JSON becomes
+  text in the page, and the element reports `source-invalid-json`.
+- The sequence `<!--<script>` is worse. It moves the tokenizer into its "script data double
+  escaped" state (HTML Standard, section 13.2.5, "Script data double escaped state"), where the
+  next `</script>` no longer ends the script. The real end tag is read as script text, and the
+  rest of the page, the element included, disappears into the script. The Standard's section
+  4.12.1.3, "Restrictions for contents of `script` elements", describes the same pairing rule.
+
+Escaping every `<` removes both cases, and any other that starts with `<`. The element cannot
+repair JSON that the parser has already cut.
 
 **What the element reads.** It looks the `id` up in its own tree, which is the shadow root that
 holds it or else the document, and accepts one kind of target: an HTML `<script>` whose `type` is
 `application/json`, in any letter case, with no parameters. An `id` that matches no element, or
 whose first match in the tree is anything else, such as a `<div>` or a `<script>` of another type,
-gives `source-missing`. The element never reads the text of another kind of element. It passes the
-script's `textContent` to `JSON.parse`, so nothing in it is evaluated.
+gives `source-missing`, at once, even while the page is still being parsed, because a script with
+the same `id` further down can never be the first match. The element never reads the text of
+another kind of element. It passes the script's `textContent` to `JSON.parse`, so nothing in it
+is evaluated. Any failure of `JSON.parse`, including a `RangeError` for extreme nesting, gives
+`source-invalid-json`.
 
-**Where the script goes.** A script before the element always works. A script after it works too
+**Where the script goes.** A script before the element, in the same tree, with no earlier
+element that has the same `id`, always works. A script after it works too
 while the page is still being parsed: when the `id` is not in the page yet, the element waits for
 the end of parsing and reads then, and during the wait it shows nothing and fires no event. This
 covers the case where the element is defined before the parser reaches it, because then its
@@ -253,7 +266,15 @@ script first, because nothing is left to wait for, and the element reports `sour
 until `source` changes, so editing or removing the script afterwards changes nothing, and moving
 the element does not read again. Setting `source` to another `id` reads that script and fires one
 event. While `data` is set, the element does not read `source` at all, so a broken reference
-reports nothing; clearing `data` reads it then.
+reports nothing, and setting `data` while the element waits for the parser cancels the wait;
+clearing `data` reads it then.
+
+**Refreshing a payload.** The element never watches the script, so a page that changes the JSON
+must say so. Two ways work. Give each payload a new script with a new `id`, and set `source` to
+it. Or remove the `source` attribute, let the element update, then set it again: the removal
+makes the element forget its read, and the new value reads the script again and fires one
+event. Removing and setting the attribute in the same task does nothing, because the element
+updates once and sees the same `id`.
 
 **Order of inputs.** `data` wins over `source`, and `source` wins over `query`. When `source` is
 present the element never sends a request, even when the read fails: it reports the error and

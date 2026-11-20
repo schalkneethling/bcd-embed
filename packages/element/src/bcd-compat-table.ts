@@ -8,7 +8,7 @@ import {
   isValidEndpoint,
 } from "./data/feature-client.js";
 import type { FeatureRequest, FeatureResult, FeatureSuccess } from "./data/feature-client.js";
-import { hasElementWithId, readSource } from "./data/source-reader.js";
+import { hasElementWithId, readSource, sourceScopeOf } from "./data/source-reader.js";
 import type { SourceReadResult } from "./data/source-reader.js";
 import { buildTableModel, TablePayloadError } from "./model/table-model.js";
 import type { TableModel } from "./model/table-model.js";
@@ -327,15 +327,6 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     return [query, this.endpoint ?? null];
   }
 
-  /**
-   * The tree the `source` id is looked up in: the shadow root that holds the element, or else its
-   * document. `getRootNode()` returns one of the two for a connected element.
-   */
-  #sourceScope(): NonElementParentNode {
-    const root = this.getRootNode();
-    return root instanceof ShadowRoot ? root : this.ownerDocument;
-  }
-
   /** Stops waiting for the parser, if the element is. */
   #cancelSourceWait(): void {
     this.#sourceWait?.abort();
@@ -370,11 +361,19 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
       this.#sourceState = null;
       return held !== null;
     }
+    if (this.data !== null && this.data !== undefined) {
+      // `data` wins, so a wait for the parser is pointless: stop it, and forget that it began, so
+      // that clearing `data` decides again whether to wait, read, or report.
+      if (held?.status !== "waiting") return false;
+      this.#cancelSourceWait();
+      this.#sourceState = null;
+      return true;
+    }
     const waitingForId = held?.id === id && held.status === "waiting" && this.#sourceWait !== null;
     if ((held?.id === id && held.status === "read") || waitingForId) return false;
-    if (!this.isConnected || (this.data !== null && this.data !== undefined)) return false;
+    if (!this.isConnected) return false;
     this.#cancelSourceWait();
-    const scope = this.#sourceScope();
+    const scope = sourceScopeOf(this);
     const { ownerDocument } = this;
     if (ownerDocument.readyState === "loading" && !hasElementWithId(scope, id)) {
       const wait = new AbortController();

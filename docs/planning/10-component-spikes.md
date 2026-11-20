@@ -1479,6 +1479,16 @@ at once, and the element was not defined before the next chunk. The first chunk 
 no stylesheet. The test checks `customElements.get` before writing the element, so a regression
 fails loudly instead of testing the wrong order.
 
+### Review follow-up: the cancellation tests were checked by mutation
+
+The first versions of the two "stops waiting" tests passed with `#cancelSourceWait()` deleted,
+because a detached element holds its events back and a null `source` hides the element's state.
+They now count calls to `Document.prototype.getElementById` after the test ends parsing, which a
+leaked listener would make. With the body of `#cancelSourceWait()` replaced by a no-op, both
+tests failed in Chromium (6 failures in all, 4 of them the new tests for later fixes); with it
+restored, all 69 browser tests pass. The review also found that a wait ignored `data`; setting
+`data` now cancels the wait, and a test shows the script is never parsed.
+
 ### Other results
 
 - A test document cannot hold a JSON script with `type` absent or `module` made with
@@ -1490,8 +1500,8 @@ fails loudly instead of testing the wrong order.
 
 ### Measurement
 
-`dist/index.js` without Lit measures 8.71 kB with Brotli after `source` mode, against 8.26 kB
-before it (the limit was 8.5 kB, now 9 kB): +0.45 kB for the reader, the parser wait, and the
+`dist/index.js` without Lit measures 8.69 kB with Brotli after `source` mode, against 8.26 kB
+before it (the limit was 8.5 kB, now 9 kB): +0.43 kB for the reader, the parser wait, and the
 state it needs.
 
 ### Not verified

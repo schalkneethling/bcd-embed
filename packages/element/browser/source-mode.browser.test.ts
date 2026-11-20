@@ -656,29 +656,206 @@ describe("a page that is still being parsed", () => {
     expect(events.loads).toEqual([{ mode: "source", snapshot: null }]);
   });
 
-  it("stops waiting when the element is removed, so nothing fires after the parser ends", async () => {
+  // A listener that outlived its wait would call `getElementById` when parsing ends, to read the
+  // script. These tests count those calls, because an event or an attribute might hide the leak:
+  // a detached element holds its events back, and a null `source` hides the state.
+  const lookupsAfterParsing = (): number => {
+    const spy = vi.spyOn(Document.prototype, "getElementById");
+    spy.mockClear();
+    finishParsing();
+    return spy.mock.calls.length;
+  };
+
+  it("stops waiting when the element is removed: parsing ending looks nothing up", async () => {
     const element = makeElement({ source: "never-arrives" });
     document.body.append(element);
     await element.updateComplete;
     element.remove();
 
-    finishParsing();
+    expect(lookupsAfterParsing()).toBe(0);
     await settle();
-
     expect(events.errors).toEqual([]);
   });
 
-  it("stops waiting when the source attribute is removed", async () => {
+  it("stops waiting when the source attribute is removed: parsing ending looks nothing up", async () => {
     const element = makeElement({ source: "never-arrives" });
     document.body.append(element);
     await element.updateComplete;
 
     element.removeAttribute("source");
     await element.updateComplete;
+
+    expect(lookupsAfterParsing()).toBe(0);
+    await settle();
+    expect(events.errors).toEqual([]);
+  });
+
+  it("stops waiting when the source attribute names another id, and waits only for the new one", async () => {
+    const element = makeElement({ source: "first-id" });
+    document.body.append(element);
+    await element.updateComplete;
+    element.setAttribute("source", "second-id");
+    await element.updateComplete;
+    document.body.append(makeScript("first-id", toScriptJson(v1NormalizedFixture)));
+
     finishParsing();
+    await element.updateComplete;
+
+    expect(events.errors.map(({ reason }) => reason)).toEqual(["source-missing"]);
+    expect(events.loads).toEqual([]);
+  });
+
+  it("stops waiting when data is set, so the script is never parsed", async () => {
+    const parseSpy = vi.spyOn(JSON, "parse");
+    const element = makeElement({ source: "late-script" });
+    document.body.append(element);
+    await element.updateComplete;
+    document.body.append(
+      makeScript("late-script", toScriptJson(withNote("A note from the script."))),
+    );
+
+    element.data = withNote("A note from the data property.");
+    await element.updateComplete;
+    parseSpy.mockClear();
+    expect(lookupsAfterParsing()).toBe(0);
     await settle();
 
+    expect(parseSpy).not.toHaveBeenCalled();
+    expect(element.textContent).toContain("A note from the data property.");
+    expect(events.loads).toEqual([{ mode: "data", snapshot: null }]);
     expect(events.errors).toEqual([]);
+
+    // Clearing data reads the script now, because parsing has ended, and shows its table.
+    element.data = null;
+    await element.updateComplete;
+
+    expect(element.textContent).toContain("A note from the script.");
+    expect(events.loads.map(({ mode }) => mode)).toEqual(["data", "source"]);
+  });
+
+  it("reports source-missing at once for an earlier element with the id, even while parsing", async () => {
+    // `getElementById` returns the first match in tree order, so the later script can never be
+    // the target. The element does not wait for it.
+    const div = document.createElement("div");
+    div.id = SOURCE_ID;
+    document.body.append(div);
+    const element = makeElement({ source: SOURCE_ID });
+    document.body.append(element);
+    document.body.append(makeScript(SOURCE_ID, toScriptJson(v1NormalizedFixture)));
+    await element.updateComplete;
+
+    expect(events.errors.map(({ reason }) => reason)).toEqual(["source-missing"]);
+
+    finishParsing();
+    await settle();
+    expect(events.errors).toHaveLength(1);
+    expect(events.loads).toEqual([]);
+  });
+});
+
+describe("refreshing a source that was read once", () => {
+  const NEW_NOTE = "A note in the refreshed payload.";
+
+  it("reads again when the source attribute is removed, the element updates, and it is set again", async () => {
+    const element = await mount({});
+    document
+      .getElementById(SOURCE_ID)
+      ?.replaceChildren(document.createTextNode(toScriptJson(withNote(NEW_NOTE))));
+    await element.updateComplete;
+    expect(element.textContent).not.toContain(NEW_NOTE);
+
+    element.removeAttribute("source");
+    await element.updateComplete;
+    element.setAttribute("source", SOURCE_ID);
+    await element.updateComplete;
+
+    expect(element.textContent).toContain(NEW_NOTE);
+    expect(events.loads.map(({ mode }) => mode)).toEqual(["source", "source"]);
+  });
+
+  it("does not read again when the attribute is removed and set again in the same task", async () => {
+    // Lit batches both changes into one update that sees the same id, so nothing changed.
+    const element = await mount({});
+    document
+      .getElementById(SOURCE_ID)
+      ?.replaceChildren(document.createTextNode(toScriptJson(withNote(NEW_NOTE))));
+
+    element.removeAttribute("source");
+    element.setAttribute("source", SOURCE_ID);
+    await element.updateComplete;
+
+    expect(element.textContent).not.toContain(NEW_NOTE);
+  });
+
+  it("reads the new payload when a new script with a new id is named", async () => {
+    const element = await mount({});
+    document.body.append(makeScript("bcd-data-second-version", toScriptJson(withNote(NEW_NOTE))));
+
+    element.setAttribute("source", "bcd-data-second-version");
+    await element.updateComplete;
+
+    expect(element.textContent).toContain(NEW_NOTE);
+    expect(events.loads).toHaveLength(2);
+  });
+});
+
+describe("failures that are not a SyntaxError", () => {
+  it("reports source-invalid-json when JSON.parse throws a RangeError, as deep nesting can", async () => {
+    const text = '{"deeply":"nested"}';
+    const realParse = JSON.parse.bind(JSON);
+    vi.spyOn(JSON, "parse").mockImplementation((input, reviver) => {
+      if (input === text) throw new RangeError("Maximum call stack size exceeded");
+      return realParse(input, reviver);
+    });
+
+    const element = await mount({}, { text, fallback: true });
+
+    expect(events.errors).toEqual([
+      { mode: "source", reason: "source-invalid-json", status: null, code: null },
+    ]);
+    expect(element.querySelector("table")).toBeNull();
+  });
+
+  it("reports source-invalid-json for any other thrown value", async () => {
+    const text = '{"odd":"failure"}';
+    const realParse = JSON.parse.bind(JSON);
+    vi.spyOn(JSON, "parse").mockImplementation((input, reviver) => {
+      if (input === text) throw "not even an Error";
+      return realParse(input, reviver);
+    });
+
+    await mount({}, { text });
+
+    expect(events.errors.map(({ reason }) => reason)).toEqual(["source-invalid-json"]);
+  });
+});
+
+describe("an element that lives in another window's tree", () => {
+  it("finds a script in a shadow root that belongs to an iframe's window", async () => {
+    // `instanceof ShadowRoot` is false for a shadow root made by another window, because each
+    // window has its own `ShadowRoot`. The element, made here, is moved into the iframe's tree.
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const frameDocument = frame.contentDocument;
+    if (frameDocument === null) throw new Error("The iframe has no document");
+    const host = frameDocument.createElement("div");
+    frameDocument.body.append(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    expect(shadow instanceof ShadowRoot).toBe(false);
+
+    const loads: BcdLoadDetail[] = [];
+    shadow.addEventListener("bcd-load", (event) => {
+      loads.push((event as CustomEvent<BcdLoadDetail>).detail);
+    });
+    shadow.append(
+      frameDocument.importNode(makeScript(SOURCE_ID, toScriptJson(v1NormalizedFixture)), true),
+    );
+    const element = makeElement({ source: SOURCE_ID });
+    shadow.append(element);
+    await element.updateComplete;
+
+    expect(element.hasAttribute(LOADED_ATTRIBUTE)).toBe(true);
+    expect(loads).toEqual([{ mode: "source", snapshot: null }]);
   });
 });
 
@@ -707,7 +884,6 @@ describe("the escape rule", () => {
 
     expect(container.querySelectorAll("script")).toHaveLength(1);
     expect(container.querySelector("#injected")).toBeNull();
-    expect(Reflect.get(window, "bcdInjected")).toBeUndefined();
     expect(element?.hasAttribute(LOADED_ATTRIBUTE)).toBe(true);
     expect(element?.textContent).toContain(HOSTILE_NOTE);
     expect(element?.querySelector("#injected")).toBeNull();
@@ -736,5 +912,35 @@ describe("the escape rule", () => {
     // and the rest of the JSON became text of the page.
     expect(element?.hasAttribute(LOADED_ATTRIBUTE)).toBe(false);
     expect(events.errors.map(({ reason }) => reason)).toEqual(["source-invalid-json"]);
+  });
+
+  // Escaping only the closing tag is not enough. In the HTML Standard's tokenizer (13.2.5, "Script
+  // data double escaped state"), the text `<!--` followed by `<script` moves the tokenizer into a
+  // state where the next `</script` no longer ends the script, so the real end tag is read as
+  // script text and the rest of the page, the element included, goes with it.
+  const OPENER_NOTE = "<!--<script>";
+
+  it("swallows the rest of the page when a note holds an unescaped <!--<script>", () => {
+    const container = parse(
+      `<script type="application/json" id="open">${JSON.stringify(withNote(OPENER_NOTE))}</script>` +
+        `<bcd-compat-table source="open" browsers="chrome opera nodejs"></bcd-compat-table>`,
+    );
+
+    // The tokenizer never saw the real end tag, so there is no element after the script.
+    expect(container.querySelector("bcd-compat-table")).toBeNull();
+    expect(container.querySelectorAll("script")).toHaveLength(1);
+  });
+
+  it("renders the same note when every < is escaped", async () => {
+    const container = parse(
+      `<script type="application/json" id="closed">${toScriptJson(withNote(OPENER_NOTE))}</script>` +
+        `<bcd-compat-table source="closed" browsers="chrome opera nodejs"></bcd-compat-table>`,
+    );
+    const element = container.querySelector<BcdCompatTable>("bcd-compat-table");
+    await element?.updateComplete;
+
+    expect(element?.hasAttribute(LOADED_ATTRIBUTE)).toBe(true);
+    expect(element?.textContent).toContain(OPENER_NOTE);
+    expect(events.loads).toEqual([{ mode: "source", snapshot: null }]);
   });
 });

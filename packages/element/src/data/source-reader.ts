@@ -36,6 +36,20 @@ const isJsonScript = (element: Element): boolean =>
   element.getAttribute("type")?.toLowerCase() === JSON_SCRIPT_TYPE;
 
 /**
+ * The tree to look an `id` up in for a connected element: the shadow root that holds it, or else
+ * its document. `getRootNode()` returns one of the two for a connected element, and both have
+ * `getElementById`. The check looks for that method instead of using `instanceof ShadowRoot`,
+ * because each window has its own `ShadowRoot` class, and a shadow root made by an iframe's
+ * window is not an instance of this window's. O(1).
+ */
+export const sourceScopeOf = (element: Element): SourceScope => {
+  const root: Partial<SourceScope> & Node = element.getRootNode();
+  return typeof root.getElementById === "function"
+    ? (root as Node & SourceScope)
+    : element.ownerDocument;
+};
+
+/**
  * Whether anything in the scope has this `id`. The element uses it to tell a script that the
  * parser has not reached yet from a reference that is wrong: only an `id` that matches nothing can
  * still turn up while the page loads, because the parser appends and `getElementById` returns the
@@ -65,9 +79,10 @@ export const readSource = (scope: SourceScope, id: string): SourceReadResult => 
   if (element === null || !isJsonScript(element)) return { ok: false, reason: "source-missing" };
   try {
     return { ok: true, payload: JSON.parse(element.textContent ?? "") as unknown };
-  } catch (error) {
-    // `JSON.parse` throws a `SyntaxError` for text that is not JSON, and nothing else.
-    if (!(error instanceof SyntaxError)) throw error;
+  } catch {
+    // Text that is not JSON throws a `SyntaxError`. Engines may also throw a `RangeError` or an
+    // internal error for extreme nesting or size. Whatever the cause, the script gave no payload,
+    // and an exception here would abort `connectedCallback`, so every failure is the same reason.
     return { ok: false, reason: "source-invalid-json" };
   }
 };
