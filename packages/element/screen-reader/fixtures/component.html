@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Component fixture: data mode</title>
+    <!-- The rule that hides the fallback paragraph once the table has rendered. The base
+         stylesheet will ship it, and this link then moves to the base stylesheet. -->
+    <link rel="stylesheet" href="../../e2e/fixtures/fallback.css" />
+    <script type="module" src="./component.ts"></script>
+  </head>
+  <body>
+    <h1>Component fixture: data mode</h1>
+    <p>
+      The element renders the adversarial fixture <code>fixture.adversarial-v1</code> from
+      <code>@bcd-embed/schema</code>. The screen reader walks load this page after
+      <code>pnpm --filter @bcd-embed/element build:screen-reader-fixture</code>.
+    </p>
+    <bcd-compat-table browsers="chrome opera nodejs">
+      <p>Fallback: the browser compatibility table has not loaded.</p>
+    </bcd-compat-table>
+  </body>
+</html>

@@ -1,7 +1,8 @@
 name: Screen readers
 
-# Screen reader tests for the web component's markup: VoiceOver on macOS, Orca on Linux, and NVDA
-# on Windows, driven by Guidepup (packages/element/README.md).
+# Screen reader tests for the web component: VoiceOver on macOS, Orca on Linux, and NVDA on
+# Windows, driven by Guidepup. They walk a built fixture page that renders `<bcd-compat-table>`
+# (packages/element/README.md).
 #
 # The `screen-readers` job at the end is a required status check, so a failed or cancelled
 # screen reader run blocks the merge. A required check must report on every pull request, so the
@@ -41,7 +42,7 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] ||
             git diff --name-only "$BASE...$HEAD" | grep -qE \
-              '^(packages/element/|docs/planning/phase1-markup/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/screen-readers\.yml$)'
+              '^(packages/element/|packages/schema/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/screen-readers\.yml$)'
           then
             echo "screen-reader=true" >> "$GITHUB_OUTPUT"
           else
@@ -139,6 +140,11 @@ jobs:
       # installs nothing there.
       - name: Install the browser
         run: pnpm --filter @bcd-embed/element exec playwright install --with-deps ${{ matrix.browser }}
+
+      # The walks load the built fixture page, which renders the component. A build that fails
+      # fails the job here, so the walks never run against a missing or stale page.
+      - name: Build the fixture page
+        run: pnpm --filter @bcd-embed/element run build:screen-reader-fixture
 
       - name: Run the screen reader tests
         run: >-

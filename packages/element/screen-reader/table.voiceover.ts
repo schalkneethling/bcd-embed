@@ -1,21 +1,25 @@
-// What VoiceOver says while walking the Phase 1 tables in Playwright's WebKit.
+// What VoiceOver says while walking the table that `<bcd-compat-table>` renders, in Playwright's
+// WebKit.
 import { voiceOverTest as test } from "@guidepup/playwright";
 
-import { variants, walkTable } from "./walk-table.js";
+import { componentSteps } from "./component-steps.js";
+import { walkTable } from "./walk-table.js";
 
-for (const variant of variants) {
-  test(`VoiceOver walks ${variant.name}`, async ({ page, voiceOver }, testInfo) => {
-    await walkTable(
-      page,
-      voiceOver,
-      {
-        right: () => voiceOver.next({ capture: true }),
-        down: () => voiceOver.perform(voiceOver.keyboardCommands.moveDown, { capture: true }),
-      },
-      variant,
-      testInfo,
-      // VoiceOver announces the platform header above a column on entering it, in both variants.
-      { "move right to Node.js": "Server and Node.js" },
-    );
-  });
-}
+test("VoiceOver walks the component", async ({ page, voiceOver }, testInfo) => {
+  const moves = {
+    right: () => voiceOver.next({ capture: true }),
+    down: () => voiceOver.perform(voiceOver.keyboardCommands.moveDown, { capture: true }),
+    up: () => voiceOver.perform(voiceOver.keyboardCommands.moveUp, { capture: true }),
+    left: () => voiceOver.previous({ capture: true }),
+    activate: () => voiceOver.act({ capture: true }),
+  };
+  await walkTable(
+    page,
+    voiceOver,
+    moves,
+    testInfo,
+    // VoiceOver announces the platform header above a column on entering it.
+    { "move right to Node.js": "Server and Node.js" },
+    { extraSteps: componentSteps(page, moves) },
+  );
+});
