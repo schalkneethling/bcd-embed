@@ -4,8 +4,7 @@ The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architec
 element renders in data mode: a page assigns a payload to its `data` property, and the element
 renders the table with no request. Fetch mode (the `query` attribute) and the `source` attribute
 are later issues. The package also holds the message table, the note tokenizer, the table model,
-the feature client, and the screen reader tests for the Phase 1 static markup in
-`docs/planning/phase1-markup/`.
+the feature client, and the screen reader tests, which walk the element's own table.
 
 ## Usage
 
@@ -145,8 +144,9 @@ one fast machine, so measure again on a slow phone before relying on them for ve
 | `tests/`                                   | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size. |
 | `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                          |
 | `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                         |
-| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests (below).                                                                                                                                   |
+| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                    |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
+| `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                    |
 | `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 7 kB with Brotli.                                                                      |
 | `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
@@ -334,9 +334,35 @@ any engine failed or was cancelled. A failed run uploads `test-results/` with th
 
 [Guidepup](https://www.guidepup.dev/) drives a real screen reader through Playwright and records
 what it says. `screen-reader/walk-table.ts` makes the same moves through a table with every
-screen reader, so the transcripts can be compared step by step. The NVDA test then performs
-more of Document 7's script (`docs/planning/07-component-phase1-markup.md`), steps 2 and 8 to
-14, so that NVDA's output for those steps lands in its transcript too.
+screen reader, so the transcripts can be compared step by step. The VoiceOver and Orca tests then
+perform Document 7's steps 8 to 12 (`docs/planning/07-component-phase1-markup.md`), through
+`screen-reader/component-steps.ts`. The NVDA test performs steps 2 and 8 to 12 with its own moves
+and its recorded wording, so that NVDA's output for those steps lands in its transcript too.
+
+**What the walks load.** Every walk loads one page, `screen-reader/fixtures/component.html`,
+which renders `<bcd-compat-table>` from the adversarial fixture (`v1NormalizedFixture` in
+`@bcd-embed/schema`), with a fallback paragraph inside the element. The page is a built page: Vite
+builds it into `dist-screen-reader/` (`vite.screen-reader.config.ts`), and each Playwright config
+starts `vite preview` on port 5199 to serve it (`screen-reader/server.ts`). The walks therefore
+hear the table the element renders, including the `<bdi>` around each note. They no longer load
+the static pages in `docs/planning/phase1-markup/`, which are a record of the Phase 1 decision.
+Because the element renders variant A only, the walks do not cover Document 7's steps 13 and 14,
+which compare variant B with variant A. Those stay with the manual pass (#186).
+
+The page carries the fallback rule from `e2e/fixtures/fallback.css`, which hides the fallback
+paragraph once the table has rendered. The base stylesheet will ship that rule, and the page
+will then use the base stylesheet instead.
+
+**The build step.** Build the page before any walk:
+
+```sh
+pnpm --filter @bcd-embed/element build:screen-reader-fixture
+```
+
+The walks fail without it, because `vite preview` exits when `dist-screen-reader/` does not
+exist. The workflow runs the build as its own step before the tests, so a build that fails fails
+the job instead of skipping it. Rebuild after any change to `src/`, because the walks hear the
+last build, not the source.
 
 | Screen reader | Runs on                              | Browser              | Command                                           |
 | ------------- | ------------------------------------ | -------------------- | ------------------------------------------------- |
@@ -346,7 +372,7 @@ more of Document 7's script (`docs/planning/07-component-phase1-markup.md`), ste
 
 The tests are not part of `pnpm check`, because the screen reader takes over the machine while
 they run. The Screen readers workflow (`.github/workflows/screen-readers.yml`) runs all three on
-pull requests that change this workspace or the markup, and on manual runs. Its `screen-readers`
+pull requests that change this workspace or the schema package, and on manual runs. Its `screen-readers`
 job is a required status check: it reports on every pull request and blocks the merge when any
 screen reader fails or is cancelled.
 
@@ -358,10 +384,19 @@ wording are soft: a mismatch still fails the test, but only after the walk has f
 transcript is complete. Where the wording is the screen reader's own and is not yet known, the
 step has no check and is performed for the transcript alone.
 
+Two kinds of expectation are not recordings. The first cell's check reads the string table
+(`src/strings/en.ts`) and builds the cell's sentence from it, so the sentence is written once.
+VoiceOver's and Orca's checks for steps 8 to 11 do the same, for the cell's fact, because no
+transcript of those cells exists yet. The first CI transcripts replace those with recorded
+phrases. NVDA's checks are recordings of the static page, except the two that depend on the
+fixture page's own heading and on the `<bdi>` in the note, which the comments in
+`screen-reader/table.nvda.ts` mark `DERIVED`.
+
 To run them locally, set the machine up once with `pnpm dlx @guidepup/setup@0.29.3 setup`. Then,
 in `packages/element`, install the assets with `pnpm dlx @guidepup/setup@0.29.3 install` and the
 browser with `pnpm exec playwright install webkit` on macOS, or `firefox` on Linux and Windows.
-On Linux, run the tests inside `xvfb-run dbus-run-session --`.
+Build the fixture page (above), then run the test. On Linux, run the tests inside
+`xvfb-run dbus-run-session --`.
 
 The setup tool is not a dependency of this workspace, because it only prepares a machine and
 the tests never import it. Running it with `pnpm dlx` keeps its version pinned in one command.

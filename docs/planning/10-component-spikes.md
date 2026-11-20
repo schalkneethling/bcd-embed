@@ -1325,3 +1325,89 @@ skew page, so how Cloudflare handles that request is unverified.
   [Wrangler Workers commands](https://developers.cloudflare.com/workers/wrangler/commands/workers/), fetched on 20 November 2026.
 - `wrangler rollback --help`, `wrangler deployments --help` and `wrangler versions --help` from the installed Wrangler 4.160.1.
 - `docs/planning/09-custom-domain-and-rate-limits.md`, for the rate limit rule and its earlier measurements.
+
+## Issue #199 — Screen reader walks against the component
+
+**Question.** Do the VoiceOver, Orca and NVDA walks test what ships, and do they cover the cases
+the first walk skipped?
+
+**Answer.** They now test what ships, with one gap and one open check. The walks load a built page
+that renders `<bcd-compat-table>`. The gap is that variant B has no counterpart in the element, so
+steps 13 and 14 are no longer run in CI. The open check is the `<bdi>` around each note, which no
+screen reader has heard yet: the first CI transcripts of the component settle it.
+
+### What was measured
+
+On 20 November 2026 a Chromium script compared the element's table with the static page
+`phase1-markup/index.html`, element by element and attribute by attribute, ignoring `id` and
+`aria-labelledby`, whose values differ by design. The two were identical except for the `<bdi>`
+around each note's text and the splitting of each hidden glyph span's text into several text nodes
+(for example "✓" and "46" instead of "✓ 46"). That span is `aria-hidden` and `hidden`, so no
+screen reader reads either difference. Because of this, every recorded NVDA, VoiceOver and Orca
+phrase for the static page applies to the component, and only the note's `<bdi>` is new.
+
+### What the change does
+
+- **One page, built.** `screen-reader/fixtures/component.html` holds the element and a fallback
+  paragraph, and `component.ts` assigns `v1NormalizedFixture` to `data`. Vite builds it with
+  `vite.screen-reader.config.ts`, and each Playwright config starts `vite preview` on port 5199
+  through `webServer`, so the walks hear a production build, not the dev server's modules. The
+  workflow builds the page in its own step, so a failed build fails the job. The workflow's path
+  filter now names `packages/schema/` (the fixture's source) and no longer names
+  `docs/planning/phase1-markup/`.
+- **Steps 8 to 12 for VoiceOver and Orca.** `component-steps.ts` performs them with `up`, `left`
+  and `activate` moves, in the same route the NVDA walk takes. The expectations are the cell
+  sentences from the string table, because no transcript exists.
+- **The first cell reads the string table.** `walk-table.ts` builds the sentence from
+  `disclosure-summary`, `supported-since` and `disclosure-history`, and checks it for every
+  reader, NVDA included.
+- **Variant B is gone from CI.** The NVDA walk loses its variant B steps (13 and 14) and the
+  `headers-id.html` test.
+
+### A build pitfall: the page rendered no table
+
+The first build rendered nothing. `package.json` lists `./dist/index.js` and `./dist/*.css` as
+the only files with side effects, and Vite passes that list to Rolldown. The page imports
+`src/index.ts`, which defines the element and exports nothing the page uses, so Rolldown dropped
+the import. The bundle held 104 kB and no element, and no error appeared. Setting
+`treeshake.moduleSideEffects: true` in `rolldownOptions` left the output byte for byte the same.
+Rolldown's documented order puts a plugin hook's answer above that option, and above the
+`package.json` field, so a hook was the next thing to try. I did not find which hook first sets
+the value. A small plugin in `vite.screen-reader.config.ts` marks `src/index.ts` as having side
+effects from its `transform` hook, and the bundle then holds the element (142 kB). A test pins
+`sideEffects` in `package.json`, and the published `dist/index.js` is listed, so the manifest is
+unchanged.
+
+### Derived expectations
+
+These checks are not recordings of the component. The first CI transcripts should replace each
+with the recorded phrase.
+
+| Reader      | Step                                                         | Derived from                                                     |
+| ----------- | ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| NVDA        | Step 9, the `removed_partial` note                           | The static page's recording, without the `<bdi>`                 |
+| NVDA        | Move to the top of the page                                  | The fixture page's own heading, "Component fixture: data mode"   |
+| VoiceOver, Orca | Step 8, `AudioTrackList` in Chrome                       | The string table: "Supported since Chrome 37 behind a flag"      |
+| VoiceOver, Orca | Step 9, `removed_partial` in Chrome                      | The string table: "Supported from Chrome 11.1, then removed in Chrome 12.1" |
+| VoiceOver, Orca | Step 10, `missing_target` in Opera and `unknown_runtime` in Node.js | The string table: "No data for Opera" and "Support unknown in Node.js" |
+| VoiceOver, Orca | Step 11, `localName` in Opera                            | The string table: "Supported since Opera 12.1 or earlier"        |
+
+Step 12 and the moves between steps have no check for VoiceOver and Orca. Also unrecorded is the
+route itself: whether each move lands on the intended cell after a disclosure opens, which only
+the transcripts show.
+
+### Not verified
+
+No screen reader ran, because they run only in CI. The checks were verified only for type
+correctness (`pnpm --filter @bcd-embed/element typecheck`), and the page for its content in
+Chromium: every sentence above is in the built page, the fallback is hidden, there are 14 body
+rows and one region, and the first Tab focuses the region.
+
+### Sources checked
+
+- `@guidepup/guidepup` 0.39.0 type declarations: `VoiceOver.next`, `previous`, `act` and the
+  `moveUp` and `moveDown` key code commands; `Orca.act` and the `MoveUp`, `MoveDown`, `MoveLeft`
+  and `MoveRight` commands.
+- `vite preview --help` from Vite 8.3.8, for `--config`, `--host`, `--port` and `--strictPort`.
+- Vite 8.3.8's `index.d.ts` for `build.rolldownOptions`, and Rolldown 1.2.19's type declarations
+  for `moduleSideEffects` and its precedence order.
