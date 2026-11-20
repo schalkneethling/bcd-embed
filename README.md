@@ -90,9 +90,11 @@ call live in `scripts/`:
   reader said. The details are in
   [`packages/element/README.md`](./packages/element/README.md).
 - `element-browser.yml` runs the web component's browser tests with axe in
-  Chromium, Firefox, and WebKit, on pull requests that change `packages/element`.
-  Its `element-browser` job is a required check that reports on every pull
-  request, like `screen-readers`.
+  Chromium, Firefox, and WebKit. It tests when a pull request or a push to
+  `main` changes `packages/element`, `packages/schema`, `packages/core`, the
+  root `package.json` or `vitest.config.ts`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml`, or the workflow itself, and always on manual dispatch. Its `element-browser` job is a required check that
+  reports on every pull request, like `screen-readers`.
 
 The design behind the freshness workflows is in
 [`docs/planning/06-phase5-freshness.md`](./docs/planning/06-phase5-freshness.md).

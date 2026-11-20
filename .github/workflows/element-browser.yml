@@ -24,7 +24,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Decides whether anything a browser test depends on changed. Manual runs always test.
+  # Decides whether anything a browser test depends on changed: the element package, the schema and
+  # core packages it reads or will read, the root package.json and vitest.config.ts, the lockfile and
+  # workspace file, and this workflow. Manual runs always test.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -43,7 +45,7 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] ||
             git diff --name-only "$BASE...$HEAD" | grep -qE \
-              '^(packages/element/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/element-browser\.yml$)'
+              '^(packages/(element|schema|core)/|package\.json$|vitest\.config\.ts$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.github/workflows/element-browser\.yml$)'
           then
             echo "browser=true" >> "$GITHUB_OUTPUT"
           else
