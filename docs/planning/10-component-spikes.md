@@ -1087,8 +1087,8 @@ for the documentation site) be attached as planned, and what headers can the doc
 
 **Status.** Answered on 20 November 2026, with two parts still open. The owner supplied the dashboard facts from
 screenshots, so they are recorded as the owner's reading, not as something this spike verified. The local dry run
-and the Content-Security-Policy check ran on this branch. The rate-limit probe has not run, because the owner has
-not approved it, and the Workers usage notification's name is unconfirmed.
+and the Content-Security-Policy check ran on this branch. The rate-limit probe ran on 20 November 2026 with the
+owner's approval and the rule still blocks. The Workers usage notification's name is unconfirmed.
 
 | Acceptance criterion                                 | Result                                                                       |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -1096,7 +1096,7 @@ not approved it, and the Workers usage notification's name is unconfirmed.
 | Dry run with `routes`, `workers_dev`, `preview_urls` | Passed. The change stays in `apps/website/wrangler.jsonc`.                   |
 | Deploy credentials                                   | Interactive `wrangler login`, so no token permissions apply. Coordinator-confirmed. |
 | Report-Only policy violations                        | Recorded below for the home page, a Mermaid page and the search dialog.      |
-| Rate-limit probe (301 requests)                      | Pending the owner's approval. Command below.                                 |
+| Rate-limit probe (301 requests)                      | Ran 20 November 2026: 300 `200` and one `429`. Details below.                |
 | Rollback procedure                                   | Quoted below with its address.                                               |
 | Usage notification, Always Use HTTPS                 | HTTPS is on. The notification's name is unconfirmed.                         |
 | No token, account ID or dashboard address            | None appears in this section.                                                |
@@ -1226,14 +1226,11 @@ the policy in the console, so for those two engines the zero is a consistent res
 browsers were the builds Playwright's `browsers.json` pins for 1.65.1 (Chromium headless shell 1255, Firefox 1572,
 WebKit 2388). This is a local run of the built site, so it does not show what the deployed Worker sends.
 
-### Rate-limit probe (pending the owner's approval)
+### Rate-limit probe (run 20 November 2026)
 
-Not run. The probe sends 301 requests to `api.browser-compat.dev`, which the owner has not approved. Document 9
-recorded that 400 requests from one IP address in about two seconds produced 304 `200` responses and 96 `429`
-responses, and that the `429` was Cloudflare's `text/html` "Access denied" page with `Retry-After: 9` and no
-`access-control-allow-origin`. The probe checks that the rule still behaves that way. This command, run only
-after the owner says yes, sends 301 requests 40 at a time and tallies the status codes, then fetches one more
-response's headers:
+The owner approved the probe on 20 November 2026, and the coordinator ran it from one IP address between
+17:14:10 and 17:14:14 UTC. It sent 301 requests to `api.browser-compat.dev`, 40 at a time, then fetched one
+more response's headers:
 
 ```sh
 seq 301 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
@@ -1241,13 +1238,29 @@ seq 301 | xargs -P 40 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
 curl -sS -D - -o /dev/null -H 'Origin: https://example.com' https://api.browser-compat.dev/v1/meta.json
 ```
 
-The first command may not make request number 301 the one that is blocked, because the 40 parallel requests
-finish in no fixed order. Document 9's threshold is 300 requests in 10 seconds, but Document 9 also recorded 304 requests answered
-`200` before the first `429`, because the rule's counter lags. A tally of 301 requests with no `429` is
-therefore plausible and does not show the rule has stopped working; it is inconclusive. If that happens,
-send a bounded second burst of 400 requests, as Document 9 did, and record whether `429` responses appear.
-The second command shows the blocked response's headers only while a block is active (it lasts 10
-seconds). Whoever runs it should record every output here.
+The burst returned 300 `200` responses and one `429`, so the rule still blocks at its threshold of 300 requests
+in 10 seconds. A `429` appeared, so the bounded second burst of 400 requests was not needed and was not sent.
+The extra request, sent straight after the burst, was also blocked. Its headers, with the reporting endpoint's
+signed address left out:
+
+| Header                        | Value                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| Status                        | `HTTP/2 429`                                                                           |
+| `content-type`                | `text/plain; charset=UTF-8`                                                            |
+| `content-length`              | `17`                                                                                   |
+| `retry-after`                 | `10`                                                                                   |
+| `cache-control`               | `private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0`   |
+| `access-control-allow-origin` | Absent                                                                                 |
+| `server`                      | `cloudflare`                                                                           |
+
+Two details differ from Document 9's measurement. The blocked response is now `text/plain` with a 17-byte
+body, where Document 9 recorded a `text/html` "Access denied" page. `Retry-After` is now `10`, where Document 9
+recorded `9`. The body text was not captured, because the block had ended before anyone thought to read it.
+
+What matters for the component is unchanged: the `429` still carries no `access-control-allow-origin`, so a
+browser cannot read its status from another origin. The feature client already relies on this
+(the module comment in `packages/element/src/data/feature-client.ts`): it reports such a block
+as `reason: "network"` with `status: null`, and keeps that failure for the failure window.
 
 ### Rollback for a static-assets Worker
 
