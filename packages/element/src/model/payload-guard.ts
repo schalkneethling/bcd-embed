@@ -9,8 +9,10 @@ import type {
  * The checks that stand between an unknown value and the table model. The element bundle carries
  * no Zod (Document 3 section 6), so these are shallow structural checks of the fields the model
  * reads, not a validation of the whole contract. The envelope is checked once, up front. Each
- * feature and each displayed support entry is checked by the model as it visits it, so the checks
- * add constant work per visit and never a second pass over the payload.
+ * feature, each displayed support target, and each displayed support entry is checked by the model
+ * as it visits it, so the checks add constant work per visit and never a second pass over the
+ * payload. A `browsers` entry for a target that the table does not display is never read, so it is
+ * never checked either.
  */
 
 /** Why a value is not a payload the table model can read. */
@@ -19,6 +21,7 @@ export type TablePayloadErrorReason =
   | "unsupported-contract"
   | "missing-query"
   | "missing-browsers"
+  | "invalid-browser"
   | "no-features"
   | "invalid-feature"
   | "invalid-support"
@@ -70,6 +73,12 @@ export type TableModelPayload = Omit<FeatureResponse, "contract" | "features"> &
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/**
+ * A full contract version: 1, a minor, and a patch, each a number without leading zeros. A
+ * pre-release or build suffix, a missing part, and a fourth part do not match.
+ */
+const CONTRACT_1X = /^1\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
+
 const SUPPORT_STATES: ReadonlySet<unknown> = new Set([
   "unsupported",
   "unknown",
@@ -80,15 +89,15 @@ const SUPPORT_STATES: ReadonlySet<unknown> = new Set([
 
 /**
  * Checks the envelope: an object with a contract 1.x version, a query, a `browsers` object, and
- * at least one feature. Any 1.x contract passes, because a minor version only adds optional
- * fields (Document 1 section 7). O(1) time and space.
+ * at least one feature. Any `1.minor.patch` version passes, because a minor version only adds
+ * optional fields (Document 1 section 7). O(1) time and space.
  *
  * @throws {TablePayloadError} when the value is not a payload envelope the model can read.
  */
 export function assertTableModelPayload(value: unknown): asserts value is TableModelPayload {
   if (!isRecord(value)) throw new TablePayloadError("not-an-object");
   const { contract, query, browsers, features } = value;
-  if (typeof contract !== "string" || !contract.startsWith("1.")) {
+  if (typeof contract !== "string" || !CONTRACT_1X.test(contract)) {
     throw new TablePayloadError("unsupported-contract", String(contract));
   }
   if (typeof query !== "string" || query === "") throw new TablePayloadError("missing-query");
@@ -99,9 +108,36 @@ export function assertTableModelPayload(value: unknown): asserts value is TableM
 }
 
 /**
- * Checks the fields of one feature that the model reads. O(1) time and space.
+ * Checks the fields of one displayed `browsers` entry that the model formats: a non-empty `name`,
+ * and a `previewName` that is absent, null, or a non-empty string. The entry's `type` is not
+ * checked, because an unknown type is a valid input that selects the "Other" group. O(1) time and
+ * space.
  *
- * @throws {TablePayloadError} when the feature lacks a name, a depth, or a support object.
+ * @throws {TablePayloadError} when the entry is not an object or its names are unusable.
+ */
+export function assertTableModelBrowser(value: unknown, id: string): void {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    value.name === "" ||
+    (value.previewName !== undefined &&
+      value.previewName !== null &&
+      (typeof value.previewName !== "string" || value.previewName === ""))
+  ) {
+    throw new TablePayloadError("invalid-browser", `browsers.${id}`);
+  }
+}
+
+/**
+ * Checks the fields of one feature that the model reads. The `key` and `name` are non-empty, and
+ * `name` is the last dot-separated segment of `key` (so it holds no dot), which is how the contract derives it (the
+ * name of `javascript.builtins.Array.from` is `from`). The model names a nested row's parent by
+ * cutting `name` off the end of `key`, so a `name` that is not that segment would produce a wrong
+ * "part of" text with no sign of the fault. The guard rejects such a feature, as it rejects a depth
+ * that skips a level, instead of falling back to a guess. O(1) time and space.
+ *
+ * @throws {TablePayloadError} when the feature lacks a name, a depth, or a support object, or
+ * when its name does not end its key.
  */
 export function assertTableModelFeature(
   value: unknown,
@@ -111,6 +147,10 @@ export function assertTableModelFeature(
     !isRecord(value) ||
     typeof value.key !== "string" ||
     typeof value.name !== "string" ||
+    value.key === "" ||
+    value.name === "" ||
+    value.name.includes(".") ||
+    !(value.key === value.name || value.key.endsWith(`.${value.name}`)) ||
     !Number.isInteger(value.depth) ||
     (value.depth as number) < 0 ||
     !isRecord(value.support)

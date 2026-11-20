@@ -34,6 +34,9 @@ export const en = {
   "partial-flagged": "Partial support since {target} {version} behind a flag",
   "partial-preview": "Partial support in {target} {version}, a preview release",
   "partial-preview-unversioned": "Partial support in a preview release of {target}",
+  // For a feature that BCD says was added and later removed, so the name agrees with the compact
+  // range "40 – 50" and with the history's removal sentence.
+  "supported-removed": "Supported from {target} {added}, then removed in {target} {removed}",
   "no-support": "No support in {target}",
   unknown: "Support unknown in {target}",
   "no-data": "No data for {target}",

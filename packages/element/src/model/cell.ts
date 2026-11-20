@@ -119,6 +119,26 @@ const nameFromSummary = (context: CellContext, summary: TableModelSummary): Cell
   const plain = (name: TableMessage): CellName => ({ name, namesIdentity: !hasIdentity });
 
   if (summary.state === "unknown") return plain(message(strings, "unknown", { target }));
+  if (summary.state === "unsupported" && typeof summary.versionAdded === "string") {
+    // A feature that was added and then removed: the name says so, as the compact range does.
+    if (summary.versionRemoved !== null) {
+      return plain(
+        message(strings, "supported-removed", {
+          target,
+          added: sentenceVersion(
+            context,
+            summary.versionAdded,
+            summary.versionAddedIsApproximate === true,
+          ),
+          removed: sentenceVersion(
+            context,
+            summary.versionRemoved,
+            summary.versionRemovedIsApproximate === true,
+          ),
+        }),
+      );
+    }
+  }
   if (summary.state === "unsupported" || typeof summary.versionAdded !== "string") {
     return plain(message(strings, "no-support", { target }));
   }
@@ -317,15 +337,13 @@ const noData = (context: CellContext): TableCell => ({
 
 /**
  * Builds the cell for one support target of one feature. `support` is the payload's entry, or
- * `undefined` when the payload has none. `onStatement` is called once for each statement visited,
- * so a test can count the work.
+ * `undefined` when the payload has none.
  */
 export const buildCell = (
   strings: StringTable,
   target: TableTarget,
   feature: string,
   support: TableModelSupport | undefined,
-  onStatement: () => void,
 ): TableCell => {
   const context: CellContext = { strings, target, feature };
   if (support === undefined) return noData(context);
@@ -341,7 +359,6 @@ export const buildCell = (
   let approximationDiffers = false;
   for (const branch of support.branches) {
     for (const statement of branch.statements as readonly SupportStatement[]) {
-      onStatement();
       statementCount += 1;
       // The name reads the summary's approximation. A statement that says otherwise, as in a
       // contract 1.0.0 payload, keeps its disclosure, so its "or earlier" is not lost. This

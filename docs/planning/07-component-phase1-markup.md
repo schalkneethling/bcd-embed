@@ -56,9 +56,14 @@ are no footnote markers that point elsewhere.
 "No data for Opera" means BCD has no entry. "Support unknown in Node.js" means
 BCD records the support as unknown.
 
-**A removed feature states today's fact first.** The name is "No support in
-Chrome", and the disclosure gives the history: "Partially supported from
-Chrome 11.1, removed in Chrome 12.1".
+**A removed feature names its removal.** The name is "Supported from Chrome
+11.1, then removed in Chrome 12.1", which agrees with the compact text
+"11.1 – 12.1" that sighted users see. An earlier draft said "No support in
+Chrome", but a screen reader user then heard that the feature was never
+supported while the page showed a range. The disclosure gives the history:
+"Partially supported from Chrome 11.1, removed in Chrome 12.1". A summary with
+state "unsupported" and no added version, or no removal version, still reads
+"No support in Chrome".
 
 **The scroll region is focusable and named by the caption.** The wrapper has
 `role="region"`, `tabindex="0"`, and `aria-labelledby` pointing at the
@@ -94,7 +99,7 @@ from the expectation.
 | 6   | Collapse it again                                                             | "collapsed" is announced, and focus stays on the summary                                     |
 | 7   | Tab through the whole table without table navigation                          | Stops only on the region and on the five disclosures, and each stop names its cell           |
 | 8   | Read `AudioTrackList` in Chrome, then expand it                               | The name says "behind a flag", and the disclosure names the preference and its value         |
-| 9   | Read `removed_partial` in Chrome, then expand it                              | "No support in Chrome" first, then the removal history and the note                          |
+| 9   | Read `removed_partial` in Chrome, then expand it                              | "Supported from Chrome 11.1, then removed in Chrome 12.1" first, then the removal history and the note                          |
 | 10  | Read `unknown_runtime` in Node.js and `missing_target` in Opera               | "Support unknown in Node.js" and "No data for Opera" are clearly different                   |
 | 11  | Read `localName` in Opera                                                     | "Supported since Opera 12.1 or earlier"                                                      |
 | 12  | Variant A: read the `from` and `async_iterable` row headers                   | "from (part of Array)" and "async_iterable (part of Array.from)"                             |
@@ -156,7 +161,7 @@ because it is what a user hears.
 | 6   | Asserted in CI                               | Enter again. The closed state and focus are hard checks, and "collapsed" is a soft one.                                                                                                                              |
 | 7   | Manual                                       | The walk tabs only to the first disclosure. A full traversal is a check of the page's tab order more than of NVDA, and Document 3 §9 already asks for it as a scripted keyboard test of the component.             |
 | 8   | Asserted in CI                               | Table navigation to `AudioTrackList` in Chrome, Enter, then `I` (next list item) twice. The cell ("button, collapsed, , Supported since Chrome 37 behind a flag. Flag details for Audio Track List in Chrome"), the open state, and both history items are checked, in both variants. The preference item ends "to, enabled, dot", because NVDA reads the full stop after the closing `code` element as a symbol. |
-| 9   | Asserted in CI                               | Table navigation to `removed_partial` in Chrome, Enter, then `I` twice. "No support in Chrome" comes first, then "History and notes for removed partial in Chrome", the removal history and the note.               |
+| 9   | Asserted in CI                               | Table navigation to `removed_partial` in Chrome, Enter, then `I` twice. "Supported from Chrome 11.1, then removed in Chrome 12.1" comes first, then "History and notes for removed partial in Chrome", the removal history and the note.               |
 | 10  | Asserted in CI: what NVDA says               | "missing target, row 9, No data for Opera" and "Node dot js Server, column 4, Support unknown in Node dot js". Whether they sound "clearly different" is the owner's judgment.                                      |
 | 11  | Asserted in CI                               | Table navigation to `localName` in Opera: "Opera Desktop, column 3, Supported since Opera 12.1 or earlier".                                                                                                         |
 | 12  | Asserted in CI                               | Table navigation to the row headers: "Feature, column 1, from, (part of Array)", then "row 16, async iterable, (part of Array dot from)". On a row change, NVDA runs the parts together: "from(part of Array), row 15". |
@@ -259,6 +264,7 @@ this first inventory. The message ids are proposals.
 | `partial-flagged` | Partial support since {target} {version} behind a flag |
 | `partial-preview`           | Partial support in {target} {version}, a preview release                   |
 | `partial-preview-unversioned` | Partial support in a preview release of {target}                         |
+| `supported-removed` | Supported from {target} {added}, then removed in {target} {removed} |
 | `no-support`                | No support in {target}                                                     |
 | `unknown`                   | Support unknown in {target}                                                |
 | `no-data`                   | No data for {target}                                                       |
@@ -323,12 +329,19 @@ The table model (Issue #196) added the rest, chosen from the statement combinati
 BCD 8.1.9 after normalization. A count over its 20,968 features found, for example, 166 cells whose
 summary has an alternative name, 24 with partial support behind a flag, 34 statements in a preview
 release behind a flag, and 11 statements whose removal or last-supported version is BCD's literal
-"preview". The additions fall into five sets:
+"preview". The additions fall into six sets:
 
 - **Cell sentences with a modifier.** `supported-alternative-name`, the three `partial-` sentences
   with a prefix, an alternative name, or a flag, and the two flagged preview sentences. A cell
   sentence carries at most one modifier, chosen in the order flag, prefix, alternative name, and
   the disclosure always holds the rest.
+- **The removal name.** `supported-removed` names a cell whose summary has the state `unsupported`
+  with both an added and a removed version, such as "Supported from Chrome 40, then removed in
+  Chrome 50". It reuses the history's wording ("supported from", "removed in") and the version
+  values below, so an approximate version reads "40 or earlier" and a removal in the literal
+  "preview" reads "removed in Chrome Canary". Without it, the name said "No support in Chrome"
+  beside the compact text "40 – 50", so a screen reader user heard that the feature was never
+  supported. A summary with no added version, or no removed version, keeps `no-support`.
 - **Version values.** `version-or-earlier` is the value of a `{version}`, `{added}`, or `{removed}`
   placeholder for an approximate version, so "or earlier" needs no extra sentence for each form.
   The plain supported sentence keeps its own `supported-since-or-earlier`. A removal or

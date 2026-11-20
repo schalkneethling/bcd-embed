@@ -7,21 +7,21 @@
  * Cost. Let F be the number of features, T the number of displayed targets, and S the number of
  * support statements in the displayed cells, counting each statement's notes and flags with it.
  *
- * - Time is O(F × T + S). Choosing the columns reads the payload's `browsers` object by key, never
+ * - Time is O(F × T + S + C). Choosing the columns reads the payload's `browsers` object by key, never
  *   the features (`targets.ts`). The rows are then built in one pass over the features. Each
  *   feature looks up each displayed target once, by key, which is the F × T term, and each
  *   displayed cell visits its statements once, which is the S term (`cell.ts`). The parent named
  *   by a nested row's `part-of` message comes from a stack indexed by depth, so no row searches
  *   the rows before it.
- * - Space is O(F × T + S): one cell for each feature and target, and one history line for each
+ * - Space is O(F × T + S + C): one cell for each feature and target, and one history line for each
  *   statement, flag, and note. The depth stack holds at most one key per level.
  *
- * Notes are tokenized in time proportional to their length, so with C the total characters of the
- * notes in the displayed cells, both bounds are more exactly O(F × T + S + C). BCD's notes are
- * short, which is why C is folded into S above.
+ * C is the total number of characters in the notes of the displayed cells, because a note is
+ * tokenized in time proportional to its length. BCD's notes are short, so C stays small next to S.
  *
- * A test counts the feature visits, target lookups, and statement visits through the `onVisit`
- * option, and checks that doubling the features exactly doubles each count.
+ * A test measures the cost from outside. It wraps the payload in Proxies that count every property
+ * read, builds the model, and checks that the reads grow linearly when F, T, or S doubles, so a
+ * hidden extra scan or a quadratic step shows up as a number the model cannot fake.
  */
 
 import { en } from "../strings/en.js";
@@ -48,16 +48,11 @@ export { TablePayloadError };
 export type { TablePayloadErrorReason, TableModelPayload } from "./payload-guard.js";
 export type { ColumnGroupId, TableTarget } from "./targets.js";
 
-/** The kinds of work the `onVisit` option counts. */
-export type TableModelVisit = "feature" | "target-lookup" | "statement";
-
 export type TableModelOptions = {
   /** The `browsers` attribute: space-separated target ids, or null when it is not set. */
   readonly browsers?: string | null;
   /** The string table for the element's locale. English when omitted. */
   readonly strings?: StringTable;
-  /** Called once for each unit of work, so a test can count it. Production code omits it. */
-  readonly onVisit?: (visit: TableModelVisit) => void;
 };
 
 /** A column group header, such as "Desktop", and the targets beneath it. */
@@ -90,8 +85,6 @@ export type TableModel = {
   readonly rows: readonly TableRow[];
 };
 
-const noVisit = (): void => {};
-
 /**
  * Builds the table model.
  *
@@ -113,8 +106,6 @@ export const buildTableModel = (payload: unknown, options: TableModelOptions = {
 
 const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions): TableModel => {
   const strings = options.strings ?? en;
-  const onVisit = options.onVisit ?? noVisit;
-  const countStatement = () => onVisit("statement");
 
   const groups = groupTargets(
     selectTargets(payload.browsers, parseBrowsersOption(options.browsers)),
@@ -132,7 +123,6 @@ const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions
   let rootPrefix = "";
 
   const rows = payload.features.map((feature, index): TableRow => {
-    onVisit("feature");
     assertTableModelFeature(feature, index);
     const { key, name, depth } = feature;
     // A row is at most one level deeper than the row before it, so its parent is on the stack.
@@ -143,7 +133,8 @@ const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions
     let partOf: TableMessage | null = null;
     const parentKey = depth === 0 ? undefined : ancestors[depth - 1];
     if (parentKey === undefined) {
-      rootPrefix = key.endsWith(name) ? key.slice(0, key.length - name.length) : "";
+      // The guard has checked that `name` ends `key`.
+      rootPrefix = key.slice(0, key.length - name.length);
     } else {
       const parent = parentKey.startsWith(rootPrefix)
         ? parentKey.slice(rootPrefix.length)
@@ -154,12 +145,11 @@ const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions
     ancestors[depth] = key;
 
     const cells = columns.map((target) => {
-      onVisit("target-lookup");
       const support = Object.hasOwn(feature.support, target.id)
         ? feature.support[target.id]
         : undefined;
       if (support !== undefined) assertTableModelSupport(support, key, target.id);
-      return buildCell(strings, target, name, support, countStatement);
+      return buildCell(strings, target, name, support);
     });
 
     return { key, name, depth, partOf, cells };

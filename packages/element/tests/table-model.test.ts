@@ -7,12 +7,7 @@ import { describe, expect, it } from "vitest";
 import { v1FixtureCases, v1NormalizedFixture } from "../../schema/src/fixtures/v1.js";
 import { en } from "../src/strings/en.js";
 import { buildTableModel, TablePayloadError } from "../src/model/table-model.js";
-import type {
-  TableCell,
-  TableModel,
-  TableModelOptions,
-  TableModelVisit,
-} from "../src/model/table-model.js";
+import type { TableCell, TableModel, TableModelOptions } from "../src/model/table-model.js";
 import { messageCases } from "./fixtures/message-cases.js";
 
 // A deep copy, so a test can change a fixture without touching the schema package's object.
@@ -190,7 +185,7 @@ describe("the cells of the Phase 1 fixture", () => {
     const cell = cellFor(model, v1FixtureCases.removedPartial, "chrome");
 
     expect(cell.disclosure?.summary.text).toBe(
-      "No support in Chrome. History and notes for removed_partial in Chrome",
+      "Supported from Chrome 11.1, then removed in Chrome 12.1. History and notes for removed_partial in Chrome",
     );
     expect(cell.compact.text).toBe("11.1 – 12.1");
   });
@@ -291,6 +286,76 @@ describe("the payload guard", () => {
     const badSupport = copy(v1NormalizedFixture);
     (badSupport.features[0]!.support as Record<string, unknown>).chrome = { summary: {} };
     rejects(badSupport, "invalid-support");
+  });
+
+  it("accepts only a full 1.minor.patch contract version", () => {
+    for (const contract of [
+      "1.",
+      "1.x",
+      "1.0",
+      "1.0.0.0",
+      "1.0.0-rc.1",
+      "1.01.0",
+      "1.0.0 ",
+      "1.-1.0",
+    ]) {
+      rejects({ ...v1NormalizedFixture, contract }, "unsupported-contract");
+    }
+    for (const contract of ["1.0.0", "1.1.0", "1.12.34"]) {
+      expect(() => buildTableModel({ ...v1NormalizedFixture, contract })).not.toThrow();
+    }
+  });
+
+  it("rejects a displayed browsers entry the model could not format", () => {
+    const withBrowser = (entry: unknown) => {
+      const payload = copy(v1NormalizedFixture) as unknown as { browsers: Record<string, unknown> };
+      payload.browsers.chrome = entry;
+      return payload;
+    };
+    for (const entry of [
+      null,
+      "Chrome",
+      [],
+      {},
+      { name: "", type: "desktop", previewName: null },
+      { name: 5, type: "desktop", previewName: null },
+      { name: "Chrome", type: "desktop", previewName: 5 },
+      { name: "Chrome", type: "desktop", previewName: "" },
+    ]) {
+      rejects(withBrowser(entry), "invalid-browser");
+    }
+  });
+
+  it("checks a browsers entry only when its target is displayed", () => {
+    const payload = copy(v1NormalizedFixture) as unknown as { browsers: Record<string, unknown> };
+    payload.browsers.opera = null;
+
+    expect(() => buildTableModel(payload, { browsers: "chrome nodejs" })).not.toThrow();
+    expect(() => buildTableModel(payload, { browsers: "chrome opera" })).toThrow(TablePayloadError);
+  });
+
+  it("rejects a feature with an empty name or key", () => {
+    for (const patch of [{ name: "" }, { key: "" }]) {
+      const payload = copy(v1NormalizedFixture);
+      Object.assign(payload.features[0]!, patch);
+      rejects(payload, "invalid-feature");
+    }
+  });
+
+  it("rejects a feature whose name is not the last segment of its key", () => {
+    for (const [key, name] of [
+      ["a.b.c", "b"],
+      ["a.b.c", "xc"],
+      ["a.b.c", "a.b.c.d"],
+      ["a.b.c", "b.c"],
+    ] as const) {
+      const payload = copy(v1NormalizedFixture);
+      Object.assign(payload.features[0]!, { key, name });
+      rejects(payload, "invalid-feature");
+    }
+    const single = copy(v1NormalizedFixture);
+    Object.assign(single.features[0]!, { key: "solo", name: "solo" });
+    expect(() => buildTableModel(single)).not.toThrow();
   });
 
   it("rejects a depth that skips a level, because its parent is not on the stack", () => {
@@ -396,7 +461,7 @@ describe("the named message fixtures", () => {
   it("adds the last-supported version after a removal", () => {
     const cell = onlyCell(messageCases.versionLast);
 
-    expect(cell.name.text).toBe("No support in Safari");
+    expect(cell.name.text).toBe("Supported from Safari 3, then removed in Safari 11");
     expect(itemTexts(cell)).toEqual([
       "Supported from Safari 3, removed in Safari 11.",
       "Last supported in Safari 10.1.",
@@ -435,6 +500,83 @@ describe("statements that combine modifiers", () => {
       "chrome",
     );
   };
+
+  it("names a removal in the cell, so the name agrees with the compact range", () => {
+    const cell = withStatements(
+      { state: "unsupported", versionAdded: "40", versionRemoved: "50" },
+      [
+        {
+          prefix: null,
+          alternativeName: null,
+          statements: [{ versionAdded: "40", versionRemoved: "50" }],
+        },
+      ],
+    );
+
+    expect(cell.name.id).toBe("supported-removed");
+    expect(cell.name.text).toBe("Supported from Chrome 40, then removed in Chrome 50");
+    expect(cell.compact.text).toBe("40 – 50");
+    expect(cell.disclosure).not.toBeNull();
+  });
+
+  it("puts an approximate added or removed version inside the removal name", () => {
+    const summary = {
+      state: "unsupported",
+      versionAdded: "40",
+      versionAddedIsApproximate: true,
+      versionRemoved: "50",
+      versionRemovedIsApproximate: true,
+    } as const;
+    const cell = withStatements(summary, [
+      {
+        prefix: null,
+        alternativeName: null,
+        statements: [
+          {
+            versionAdded: "40",
+            versionAddedIsApproximate: true,
+            versionRemoved: "50",
+            versionRemovedIsApproximate: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(cell.name.text).toBe(
+      "Supported from Chrome 40 or earlier, then removed in Chrome 50 or earlier",
+    );
+    expect(cell.compact.text).toBe("≤40 – ≤50");
+  });
+
+  it("names a removal in BCD's literal preview as the target's preview release", () => {
+    const cell = withStatements(
+      { state: "unsupported", versionAdded: "40", versionRemoved: "preview" },
+      [
+        {
+          prefix: null,
+          alternativeName: null,
+          statements: [{ versionAdded: "40", versionRemoved: "preview" }],
+        },
+      ],
+    );
+
+    expect(cell.name.text).toBe("Supported from Chrome 40, then removed in Chrome Canary");
+  });
+
+  it("keeps the no-support name when nothing was ever added, or no removal is recorded", () => {
+    const neverAdded = withStatements(
+      { state: "unsupported", versionAdded: false, versionRemoved: "50" },
+      [{ prefix: null, alternativeName: null, statements: [{ versionAdded: false }] }],
+    );
+    // The schema does not allow this summary, so the cast stands in for a payload that breaks it.
+    const noRemoval = withStatements(
+      { state: "unsupported", versionAdded: "40", versionRemoved: null } as never,
+      [{ prefix: null, alternativeName: null, statements: [{ versionAdded: "40" }] }],
+    );
+
+    expect(neverAdded.name.text).toBe("No support in Chrome");
+    expect(noRemoval.name.text).toBe("No support in Chrome");
+  });
 
   it("names an alternative name in the cell and needs no disclosure for it", () => {
     const cell = withStatements({ alternativeName: "intrinsic" }, [
@@ -582,80 +724,145 @@ describe("the Phase 1 page", () => {
 });
 
 describe("the cost of building the model", () => {
-  const TARGETS = Array.from({ length: 15 }, (_, index) => `target_${index}`);
-  const STATEMENTS_PER_CELL = 2;
+  // The model reports nothing about its own work, so the test measures it from outside. Every
+  // object of the payload is wrapped in a Proxy that counts each property read, each own-property
+  // check, and each key listing. A hidden second scan of the features, the targets, or the
+  // statements adds reads that the model cannot hide.
+  type Reads = { count: number };
 
-  const syntheticPayload = (featureCount: number): FeatureResponse => {
-    const statement = (versionAdded: string, versionRemoved: string | null): SupportStatement =>
+  const counting = <Value>(value: Value, reads: Reads): Value => {
+    if (typeof value !== "object" || value === null) return value;
+    return new Proxy(value, {
+      get(target, property) {
+        reads.count += 1;
+        return counting(Reflect.get(target, property), reads);
+      },
+      has(target, property) {
+        reads.count += 1;
+        return Reflect.has(target, property);
+      },
+      getOwnPropertyDescriptor(target, property) {
+        reads.count += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+      ownKeys(target) {
+        reads.count += 1;
+        return Reflect.ownKeys(target);
+      },
+    });
+  };
+
+  const baseStatement =
+    v1NormalizedFixture.features[0]!.support.chrome!.branches[0]!.statements[0]!;
+  const baseSummary = v1NormalizedFixture.features[0]!.support.chrome!.summary;
+
+  // Every cell gets its own support object, branch, and statements, so no cell shares work with
+  // another. `chain` makes each feature one level deeper than the one before it, the deepest
+  // possible nesting. `mixed` cycles through depths 0 to 3.
+  const syntheticPayload = (
+    featureCount: number,
+    targetCount: number,
+    statementsPerCell: number,
+    shape: "chain" | "mixed",
+  ): { payload: FeatureResponse; browsers: string } => {
+    const targets = Array.from({ length: targetCount }, (_, index) => `target_${index}`);
+    const supportFor = (): SupportTargetSupport =>
       ({
-        ...v1NormalizedFixture.features[0]!.support.chrome!.branches[0]!.statements[0]!,
-        versionAdded,
-        versionRemoved,
-      }) as SupportStatement;
-    const support = {
-      summary: v1NormalizedFixture.features[0]!.support.chrome!.summary,
-      branches: [
-        {
-          canonical: true,
-          prefix: null,
-          alternativeName: null,
-          statements: [statement("40", null), statement("10", "20")],
-        },
-      ],
-    } as SupportTargetSupport;
-    return {
+        summary: { ...baseSummary },
+        branches: [
+          {
+            canonical: true,
+            prefix: null,
+            alternativeName: null,
+            statements: Array.from(
+              { length: statementsPerCell },
+              (_, index): SupportStatement =>
+                ({
+                  ...baseStatement,
+                  flags: [],
+                  notes: [],
+                  versionAdded: String(index + 1),
+                  versionRemoved: index % 2 === 0 ? null : String(index + 2),
+                }) as SupportStatement,
+            ),
+          },
+        ],
+      }) as SupportTargetSupport;
+    const payload: FeatureResponse = {
       contract: "1.1.0",
       query: "synthetic.root",
       browsers: Object.fromEntries(
-        TARGETS.map((id) => [id, { name: id, type: "desktop", previewName: null }]),
+        targets.map((id) => [id, { name: id, type: "desktop", previewName: null }]),
       ),
-      features: Array.from({ length: featureCount }, (_, index) => {
-        const depth = index === 0 ? 0 : 1 + (index % 3);
-        return {
-          key: `synthetic.root.f${index}`,
-          name: `f${index}`,
-          depth: Math.min(depth, index),
-          description: null,
-          mdnUrl: null,
-          specUrls: [],
-          status: null,
-          tags: [],
-          support: Object.fromEntries(TARGETS.map((id) => [id, support])),
-        };
-      }),
+      features: Array.from({ length: featureCount }, (_, index) => ({
+        key: `synthetic.root.f${index}`,
+        name: `f${index}`,
+        depth: shape === "chain" ? index : index === 0 ? 0 : Math.min(1 + (index % 3), index),
+        description: null,
+        mdnUrl: null,
+        specUrls: [],
+        status: null,
+        tags: [],
+        support: Object.fromEntries(targets.map((id) => [id, supportFor()])),
+      })),
     };
+    return { payload, browsers: targets.join(" ") };
   };
 
-  const count = (featureCount: number) => {
-    const counts: Record<TableModelVisit, number> = {
-      feature: 0,
-      "target-lookup": 0,
-      statement: 0,
-    };
-    buildTableModel(syntheticPayload(featureCount), {
-      browsers: TARGETS.join(" "),
-      onVisit: (visit) => {
-        counts[visit] += 1;
-      },
-    });
-    return counts;
+  const reads = (
+    featureCount: number,
+    targetCount: number,
+    statementsPerCell: number,
+    shape: "chain" | "mixed" = "chain",
+  ): number => {
+    const { payload, browsers } = syntheticPayload(
+      featureCount,
+      targetCount,
+      statementsPerCell,
+      shape,
+    );
+    const counter: Reads = { count: 0 };
+    buildTableModel(counting(payload, counter), { browsers });
+    return counter.count;
   };
 
-  it("visits each feature once, looks up each target once per feature, and visits each statement once", () => {
-    const small = count(2_000);
-    const large = count(4_000);
-    const T = TARGETS.length;
+  const PER_STATEMENT_READS = 25;
+  const PER_CELL_READS = 45;
+  const PER_FEATURE_READS = 18;
 
-    expect(small).toEqual({
-      feature: 2_000,
-      "target-lookup": 2_000 * T,
-      statement: 2_000 * T * STATEMENTS_PER_CELL,
-    });
-    expect(large).toEqual({
-      feature: small.feature * 2,
-      "target-lookup": small["target-lookup"] * 2,
-      statement: small.statement * 2,
-    });
+  // Equal steps in the input give equal steps in the reads when the cost is linear. A quadratic
+  // cost makes each step larger than the one before it.
+  const expectLinear = (measure: (size: number) => number, unit: number) => {
+    const [one, two, four] = [measure(unit), measure(2 * unit), measure(4 * unit)];
+
+    expect(four - two).toBe(2 * (two - one));
+    expect(two).toBeGreaterThan(one);
+  };
+
+  it("grows the reads linearly when the features double, in a deep chain and in a mixed shape", () => {
+    expectLinear((size) => reads(size, 6, 2, "chain"), 250);
+    expectLinear((size) => reads(size, 6, 2, "mixed"), 250);
+  });
+
+  it("grows the reads linearly when the displayed targets double", () => {
+    expectLinear((size) => reads(120, size, 2), 5);
+  });
+
+  it("grows the reads linearly when the statements in each cell double", () => {
+    expectLinear((size) => reads(60, 6, size), 3);
+  });
+
+  it("reads each statement, cell, and feature a fixed number of times, so no second scan is hidden", () => {
+    // Each cost is a difference between two sizes, which cancels the envelope's constant reads.
+    // The ceilings sit a little above the measured values, so one more pass over the statements,
+    // the targets, or the features pushes the model past them.
+    const perStatement = (reads(60, 6, 4) - reads(60, 6, 2)) / (60 * 6 * 2);
+    const perCell = (reads(60, 12, 1) - reads(60, 6, 1)) / (60 * 6) - perStatement;
+    const perFeature = (reads(120, 6, 1) - reads(60, 6, 1)) / 60 - 6 * (perCell + perStatement);
+
+    expect(perStatement).toBeLessThanOrEqual(PER_STATEMENT_READS);
+    expect(perCell).toBeLessThanOrEqual(PER_CELL_READS);
+    expect(perFeature).toBeLessThanOrEqual(PER_FEATURE_READS);
   });
 
   it("states its time and space complexity in the module's header comment", () => {
@@ -665,8 +872,8 @@ describe("the cost of building the model", () => {
     );
     const header = source.split("*/")[0] ?? "";
 
-    expect(header).toContain("Time is O(F × T + S)");
-    expect(header).toContain("Space is O(F × T + S)");
+    expect(header).toContain("Time is O(F × T + S + C)");
+    expect(header).toContain("Space is O(F × T + S + C)");
   });
 });
 

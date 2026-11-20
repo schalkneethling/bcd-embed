@@ -1,6 +1,7 @@
 import type { SupportTarget } from "@bcd-embed/schema";
 
 import type { MessageId } from "../strings/format.js";
+import { assertTableModelBrowser } from "./payload-guard.js";
 
 /**
  * Which support targets the table shows, and how their columns are grouped (Document 3 section 4,
@@ -78,7 +79,10 @@ const groupOf = (target: SupportTarget | undefined): ColumnGroupId => {
  *   rather than an empty table.
  *
  * Time and space are O(T) for an explicit or default list, and O(B) for the payload's B targets in
- * the last case.
+ * the last case. Each displayed target's `browsers` entry is checked as it is read.
+ *
+ * @throws {TablePayloadError} with the reason `invalid-browser` when a displayed target's entry
+ * has no usable name.
  */
 export const selectTargets = (
   browsers: Readonly<Record<string, SupportTarget>>,
@@ -86,6 +90,7 @@ export const selectTargets = (
 ): TableTarget[] => {
   const describe = (id: string): TableTarget => {
     const target = Object.hasOwn(browsers, id) ? browsers[id] : undefined;
+    if (target !== undefined) assertTableModelBrowser(target, id);
     return {
       id,
       name: target?.name ?? id,
