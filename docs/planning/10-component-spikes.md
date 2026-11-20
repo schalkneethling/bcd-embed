@@ -1085,10 +1085,10 @@ Each run's list reporter printed "2 passed (1.7m)" for NVDA, with no "flaky" cou
 **Question.** Can both hostnames (`browser-compat.dev` for the introduction page and `docs.browser-compat.dev`
 for the documentation site) be attached as planned, and what headers can the documentation site safely send?
 
-**Status.** Answered on 20 November 2026, with two parts still open. The owner supplied the dashboard facts from
+**Status.** Answered on 20 November 2026. The owner supplied the dashboard facts from
 screenshots, so they are recorded as the owner's reading, not as something this spike verified. The local dry run
 and the Content-Security-Policy check ran on this branch. The rate-limit probe ran on 20 November 2026 with the
-owner's approval and the rule still blocks. The Workers usage notification's name is unconfirmed.
+owner's approval and the rule still blocks. The account warns about Workers spend through an email budget alert.
 
 | Acceptance criterion                                 | Result                                                                       |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -1098,7 +1098,7 @@ owner's approval and the rule still blocks. The Workers usage notification's nam
 | Report-Only policy violations                        | Recorded below for the home page, a Mermaid page and the search dialog.      |
 | Rate-limit probe (301 requests)                      | Ran 20 November 2026: 300 `200` and one `429`. Details below.                |
 | Rollback procedure                                   | Quoted below with its address.                                               |
-| Usage notification, Always Use HTTPS                 | HTTPS is on. The notification's name is unconfirmed.                         |
+| Usage notification, Always Use HTTPS                 | HTTPS is on. Workers spend is covered by a budget alert. Details below.      |
 | No token, account ID or dashboard address            | None appears in this section.                                                |
 
 ### DNS records for `browser-compat.dev` (owner-supplied)
@@ -1124,14 +1124,33 @@ correct: `www` has no record, so nothing answers it. No issue in the plan covers
 Always Use HTTPS is on for the zone. The dashboard said the setting had changed moments before the screenshot,
 so the owner turned it on on 20 November 2026. It was not on before that date.
 
-### Workers usage notification (owner-supplied, unconfirmed)
+### Workers usage notification (owner-supplied)
 
-The "Create a notification" page offers five categories: Security; Availability & performance; Account & billing
-(described as "Spending, usage, and account activity"); Certificates & access; and Cloudflare updates. The
-screenshot did not capture the specific Workers usage notification, so whether the account offers one and what
-it is called are both unconfirmed. It is most likely under "Account & billing", given that category's
-description, but that is a guess from the description and not something anyone saw. The owner needs to open that
-category and record the notification's name.
+The owner supplied dashboard screenshots on 20 November 2026, so these are the owner's readings, not something
+this spike verified through an API. The account offers three ways to hear about Workers usage, and the owner
+chose the first.
+
+| Mechanism                          | What the dashboard showed                                                                                                                                                         | What it does at the threshold                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Budget alert (chosen)              | One exists, "Default budget alert (auto-created)", with the event "Billing budget alert" and email delivery. The Billable usage page lists Workers Standard Requests and Workers CPU ms as usage-billed. | Sends email "without blocking usage" (Cloudflare's spend management page).    |
+| "Usage Based Billing" notification | The account uses it for three R2 alerts. Whether its product list includes Workers was not checked.                                                                                | Sends a notification when a chosen product's usage passes a chosen threshold. |
+| Spend limit                        | Offered for Workers and Durable Objects, marked Beta in the dashboard, with no limit set.                                                                                         | Rejects new Worker invocations, so the API would return error 1103.           |
+
+The owner decided on 20 November 2026 to rely on the budget alert and set no Workers spend limit. A limit would
+stop `api.browser-compat.dev`, because that hostname runs Worker code, and the load test (#213, #214) would come
+closer to tripping it than real traffic. The documentation site serves its files without running Worker code,
+and Cloudflare says such files "continue to be available" under a limit. The budget alert's threshold was not
+visible in the screenshots, so its amount is not recorded here.
+
+For scale, usage in the billing period starting 10 November 2026 was 2.62 thousand Workers Standard Requests of
+10 million included, and 31.65 thousand Workers CPU milliseconds of 30 million included. Both cost $0.00.
+
+Sources:
+- Cloudflare's notification list (<https://developers.cloudflare.com/notifications/notification-available/>)
+  names "Usage Based Billing", for Pay-as-you-go accounts on Professional plans or higher.
+- Cloudflare's spend management pages (<https://developers.cloudflare.com/billing/manage/spend-management/> and
+  <https://developers.cloudflare.com/workers/platform/spend-management/>, both modified 13 November 2026) describe
+  spend limits and email alerts.
 
 ### Deploy credentials (coordinator-confirmed)
 
