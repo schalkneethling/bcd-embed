@@ -3,7 +3,12 @@
 // so they are not part of `pnpm check`.
 import { defineConfig, devices } from "@playwright/test";
 
+import { origin, webServer } from "./screen-reader/server.js";
+
 export default defineConfig({
+  // The walk loads the built fixture page, which this server previews. Run
+  // `pnpm --filter @bcd-embed/element build:screen-reader-fixture` first.
+  webServer,
   // One test at a time and headed, because there is only one screen reader and it cannot read a
   // headless browser.
   workers: 1,
@@ -11,13 +16,14 @@ export default defineConfig({
   testDir: "./screen-reader",
   testMatch: "**/*.nvda.ts",
   // Each test starts the screen reader and moves it into the page, which takes tens of seconds.
-  // The NVDA walk also performs Document 7's step 2 and steps 8 to 14: 27 more moves than the
-  // VoiceOver and Orca walks in variant A, and 13 more in variant B. So it gets twice their time.
+  // The walk also performs Document 7's step 2 and steps 8 to 12. NVDA's version reads the list
+  // items of the two disclosures too, so it makes a few more moves than the VoiceOver and Orca
+  // walks. It keeps the time it had when it was the only walk with these steps.
   timeout: 10 * 60 * 1000,
   // A screen reader sometimes fails to start. Playwright reports a test that passed on retry as
   // flaky.
   retries: 1,
   reporter: "list",
-  use: { trace: "retain-on-failure", video: "retain-on-failure" },
+  use: { baseURL: origin, trace: "retain-on-failure", video: "retain-on-failure" },
   projects: [{ name: "firefox", use: { ...devices["Desktop Firefox"], headless: false } }],
 });

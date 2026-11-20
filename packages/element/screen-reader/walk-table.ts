@@ -1,10 +1,17 @@
-// The Phase 1 walk through a compatibility table, shared by the VoiceOver, Orca and NVDA tests.
-// It performs the same moves with each screen reader and records what was spoken after each one,
-// so the transcripts can be compared step by step (docs/planning/07-component-phase1-markup.md).
+// The walk through the compatibility table that `<bcd-compat-table>` renders, shared by the
+// VoiceOver, Orca and NVDA tests. It performs the same moves with each screen reader and records
+// what was spoken after each one, so the transcripts can be compared step by step
+// (docs/planning/07-component-phase1-markup.md). The page is the built fixture
+// (`fixtures/component.html`), which `server.ts` serves.
 import { writeFile } from "node:fs/promises";
 
 import type { Page, TestInfo } from "@playwright/test";
 import { expect } from "@playwright/test";
+
+import { en } from "../src/strings/en.js";
+import { formatMessage } from "../src/strings/format.js";
+
+import { fixturePath } from "./server.js";
 
 /** The part of a screen reader that the walk uses. VoiceOver, Orca and NVDA all provide it. */
 export type Reader = {
@@ -21,12 +28,8 @@ export type TableMoves = {
   down(): Promise<void>;
 };
 
-export type Variant = { name: string; file: string };
-
-export const variants: readonly Variant[] = [
-  { name: "variant A (scope)", file: "index.html" },
-  { name: "variant B (headers and id)", file: "headers-id.html" },
-];
+/** What the transcript's log line calls the page. */
+const fixtureName = "the component fixture";
 
 /**
  * A step that one screen reader performs after the shared walk, so that what it says lands in the
@@ -53,9 +56,6 @@ export type ExtraStep = {
 
 type Step = { step: string; spoken: string; item: string };
 
-const pageUrl = (file: string) =>
-  new URL(`../../../docs/planning/phase1-markup/${file}`, import.meta.url).href;
-
 /**
  * Walks the table and attaches the transcript to the test. The shared walk's checks on the page
  * (which element has focus, whether the disclosure is open) are hard failures, because every later
@@ -72,7 +72,6 @@ export async function walkTable(
   page: Page,
   reader: Reader,
   moves: TableMoves,
-  variant: Variant,
   testInfo: TestInfo,
   readerSpecific: Readonly<Record<string, string>>,
   more: { extraSteps?: readonly ExtraStep[]; sharedWording?: Wording } = {},
@@ -100,14 +99,18 @@ export async function walkTable(
   const firstDetails = page.locator("details").first();
 
   try {
-    await page.goto(pageUrl(variant.file));
-    await page.getByRole("table").waitFor();
+    // The path is relative to the `baseURL` of the config, which points at the preview server.
+    await page.goto(fixturePath);
+    // The table is in the page once the element has set `loaded`, which also hides the fallback.
+    // The timeout is short so that a page that fails to render fails here, not after the test's
+    // ten minutes.
+    await page.locator("bcd-compat-table[loaded]").getByRole("table").waitFor({ timeout: 30_000 });
     await reader.navigateToWebContent();
 
     await reader.clearSpokenPhraseLog();
 
-    // Tab to the scroll region. Firefox stops on the link in the introduction first. WebKit does
-    // not, because Safari leaves links out of the tab order by default.
+    // Tab to the scroll region. The page has no link before it, but an engine may stop on
+    // something else first, so the walk allows a few presses before it gives up.
     const region = page.getByRole("region");
     for (let presses = 0; presses < 3; presses += 1) {
       await press("Tab");
@@ -150,7 +153,7 @@ export async function walkTable(
   } finally {
     const json = JSON.stringify(transcript, null, 2);
     // Printed first, so the transcript is in the job log even if writing the file fails.
-    console.log(`Transcript, ${variant.name}:\n${json}`);
+    console.log(`Transcript, ${fixtureName}:\n${json}`);
     // Written to the test's output directory, which the workflow uploads as an artifact on a pass
     // and on a failure. An attachment given as a `body` is not written there as a file: after a
     // pass it reaches only the reporters, and after a failure it is only inside `trace.zip`.
@@ -163,7 +166,7 @@ export async function walkTable(
       });
     } catch (error) {
       // Logged rather than thrown, so a failed write never hides the walk's own error.
-      console.error(`Could not save the transcript for ${variant.name}:`, error);
+      console.error(`Could not save the transcript for ${fixtureName}:`, error);
     }
   }
 
@@ -178,6 +181,9 @@ export async function walkTable(
   for (const [step, expected] of Object.entries({ ...sharedChecks, ...sharedWording })) {
     check(step, expected);
   }
+  // Checked for every screen reader, including one whose `sharedWording` replaces the step's
+  // other check: each one speaks the cell's sentence in its own words around it.
+  check("Tab to the fit-content cell in Chrome", firstCellSummary);
   for (const [step, expected] of Object.entries(readerSpecific)) check(step, expected);
   for (const { step, expected } of extraSteps) if (expected) check(step, expected);
 }
@@ -185,10 +191,21 @@ export async function walkTable(
 /** What a screen reader should say at each named step: a phrase it contains, or a pattern. */
 export type Wording = Readonly<Record<string, string | RegExp>>;
 
+/**
+ * The summary of the first cell, `fit-content` in Chrome, as the string table builds it: the
+ * cell's fact and its label joined by `disclosure-summary`. The walk reads the table, so the
+ * sentence is written once, in `strings/en.ts`, and a change to either message changes the check.
+ * The target, version and feature are the first row of the adversarial fixture
+ * (`packages/schema/src/fixtures/v1.ts`).
+ */
+export const firstCellSummary = formatMessage(en, "disclosure-summary", {
+  fact: formatMessage(en, "supported-since", { target: "Chrome", version: "46" }),
+  label: formatMessage(en, "disclosure-history", { feature: "fit-content", target: "Chrome" }),
+});
+
 /** The shared walk's soft checks, written from the markup's own text. */
 const sharedChecks: Wording = {
   "Tab to the scroll region": "Browser compatibility",
-  "Tab to the fit-content cell in Chrome": "Supported since Chrome 46",
   "open the fit-content disclosure": /expanded/i,
   "close the fit-content disclosure": /collapsed/i,
   "move right to Opera": "No data for Opera",

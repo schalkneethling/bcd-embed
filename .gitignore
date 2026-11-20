@@ -35,6 +35,9 @@ dist-ssr
 packages/element/test-results/
 packages/element/playwright-report/
 
+# The built page the screen reader walks load (packages/element/vite.screen-reader.config.ts).
+packages/element/dist-screen-reader/
+
 # Failure screenshots from the Vitest browser project. Vitest 5.1.0 writes them under
 # .vitest/attachments/ at the repository root.
 **/__screenshots__/

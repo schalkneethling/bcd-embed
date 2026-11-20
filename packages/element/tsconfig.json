@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "paths": {
-      "@bcd-embed/schema": ["../schema/src/index.ts"]
+      "@bcd-embed/schema": ["../schema/src/index.ts"],
+      "@bcd-embed/element": ["./src/index.ts"]
     }
   },
   "include": [

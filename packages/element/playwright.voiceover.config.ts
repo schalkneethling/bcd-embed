@@ -3,7 +3,12 @@
 // the tests run, so they are not part of `pnpm check`.
 import { defineConfig, devices } from "@playwright/test";
 
+import { origin, webServer } from "./screen-reader/server.js";
+
 export default defineConfig({
+  // The walk loads the built fixture page, which this server previews. Run
+  // `pnpm --filter @bcd-embed/element build:screen-reader-fixture` first.
+  webServer,
   // One test at a time and headed, because there is only one screen reader and it cannot read a
   // headless browser.
   workers: 1,
@@ -11,11 +16,13 @@ export default defineConfig({
   testDir: "./screen-reader",
   testMatch: "**/*.voiceover.ts",
   // Each test starts the screen reader and moves it into the page, which takes tens of seconds.
-  timeout: 5 * 60 * 1000,
+  // The walk then makes about 25 more moves for Document 7's steps 8 to 12, so it gets twice the
+  // time the walk without them had.
+  timeout: 10 * 60 * 1000,
   // A screen reader sometimes fails to start. Playwright reports a test that passed on retry as
   // flaky.
   retries: 1,
   reporter: "list",
-  use: { trace: "retain-on-failure", video: "retain-on-failure" },
+  use: { baseURL: origin, trace: "retain-on-failure", video: "retain-on-failure" },
   projects: [{ name: "webkit", use: { ...devices["Desktop Safari"], headless: false } }],
 });
