@@ -1,0 +1,147 @@
+/*
+ * The structure of the rendered table: just enough to make it usable with no other styles, and
+ * nothing that decides a visual identity (Document 3 section 1). base.css imports this file into
+ * the layer bcd-embed.base, so any unlayered author rule overrides every declaration here,
+ * whatever its specificity. Every property is logical, so the table lays out correctly in
+ * right-to-left and vertical writing modes (Document 3 section 3).
+ */
+
+/* The element is a block, so its table starts on a line of its own. */
+bcd-compat-table {
+  display: block;
+}
+
+/*
+ * Retires the author's fallback content while a table is rendered (Document 3 section 4,
+ * "Fallback content"). The element sets the boolean attribute `loaded` while a table shows. A
+ * selector matches elements, never text, so the rule has three parts:
+ *
+ * - Element children are removed with display: none.
+ * - Bare text is hidden by hiding the whole element and showing the render container again.
+ * - Bare text would still keep its line box, a blank line beside the table. So the element
+ *   becomes a one-column grid. The container is placed in the first row, and the text, which a
+ *   grid wraps in an anonymous item, is placed after it in a row of zero height. Text between
+ *   tags that is only white space makes no item.
+ *
+ * Nothing changes the font, so the table keeps the page's font size and line height, and a
+ * token in em still follows them. The rules do not depend on where the container sits among
+ * the children, because the container is placed explicitly.
+ */
+bcd-compat-table[loaded] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: 0;
+  visibility: hidden;
+}
+
+bcd-compat-table[loaded] > :not(.bcd-render-container) {
+  display: none;
+}
+
+bcd-compat-table[loaded] > .bcd-render-container {
+  grid-row: 1;
+  grid-column: 1;
+  visibility: visible;
+}
+
+/*
+ * The scroll region. It takes a tab stop (tabindex="0" in the markup), so a keyboard user can
+ * scroll a table wider than its container, and focus on it must be visible.
+ */
+.bcd-scroller {
+  /* A fallback for engines below the Baseline 2025 floor, which drop overflow-inline. */
+  overflow-x: auto;
+  overflow-inline: auto;
+}
+
+.bcd-history > summary {
+  cursor: pointer;
+}
+
+.bcd-scroller:focus-visible,
+.bcd-history > summary:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 2px;
+}
+
+.bcd-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.bcd-table caption {
+  padding-block-end: var(--bcd-cell-padding, 0.5rem);
+  font-weight: bold;
+  text-align: start;
+}
+
+.bcd-table th,
+.bcd-table td {
+  padding: var(--bcd-cell-padding, 0.5rem);
+  border: var(--bcd-border-width) solid
+    light-dark(var(--bcd-color-border-light), var(--bcd-color-border-dark));
+  text-align: start;
+  vertical-align: top;
+}
+
+/*
+ * Nested rows indent their feature name by one step for each level. BCD 8.1.9 nests at most five
+ * levels below a feature (`javascript.builtins.Intl`). The attribute selector comes first and
+ * gives every depth five steps, so a deeper row is still indented, and the rules after it set the
+ * first four depths.
+ */
+.bcd-table [class*="bcd-feature-depth-"] {
+  padding-inline-start: calc(var(--bcd-cell-padding, 0.5rem) + 5 * var(--bcd-indent, 1rem));
+}
+
+.bcd-table .bcd-feature-depth-1 {
+  padding-inline-start: calc(var(--bcd-cell-padding, 0.5rem) + var(--bcd-indent, 1rem));
+}
+
+.bcd-table .bcd-feature-depth-2 {
+  padding-inline-start: calc(var(--bcd-cell-padding, 0.5rem) + 2 * var(--bcd-indent, 1rem));
+}
+
+.bcd-table .bcd-feature-depth-3 {
+  padding-inline-start: calc(var(--bcd-cell-padding, 0.5rem) + 3 * var(--bcd-indent, 1rem));
+}
+
+.bcd-table .bcd-feature-depth-4 {
+  padding-inline-start: calc(var(--bcd-cell-padding, 0.5rem) + 4 * var(--bcd-indent, 1rem));
+}
+
+.bcd-history-list {
+  margin-block: var(--bcd-cell-padding, 0.5rem) 0;
+  padding-inline-start: 1.25rem;
+}
+
+/*
+ * The compact span, with the icon and the version, carries `hidden` as well as
+ * aria-hidden="true", so a page with no stylesheet reads each cell as its sentence. This rule
+ * shows it again for sighted readers. The attribute selector keeps it off every other hidden
+ * element (Document 3 section 5).
+ */
+.bcd-table [aria-hidden="true"][hidden] {
+  display: inline;
+}
+
+.bcd-icon {
+  inline-size: var(--bcd-icon-size, 1em);
+  block-size: var(--bcd-icon-size, 1em);
+  vertical-align: -0.125em;
+}
+
+/*
+ * The span that holds each cell's full sentence: hidden from sight, read by assistive
+ * technology. The class is not namespaced, to match the Phase 1 markup, so the rule is scoped to
+ * the table and never reaches an element of the page outside it.
+ *
+ * It stays an inline box, sized to nothing by font-size: 0. A positioned or inline-block span gets
+ * an accessible object of its own, which broke NVDA's reading of row headers and Orca's Return on
+ * disclosures in Firefox (packages/element/README.md, "Styling").
+ */
+.bcd-table .visually-hidden {
+  font-size: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

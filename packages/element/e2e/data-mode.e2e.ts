@@ -1,5 +1,6 @@
 // The element in data mode, in Chromium, Firefox, and WebKit (issue #198): axe on each state, the
-// fallback rule's computed styles, the keyboard path, and the render time of a large table.
+// fallback rule's computed styles, the keyboard path, and the render time of a large table. The
+// page links the built base stylesheet, which holds the fallback rule (issue #200).
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
@@ -165,9 +166,7 @@ test.describe("fallback content", () => {
     await expectNoViolations(page);
   });
 
-  test("hides a bare text fallback too, and records the space it still takes", async ({
-    page,
-  }, testInfo) => {
+  test("hides a bare text fallback too, and leaves no space for it", async ({ page }, testInfo) => {
     await openFixture(page);
 
     const measured = await page.evaluate(async () => {
@@ -192,8 +191,8 @@ test.describe("fallback content", () => {
     expect(measured.tableVisibility).toBe("visible");
     expect(measured.visibleText).not.toContain("Bare text fallback");
     expect(measured.visibleText).toContain("Supported since Chrome 46");
-    // The hidden text keeps its line box. The element is inline by default, so its own box does
-    // not show that; the block around it does, as the difference between the two heights.
+    // The hidden text keeps its line box, which shows as the difference between the height of a
+    // block around the element and the height of the render container.
     const residual = await page.evaluate(() => {
       const table = document.querySelector("#text-fallback") as HTMLElement;
       const container = table.querySelector(".bcd-render-container") as HTMLElement;
@@ -207,9 +206,8 @@ test.describe("fallback content", () => {
       description: `${residual.toFixed(1)} px of blank space remain for a one-line text fallback`,
     });
     console.log(`[${testInfo.project.name}] residual space of a text fallback: ${residual} px`);
-    expect(residual).toBeGreaterThanOrEqual(0);
-    // One line of text at the default font size, with room for each engine's line height.
-    expect(residual).toBeLessThan(40);
+    // The base stylesheet places the text in a grid row of zero height (issue #200 review).
+    expect(Math.abs(residual)).toBeLessThanOrEqual(0.5);
   });
 });
 

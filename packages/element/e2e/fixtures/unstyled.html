@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data mode fixture with no stylesheet</title>
+    <script type="module" src="./data-mode.ts"></script>
+  </head>
+  <body>
+    <!-- `data-mode.html` with no stylesheet at all: the table as a page that imports only the
+         element gets it. -->
+    <main>
+      <h1>Data mode fixture with no stylesheet</h1>
+      <bcd-compat-table id="table" browsers="chrome opera nodejs">
+        <p>Fallback: the browser compatibility table has not loaded.</p>
+      </bcd-compat-table>
+    </main>
+  </body>
+</html>

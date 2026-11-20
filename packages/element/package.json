@@ -17,6 +17,7 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./base.css": "./dist/base.css",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -43,6 +44,7 @@
     "@mdn/browser-compat-data": "8.1.9",
     "@playwright/test": "1.65.1",
     "@size-limit/preset-small-lib": "14.3.0",
+    "postcss": "8.5.32",
     "size-limit": "14.3.0"
   }
 }

@@ -1,13 +1,15 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import postcss from "postcss";
+import type { AtRule, ChildNode } from "postcss";
 import { build } from "vite";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -21,6 +23,7 @@ describe("package.json", () => {
     expect(manifest.private).toBe(true);
     expect(manifest.exports).toEqual({
       ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+      "./base.css": "./dist/base.css",
       "./package.json": "./package.json",
     });
     expect(manifest.files).toEqual(["dist"]);
@@ -37,24 +40,107 @@ describe("package.json", () => {
 });
 
 describe("a production build", () => {
+  // One build for every test in this block, into a temporary directory.
+  let outDir = "";
+  beforeAll(async () => {
+    outDir = await mkdtemp(join(tmpdir(), "bcd-embed-element-build-"));
+    await build({
+      root: packageRoot,
+      mode: "lib",
+      logLevel: "silent",
+      build: { outDir, emptyOutDir: true },
+    });
+  }, 30_000);
+  afterAll(async () => {
+    await rm(outDir, { recursive: true, force: true });
+  });
+
+  it("emits the element and the base stylesheet, and nothing else", async () => {
+    expect((await readdir(outDir)).toSorted()).toEqual(["base.css", "index.js"]);
+  });
+
   it("leaves no mention of zod in dist/index.js", async () => {
-    const outDir = await mkdtemp(join(tmpdir(), "bcd-embed-element-build-"));
-    try {
-      await build({
-        root: packageRoot,
-        mode: "lib",
-        logLevel: "silent",
-        build: { outDir, emptyOutDir: true },
+    const output = await readFile(join(outDir, "index.js"), "utf8");
+
+    expect(output.length).toBeGreaterThan(0);
+    expect(output.toLowerCase()).not.toContain("zod");
+  });
+
+  // Document 3 section 3, "Cascade layers": the published base.css is one file that declares its
+  // layer first, keeps the @property rules at the top level, and puts every other rule in the
+  // layer bcd-embed.base.
+  describe("dist/base.css", () => {
+    const readBuiltStylesheet = async () =>
+      postcss.parse(await readFile(join(outDir, "base.css"), "utf8"));
+    /** The at-rule's name, such as "layer", or null for a node that is not an at-rule. */
+    const atRuleName = (node: ChildNode): string | null =>
+      node.type === "atrule" ? node.name : null;
+
+    it("starts with the statement @layer bcd-embed.base, before any other rule", async () => {
+      const root = await readBuiltStylesheet();
+      const first = root.nodes.find((node) => node.type !== "comment");
+
+      expect(first?.type).toBe("atrule");
+      expect(first?.type === "atrule" ? `@${first.name} ${first.params}` : "").toBe(
+        "@layer bcd-embed.base",
+      );
+      // A statement, not a block: it has no child nodes.
+      expect(first?.type === "atrule" ? first.nodes : null).toBeUndefined();
+    });
+
+    it("inlines every import", async () => {
+      const root = await readBuiltStylesheet();
+      const imports: string[] = [];
+      root.walkAtRules("import", (rule) => {
+        imports.push(rule.params);
       });
 
-      const output = await readFile(join(outDir, "index.js"), "utf8");
+      expect(imports).toEqual([]);
+    });
 
-      expect(output.length).toBeGreaterThan(0);
-      expect(output.toLowerCase()).not.toContain("zod");
-    } finally {
-      await rm(outDir, { recursive: true, force: true });
-    }
-  }, 30_000);
+    it("keeps every @property rule at the top level, and every other rule inside the layer", async () => {
+      const root = await readBuiltStylesheet();
+      const outside = root.nodes.filter(
+        (node) =>
+          node.type !== "comment" &&
+          atRuleName(node) !== "layer" &&
+          atRuleName(node) !== "property",
+      );
+      const layerBlocks = root.nodes.filter(
+        (node): node is AtRule =>
+          node.type === "atrule" && node.name === "layer" && node.nodes !== undefined,
+      );
+      const nestedProperties: string[] = [];
+      root.walkAtRules("property", (rule) => {
+        if (rule.parent !== root) nestedProperties.push(rule.params);
+      });
+      let layeredRules = 0;
+      for (const block of layerBlocks) {
+        block.walkRules(() => {
+          layeredRules += 1;
+        });
+      }
+
+      expect(outside).toEqual([]);
+      expect(nestedProperties).toEqual([]);
+      expect(root.nodes.filter((node) => atRuleName(node) === "property").length).toBeGreaterThan(
+        0,
+      );
+      expect(layerBlocks.map((block) => block.params)).toEqual(
+        layerBlocks.map(() => "bcd-embed.base"),
+      );
+      expect(layeredRules).toBeGreaterThan(0);
+    });
+
+    it("keeps the values as written, because it is not minified", async () => {
+      const built = await readFile(join(outDir, "base.css"), "utf8");
+
+      expect(built).toContain(
+        "light-dark(var(--bcd-color-supported-light), var(--bcd-color-supported-dark))",
+      );
+      expect(built).toContain("initial-value: #1a7f37;");
+    });
+  });
 });
 
 describe("the type declarations", () => {

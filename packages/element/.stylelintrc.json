@@ -1,0 +1,7 @@
+{
+  "extends": ["../../.stylelintrc.json"],
+  "ignoreFiles": ["dist/**", "dist-screen-reader/**", "node_modules/**", "test-results/**"],
+  "rules": {
+    "plugin/use-baseline": [true, { "available": 2025 }]
+  }
+}
