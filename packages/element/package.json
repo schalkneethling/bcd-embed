@@ -24,6 +24,7 @@
     "build:screen-reader-fixture": "vite build --mode lib && vite build --config vite.screen-reader.config.ts",
     "cem": "cem analyze",
     "test:e2e": "playwright test --config playwright.e2e.config.ts",
+    "test:live": "playwright test --config playwright.live.config.ts",
     "test:nvda": "playwright test --config playwright.nvda.config.ts",
     "test:orca": "playwright test --config playwright.orca.config.ts",
     "test:voiceover": "playwright test --config playwright.voiceover.config.ts",

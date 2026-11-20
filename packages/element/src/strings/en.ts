@@ -114,6 +114,9 @@ export const en = {
 
   // Loading and error states.
   loading: "Loading browser compatibility data for {query}.",
+  // Before any request: a lazy element that has not come near the viewport. Nothing is loading
+  // then, so the sentence does not say that anything is.
+  "not-loaded": "Browser compatibility data for {query} has not loaded yet.",
   error: "Browser compatibility data for {query} could not be loaded.",
   // For an error with no query to name: a value assigned to `data` that is not a payload. The
   // element shows it only when the author gave no fallback content.

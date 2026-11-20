@@ -24,6 +24,7 @@ export type BcdLoadDetail = {
 /** Why the element could not render a table. */
 export type BcdErrorReason =
   | "invalid-query"
+  | "invalid-endpoint"
   | "network"
   | "http"
   | "invalid-payload"
@@ -54,6 +55,23 @@ export interface BcdCompatTableElement extends HTMLElement {
    * data; a change made inside the same object is not seen.
    */
   data: CompatTableData | null;
+  /**
+   * The `query` attribute: the BCD dotted key to request, such as `css.properties.display`, or
+   * `null` when it is absent. The element requests it only while `data` is `null`.
+   */
+  query: string | null;
+  /**
+   * The `endpoint` attribute: the base URL of the API, or `null` for the hosted API,
+   * `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query
+   * string, fragment, or credentials; any other value gives the error `invalid-endpoint`.
+   */
+  endpoint: string | null;
+  /**
+   * The `loading` attribute. `lazy`, the default, holds the first request back until the element
+   * nears the viewport; `eager` requests on connection. A missing or unknown value reads as
+   * `lazy`, and the property does not write the attribute back.
+   */
+  loading: CompatTableLoading;
   /** The `browsers` attribute: space-separated support target ids, or `null` for the default. */
   browsers: string | null;
   /** The `locale` attribute. An unknown locale, and `null`, select English. */

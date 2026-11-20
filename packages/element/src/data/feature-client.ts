@@ -10,6 +10,8 @@
  *   - A 4xx response whose body carries one of the contract's permanent error codes
  *     (`PERMANENT_ERROR_CODES`, from Document 1 §8) stays for the life of the page. The API said
  *     this key or snapshot is wrong, and asking again cannot change that within one page view.
+ *   - A query that fails the key pattern, and an endpoint that is not a base URL, are answered
+ *     at once with `invalid-query` or `invalid-endpoint`. No request is sent and nothing is cached.
  *   - Everything else stays for `FAILURE_WINDOW_MS`: a network failure, a timeout, a 429, a 5xx,
  *     a 4xx without a permanent code (such as Cloudflare's own `400`), and a body that is not a
  *     feature response. A call after the window sends one new request. Nothing retries by timer.
@@ -77,7 +79,12 @@ export const FEATURE_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._$@-]*$/;
 /** The response header that names the snapshot that answered (Document 1 §7). */
 const SNAPSHOT_HEADER = "bcd-embed-snapshot";
 
-export type FeatureErrorReason = "invalid-query" | "network" | "http" | "invalid-payload";
+export type FeatureErrorReason =
+  | "invalid-query"
+  | "invalid-endpoint"
+  | "network"
+  | "http"
+  | "invalid-payload";
 
 export type FeatureSuccess = {
   readonly ok: true;
@@ -100,7 +107,11 @@ export type FeatureResult = FeatureSuccess | FeatureFailure;
 export type FeatureRequest = {
   /** The BCD dotted key, such as `css.properties.display`. */
   readonly query: string;
-  /** The API base URL. A trailing slash is allowed. Defaults to `DEFAULT_ENDPOINT`. */
+  /**
+   * The API base URL: an absolute `https:` or `http:` URL without a query string, a fragment, or
+   * credentials. A trailing slash and a path are allowed. Defaults to `DEFAULT_ENDPOINT`. Any
+   * other value gives `invalid-endpoint` and sends no request.
+   */
   readonly endpoint?: string;
   /** Ends this caller's wait. It does not cancel the shared request. */
   readonly signal?: AbortSignal;
@@ -133,7 +144,38 @@ const trimTrailingSlashes = (value: string): string => {
   return value.slice(0, end);
 };
 
-/** Builds `{endpoint}/v1/current/features/{query}.json`. The caller has validated `query`. */
+/**
+ * Parses `endpoint` as the base URL of an API, or returns `null` when it is not one. A base URL
+ * is an absolute `https:` or `http:` URL (`http:` serves a self-hosted API on a local machine)
+ * with no user name or password, no query string, and no fragment. Without this check an empty
+ * string would become a request relative to the page, and a `?` or `#` would turn the feature path
+ * into a query string or a fragment. The raw text is checked for `?` and `#` as well as the parsed
+ * URL, because the URL parser reports an empty query, as in `https://a.test/?`, as no query at
+ * all. O(n) for an endpoint of n characters.
+ */
+const parseEndpoint = (endpoint: string): URL | null => {
+  if (endpoint.includes("?") || endpoint.includes("#")) return null;
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username !== "" || url.password !== "") return null;
+  return url;
+};
+
+/**
+ * Whether `requestFeature` would accept `endpoint`, so the element can tell that no request will
+ * ever go out and stop waiting for the viewport. O(n) for an endpoint of n characters.
+ */
+export const isValidEndpoint = (endpoint: string): boolean => parseEndpoint(endpoint) !== null;
+
+/**
+ * Builds `{endpoint}/v1/current/features/{query}.json`. The caller has validated `query` and
+ * `endpoint`.
+ */
 export const buildFeatureUrl = (query: string, endpoint: string = DEFAULT_ENDPOINT): string =>
   `${trimTrailingSlashes(endpoint)}/v1/current/features/${query}.json`;
 
@@ -236,7 +278,11 @@ export const createFeatureClient = ({
 
   const requestFeature = ({ query, endpoint, signal }: FeatureRequest): Promise<FeatureResult> => {
     if (!FEATURE_KEY_PATTERN.test(query)) return Promise.resolve(failure("invalid-query"));
-    const url = buildFeatureUrl(query, endpoint);
+    const base = endpoint === undefined ? DEFAULT_ENDPOINT : parseEndpoint(endpoint)?.href;
+    if (base === undefined) return Promise.resolve(failure("invalid-endpoint"));
+    // The parsed URL's `href` is the normalized form, so `https://Example.TEST` and
+    // `https://example.test/` share one cache entry.
+    const url = buildFeatureUrl(query, base);
     return cache.request(url, () => load(url), signal);
   };
 
