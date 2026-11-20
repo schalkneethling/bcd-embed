@@ -292,7 +292,7 @@ site controls. No response from the deployed site has been checked.
 The policy is report-only: a browser reports each violation in its console and
 blocks nothing. The policy is the one Starlight needs, found by the
 [#189 measurement](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md):
-`default-src 'self'` alone reports about 380 violations per page, all inline
+`default-src 'self'` alone reported 380 to 489 violations per view, all inline
 scripts, inline styles and `data:` images. With the policy above, a local run
 of the built site reported no `securitypolicyviolation` event on the home page,
 the page with diagrams, or the search dialog with a query typed, in Chromium
