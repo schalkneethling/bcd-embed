@@ -62,15 +62,15 @@ In data mode, a script assigns a payload obtained at build time:
 </script>
 ```
 
-| Input                  | Kind                   | What it does                                                                                                                                                                                                                                                       |
-| ---------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `data`                 | Property only          | A contract 1.x feature response. Assigning one renders the table. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data. While `data` is set, `query` sends no request.                             |
-| `query`                | Attribute and property | The BCD dotted key to request, such as `css.properties.display`, while `data` is `null`. Changing it requests the new key; removing it removes the table.                                                                                                          |
-| `endpoint`             | Attribute and property | The API's base URL, for a self-hosted API. The default is `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query string, fragment, or credentials; anything else is the error `invalid-endpoint`.                          |
-| `loading`              | Attribute and property | `lazy`, the default, holds the first request back until the element is within 400 pixels of the viewport. `eager` requests as soon as the element is in the document. Any other value, set on the attribute or the property, means `lazy`, as for `<img loading>`. |
-| `browsers`             | Attribute and property | Space-separated support target ids, such as `chrome firefox`. Without it, the table shows `chrome firefox safari nodejs`, less any target the payload does not describe, or every target in the payload when it describes none of those four.                      |
-| `locale`               | Attribute and property | Selects the string table. Only English ships, and an unknown locale selects English.                                                                                                                                                                               |
-| The element's children | Fallback content       | Shown until a table renders, and again after an error or `data = null`. The element never moves or removes them.                                                                                                                                                   |
+| Input                  | Kind                   | What it does                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`                 | Property only          | A contract 1.x feature response. Assigning one renders the table. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data. While `data` is set, `query` sends no request.                                                                                                                                      |
+| `query`                | Attribute and property | The BCD dotted key to request, such as `css.properties.display`, while `data` is `null`. Changing it requests the new key; removing it removes the table.                                                                                                                                                                                                                   |
+| `endpoint`             | Attribute and property | The API's base URL, for a self-hosted API. The default is `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL, on any host, with no query string, fragment, or credentials; anything else is the error `invalid-endpoint`. A browser blocks an `http:` request from an `https:` page as mixed content, which the element reports as `network`. |
+| `loading`              | Attribute and property | `lazy`, the default, holds the first request back until the element is within 400 pixels of the viewport. `eager` requests as soon as the element is in the document. Any other value, set on the attribute or the property, means `lazy`, as for `<img loading>`.                                                                                                          |
+| `browsers`             | Attribute and property | Space-separated support target ids, such as `chrome firefox`. Without it, the table shows `chrome firefox safari nodejs`, less any target the payload does not describe, or every target in the payload when it describes none of those four.                                                                                                                               |
+| `locale`               | Attribute and property | Selects the string table. Only English ships, and an unknown locale selects English.                                                                                                                                                                                                                                                                                        |
+| The element's children | Fallback content       | Shown until a table renders, and again after an error or `data = null`. The element never moves or removes them.                                                                                                                                                                                                                                                            |
 
 The element fires two events. Both are `CustomEvent`s that bubble, so a listener on the element,
 an ancestor, or the document receives them, and neither can be cancelled.
@@ -93,8 +93,14 @@ an ancestor, or the document receives them, and neither can be cancelled.
 Cloudflare 429 that has no CORS header, so the browser hides it and the element reports
 `network`. The element shows its fallback, fires one `bcd-error`, and never retries by itself, so
 fifty tables cannot turn a refusal into a request loop. The page's feature client holds the
-failure for 10 seconds. After that, only a new request for the same feature asks again, such as a
-changed `query` or a new element; a page that offers a retry button sets `query` again.
+failure for 10 seconds.
+
+**What retries.** Assigning the value `query` already has is no change, so it does nothing. A
+page that offers a retry button must change the input: remove `query` (or set it to `null`), let
+the element update, then set it back, or add a new element with the same `query`. Either asks the
+feature client again. Inside the 10-second window the client answers with the held failure and
+sends nothing, so the element fires `bcd-error` again with no request. After the window it sends
+one new request. Nothing retries on a timer.
 
 **Requests.** All elements on a page share one feature client, so fifty elements with the same
 `query` send one request. A new `query` or `endpoint` while a request is pending starts the new
@@ -104,6 +110,13 @@ observer is disconnected. Adding the element back asks again, and the shared req
 without a second request when it is still in flight or succeeded. `data` wins over `query`:
 setting `data` drops a pending request, and setting it back to `null` shows the fetched table
 again.
+
+**Restoring an input.** The element remembers its latest successful answer. Restoring the `query`
+and `endpoint` it answered, after `query` was removed or after `data` was set and cleared, shows
+that table again in the same update, with no pending state, no `aria-busy`, and no request. That
+update changed the input, so it fires one `bcd-load`, as any update that renders a newly assigned
+input does. A failure is not remembered, so restoring after a failure asks the feature client
+again, as described under "What retries".
 
 A change to `browsers` or `locale` renders the table again without a second `bcd-load`. The one
 exception is a change that turns a rendered payload into a rejected one, or back: the model checks
@@ -118,21 +131,33 @@ it is in, when it is connected again, so a listener on the document misses nothi
 of its own and the fallback is the message. When it has none, it renders one sentence in its
 container, so it is never empty:
 
-| State                                                   | Markup (message id)                                                                              |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Fetch mode, waiting for the viewport or loading         | `<p class="bcd-loading">Loading browser compatibility data for {query}.</p>` (`loading`)         |
-| Fetch mode, error                                       | `<p class="bcd-error">Browser compatibility data for {query} could not be loaded.</p>` (`error`) |
-| Data mode, error, or a fetch error for an empty `query` | `<p class="bcd-error">Browser compatibility data could not be shown.</p>` (`error-no-query`)     |
+| State                                                          | Markup (message id)                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Fetch mode, lazy and waiting for the viewport (no request yet) | `<p class="bcd-loading">Browser compatibility data for {query} has not loaded yet.</p>` (`not-loaded`) |
+| Fetch mode, request in flight                                  | `<p class="bcd-loading">Loading browser compatibility data for {query}.</p>` (`loading`)               |
+| Fetch mode, error                                              | `<p class="bcd-error">Browser compatibility data for {query} could not be loaded.</p>` (`error`)       |
+| Data mode, error, or a fetch error for an empty `query`        | `<p class="bcd-error">Browser compatibility data could not be shown.</p>` (`error-no-query`)           |
 
-The owner decided the data-mode sentence on 20 November 2026. #203 chose the two fetch-mode
-sentences, because in fetch mode the query is always known. Fallback content is an element child,
+The owner decided the data-mode sentence on 20 November 2026. #203 chose the three fetch-mode
+sentences, because in fetch mode the query is always known. The waiting sentence does not say
+that anything is loading, because nothing has been requested and the wait may never end (see
+"Limits of lazy loading"). Fallback content is an element child,
 or text that is not only white space, and the element checks again whenever its children change.
 
 While a request is in flight the element carries `aria-busy="true"`, and it removes the attribute
 when the answer arrives. A lazy element that is still waiting for the viewport has no `aria-busy`,
-because that wait may never end. No state uses a live region and the element never moves focus,
+because that wait may never end. The element removes only the attribute it set: an author's own
+`aria-busy`, set before the request, is neither overwritten nor removed. No state uses a live region and the element never moves focus,
 so a page with ten tables produces no announcement while they load; a page reacts through the
 events instead.
+
+**Limits of lazy loading.** The element waits for an `IntersectionObserver`, which reports only
+on an element that has a box. A host styled `display: none` or `display: contents` never meets
+the viewport, so a lazy element there sends no request, fires no event, and keeps the waiting
+sentence or its fallback. Use `loading="eager"` for such a host. The 400-pixel margin applies to
+the viewport, not to a scrolling ancestor: inside an `overflow: auto` or `overflow: scroll` box
+the element is clipped by that box, so the request starts only when the element scrolls into
+view within it. In a cross-origin iframe the browser ignores the margin altogether.
 
 The table below gives what each screen reader is expected to say when a reader moves onto a
 loading element that has no fallback content. **None of it is verified yet**: the CI walks in
@@ -332,8 +357,9 @@ one entry per distinct URL and never evicts a success. The default clock is `per
 which a change to the system time cannot move.
 
 The client checks `endpoint` before it builds a URL. An endpoint must be an absolute `https:` or
-`http:` URL (`http:` serves a self-hosted API on a local machine) with no credentials, query
-string, or fragment. Anything else gives `invalid-endpoint`, with no request and no cache entry.
+`http:` URL, on any host, with no credentials, query string, or fragment. `http:` exists for a
+self-hosted API, typically on a local machine during development; a browser blocks an `http:`
+request from an `https:` page as mixed content, and the element then reports `network`. Anything else gives `invalid-endpoint`, with no request and no cache entry.
 Without the check an empty string would become a request relative to the page, and a `?` or `#`
 would turn the feature path into a query string or a fragment. The raw text is checked for `?`
 and `#`, because the URL parser reports `https://a.test/?` as having no query. A valid endpoint is
@@ -361,7 +387,7 @@ none of those files imports from `lit`.
 The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
 element, the table model, and the note tokenizer measured 6.43 kB with Brotli, without Lit, so the
 limit became 7 kB. Fetch mode (#203) brings the feature client and the request cache into the
-bundle for the first time, and the total is now 8.07 kB, so the limit is 8.5 kB. Measured on their
+bundle for the first time, and the total is now 8.26 kB (8.07 kB before the review fixes), so the limit is 8.5 kB. Measured on their
 own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
 growth, and the element's fetch logic for the rest. The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
