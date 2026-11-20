@@ -9,6 +9,7 @@ import type {
   BcdLoadDetail,
   CompatTableData,
 } from "./public-types.js";
+import { renderErrorMessage } from "./render/error.js";
 import { renderTable } from "./render/table.js";
 import { selectStrings } from "./strings/format.js";
 import type { StringTable } from "./strings/format.js";
@@ -22,9 +23,11 @@ import type { StringTable } from "./strings/format.js";
  *
  * 1. `willUpdate` builds the table model from `data`, `browsers`, and `locale`. A
  *    `TablePayloadError` from the model becomes the error state.
- * 2. `render` maps the model to markup inside the render container, or renders nothing.
+ * 2. `render` maps the model to markup inside the render container. In the error state it
+ *    renders one sentence when the author gave no fallback content, and otherwise nothing.
  * 3. `updated` sets or removes the `loaded` attribute, then dispatches `bcd-load` or `bcd-error`,
- *    so a listener always finds the table already in the document.
+ *    so a listener always finds the table already in the document. While the element is out of
+ *    the document the event waits, and `connectedCallback` dispatches it.
  *
  * Cost of one update: the model is O(F × T + S + C) in time and space (`model/table-model.ts`)
  * and the markup is O(F × T + L + E + C) (`render/table.ts`), for F features, T displayed targets,
@@ -84,6 +87,10 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   // section 3).
   readonly #containerGuard = new MutationObserver(() => {
     this.#guardContainer();
+    // The error sentence shows only while the author has no fallback content, so a child that
+    // arrives or leaves during the error state calls for another render. Rendering changes the
+    // container's children, not this element's, so it does not call the observer again.
+    if (this.#outcome.status === "error") this.requestUpdate();
   });
 
   constructor() {
@@ -121,6 +128,9 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
     // observer was not watching.
     this.#guardContainer();
     this.#containerGuard.observe(this, { childList: true });
+    // An update that finished while the element was out of the document held its event back.
+    // When an update is still pending instead, `updated` dispatches, now that it is connected.
+    if (this.hasUpdated && !this.isUpdatePending) this.#dispatchPendingEvent();
   }
 
   override disconnectedCallback(): void {
@@ -156,10 +166,27 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
   protected override willUpdate(changed: PropertyValues<this>): void {
     const previous = this.#outcome.status;
     this.#outcome = this.#buildOutcome();
-    // One event for each assigned payload, and one when `browsers` or `locale` turns a rendered
-    // payload into a rejected one or back. A change that leaves a table rendered re-renders it
-    // without a second `bcd-load`.
-    this.#announce = changed.has("data") || this.#outcome.status !== previous;
+    // One event for each update in which `data` changed, and one when `browsers` or `locale`
+    // turns a rendered payload into a rejected one or back. Lit batches the assignments made in
+    // one task into one update, so two payloads assigned one after the other render the second
+    // and fire one event. Assigning the object that is already assigned changes nothing, so Lit
+    // runs no update and nothing fires. A change that leaves a table rendered re-renders it
+    // without a second `bcd-load`. An event that is still waiting for the element to be
+    // connected stays due.
+    this.#announce ||= changed.has("data") || this.#outcome.status !== previous;
+  }
+
+  /**
+   * Whether the author gave fallback content: an element other than the render container, or
+   * text that is not only white space. Comments and the line breaks between tags do not count.
+   * O(n) for the element's n child nodes.
+   */
+  #hasFallbackContent(): boolean {
+    for (const child of this.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE && child !== this.renderRoot) return true;
+      if (child.nodeType === Node.TEXT_NODE && child.nodeValue?.trim()) return true;
+    }
+    return false;
   }
 
   #buildOutcome(): Outcome {
@@ -181,16 +208,32 @@ export class BcdCompatTable extends LitElement implements BcdCompatTableElement 
 
   protected override render(): TemplateResult | typeof nothing {
     const outcome = this.#outcome;
-    return outcome.status === "loaded"
-      ? renderTable(outcome.model, outcome.strings, this.#captionId)
+    if (outcome.status === "loaded") {
+      return renderTable(outcome.model, outcome.strings, this.#captionId);
+    }
+    // After an error the author's fallback is the message. Without one the element would be
+    // empty, for assistive technology too, so it says that the data could not be shown.
+    return outcome.status === "error" && !this.#hasFallbackContent()
+      ? renderErrorMessage(selectStrings(this.locale))
       : nothing;
   }
 
   protected override updated(): void {
-    const { status } = this.#outcome;
-    this.toggleAttribute(LOADED_ATTRIBUTE, status === "loaded");
-    if (!this.#announce) return;
+    this.toggleAttribute(LOADED_ATTRIBUTE, this.#outcome.status === "loaded");
+    this.#dispatchPendingEvent();
+  }
+
+  /**
+   * Dispatches the event that the latest update owes, once, and only while the element is in a
+   * document. The events bubble so that one listener on the document hears every table, and an
+   * event dispatched on a detached element would never reach it. The event reports the state at
+   * the moment it fires: a payload assigned and then replaced while the element was detached
+   * gives one event, for the payload that is rendered.
+   */
+  #dispatchPendingEvent(): void {
+    if (!this.#announce || !this.isConnected) return;
     this.#announce = false;
+    const { status } = this.#outcome;
     if (status === "loaded") {
       const detail: BcdLoadDetail = { mode: "data", snapshot: null };
       this.dispatchEvent(new CustomEvent("bcd-load", { bubbles: true, detail }));

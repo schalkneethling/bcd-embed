@@ -319,6 +319,7 @@ this first inventory. The message ids are proposals.
 | `note`                      | Note: {text}                                                               |
 | `loading`                   | Loading browser compatibility data for {query}.                            |
 | `error`                     | Browser compatibility data for {query} could not be loaded.                |
+| `error-no-query`            | Browser compatibility data could not be shown.                             |
 
 The inventory is complete for the cases Document 3 describes. The Phase 1 fixture has no mobile or
 XR (extended reality) target, no runtime flag, no full-support preview, and no `versionLast` value, so
@@ -331,7 +332,9 @@ runtimes, so `flag-runtime` names the support target. BCD's `value_to_set` is op
 none), and the literal `version_added: "preview"` names no version, so `supported-preview-unversioned`
 and `partial-preview-unversioned` cover it. The same issue added the
 `platform-other` group for a support target whose `type` the component does not know, and the
-`loading` and `error` sentences. The table in `packages/element/src/strings/en.ts` holds exactly these
+`loading` and `error` sentences. Issue #198 added `error-no-query`, which the owner decided on
+20 November 2026: the element shows it after a data-mode error when the author gave no fallback
+content, because a value that is not a payload may have no query to name. The table in `packages/element/src/strings/en.ts` holds exactly these
 ids, and a test fails when the two differ.
 
 The table model (Issue #196) added the rest, chosen from the statement combinations that occur in

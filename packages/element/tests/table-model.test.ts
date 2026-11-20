@@ -358,6 +358,19 @@ describe("the payload guard", () => {
     expect(() => buildTableModel(single)).not.toThrow();
   });
 
+  it("rejects a feature key that an earlier feature already has", () => {
+    const payload = copy(v1NormalizedFixture);
+    payload.features.push(copy(payload.features[0]!));
+    rejects(payload, "invalid-feature");
+    expect(() => buildTableModel(payload)).toThrow(/features\[14\]\.key/);
+
+    // Keys that differ only by a suffix are different keys.
+    const distinct = copy(v1NormalizedFixture);
+    Object.assign(distinct.features[0]!, { key: "a", name: "a" });
+    Object.assign(distinct.features[1]!, { key: "a 1", name: "a 1" });
+    expect(() => buildTableModel(distinct)).not.toThrow();
+  });
+
   it("rejects a depth that skips a level, because its parent is not on the stack", () => {
     const payload = copy(v1NormalizedFixture) as unknown as { features: { depth: number }[] };
     payload.features[1]!.depth = 2;

@@ -21,8 +21,7 @@ import { renderCompactStatus } from "./status.js";
  *
  * - Time is O(F × T + L + E + C), where C is the number of characters in the rendered text. Each
  *   row, cell, history line, and note segment is visited once, and each history line's message is
- *   split into parts once, in time proportional to its length. Giving each row a key adds one
- *   set lookup for each row, which is O(F) time and space.
+ *   split into parts once, in time proportional to its length.
  * - The number of elements is at most 9 + 3T + 4F + 7 × F × T + 3L + E. The header takes 9 + 3T: the
  *   scroll region, the table, the caption, the feature column's `<colgroup>`, the `<thead>`, its
  *   two rows, the feature header, and the `<tbody>`, then at most one `<colgroup>`, one group
@@ -100,22 +99,11 @@ const renderHistoryItem = (strings: StringTable, item: HistoryItem): TemplateRes
   return html`<li>${content}</li>`;
 };
 
-/**
- * Rows are keyed by their feature key, and a row's cells by their target. Lit then keeps a row's
- * elements with the same feature when the table renders again, so a disclosure a reader opened
- * stays with its own cell when `browsers` adds a column, and never ends up open on another cell.
- * Lit's `repeat` needs keys that are unique, and a malformed payload can repeat a feature key, so
- * a repeated key gets its row's position added. Targets are already unique, because the model
- * drops a repeated target. O(F) time and space for F rows.
- */
-const rowKeys = (rows: readonly TableRow[]): string[] => {
-  const seen = new Set<string>();
-  return rows.map((row, index) => {
-    const key = seen.has(row.key) ? `${row.key} ${index}` : row.key;
-    seen.add(key);
-    return key;
-  });
-};
+// Rows are keyed by their feature key, and a row's cells by their target. Lit then keeps a row's
+// elements with the same feature when the table renders again, so a disclosure a reader opened
+// stays with its own cell when `browsers` adds a column, and never ends up open on another cell.
+// Lit's `repeat` needs keys that are unique. The model rejects a payload that repeats a feature
+// key, and it drops a repeated target, so both sets of keys are.
 
 /**
  * Renders one cell. A cell with a disclosure is a native `<details>` whose `<summary>` holds the
@@ -162,7 +150,6 @@ export const renderTable = (
   strings: StringTable,
   captionId: string,
 ): TemplateResult => {
-  const keys = rowKeys(model.rows);
   // prettier-ignore
   return html`<div class=${CLASS_NAMES.scroller} role="region" aria-labelledby=${captionId} tabindex="0"><table class=${CLASS_NAMES.table}><caption id=${captionId}>${model.caption.text}</caption><colgroup></colgroup>${
     model.groups.map((group) => html`<colgroup span=${spanOf(group.columns.length)}></colgroup>`)
@@ -176,7 +163,7 @@ export const renderTable = (
   }</tr></thead><tbody>${
     repeat(
       model.rows,
-      (_row, index) => keys[index],
+      (row) => row.key,
       (row) => renderRow(strings, row),
     )
   }</tbody></table></div>`;

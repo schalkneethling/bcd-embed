@@ -411,20 +411,18 @@ describe("re-rendering", () => {
     ]);
   });
 
-  it("renders every row of a payload that repeats a feature key", async () => {
+  it("rejects a payload that repeats a feature key, because each row is keyed by it", async () => {
     const payload = copy(v1NormalizedFixture);
     const first = payload.features[0];
     if (first === undefined) throw new Error("The fixture has no features");
-    payload.features = [first, copy(first), copy(first), ...payload.features.slice(1)];
+    payload.features = [first, copy(first), ...payload.features.slice(1)];
+    const events = recordEvents();
 
     const element = await mountPhase1({ data: payload });
-    element.setAttribute("browsers", "chrome");
-    await element.updateComplete;
 
-    expect(element.querySelectorAll("tbody tr")).toHaveLength(16);
-    expect(
-      [...element.querySelectorAll("tbody tr th code")].slice(0, 4).map((name) => name.textContent),
-    ).toEqual(["fit-content", "fit-content", "fit-content", "abort"]);
+    expect(events.errors).toHaveLength(1);
+    expect(element.querySelector("table")).toBeNull();
+    events.stop();
   });
 });
 
@@ -623,6 +621,186 @@ describe("events", () => {
     expect(events.loads).toHaveLength(1);
     expect(element.querySelector("table")).not.toBeNull();
     events.stop();
+  });
+});
+
+describe("when events fire", () => {
+  it("fires one bcd-load for data assigned before the element is defined", async () => {
+    // The page's `bcd-compat-table` is already defined by the import above, so this test takes
+    // the same class through a real upgrade under a tag name that is not defined yet.
+    const tagName = "bcd-compat-table-defined-late";
+    const element = document.createElement(tagName) as BcdCompatTable;
+    element.setAttribute("browsers", PHASE1_BROWSERS);
+    // Not upgraded yet, so this is an ordinary own property on a plain element.
+    element.data = v1NormalizedFixture;
+    document.body.append(element);
+    expect(Object.hasOwn(element, "data")).toBe(true);
+    expect(element.querySelector("table")).toBeNull();
+    const events = recordEvents();
+
+    customElements.define(tagName, class extends BcdCompatTable {});
+    await element.updateComplete;
+
+    expect(element).toBeInstanceOf(BcdCompatTable);
+    // The upgrade moved the value from the own property to the class's accessor.
+    expect(Object.hasOwn(element, "data")).toBe(false);
+    expect(element.data).toBe(v1NormalizedFixture);
+    expect(events.loads).toEqual([{ mode: "data", snapshot: null }]);
+    expect(events.errors).toEqual([]);
+    expect(element.querySelectorAll("tbody tr")).toHaveLength(14);
+    expect(element.hasAttribute(LOADED_ATTRIBUTE)).toBe(true);
+    events.stop();
+  });
+
+  it("holds an event back while the element is out of the document, and fires it on return", async () => {
+    const element = await mountPhase1();
+    const events = recordEvents();
+    const onElement: string[] = [];
+    element.addEventListener("bcd-load", (event) => onElement.push(event.type));
+
+    element.remove();
+    element.data = copy(v1NormalizedFixture);
+    await element.updateComplete;
+
+    // The table is rendered, but no listener on the document could hear an event now.
+    expect(element.querySelectorAll("tbody tr")).toHaveLength(14);
+    expect(onElement).toEqual([]);
+    expect(events.loads).toEqual([]);
+
+    document.body.append(element);
+
+    expect(events.loads).toEqual([{ mode: "data", snapshot: null }]);
+    expect(onElement).toEqual(["bcd-load"]);
+
+    // Nothing is owed any more, so a second return fires nothing.
+    element.remove();
+    document.body.append(element);
+    await element.updateComplete;
+    expect(events.loads).toHaveLength(1);
+    events.stop();
+  });
+
+  it("fires one event, for the final state, after several changes made out of the document", async () => {
+    const element = await mountPhase1();
+    const events = recordEvents();
+
+    element.remove();
+    element.data = copy(v1NormalizedFixture);
+    await element.updateComplete;
+    element.setAttribute("browsers", "chrome");
+    await element.updateComplete;
+    element.data = { nonsense: true } as unknown as FeatureResponse;
+    await element.updateComplete;
+    document.body.append(element);
+
+    expect(events.loads).toEqual([]);
+    expect(events.errors).toHaveLength(1);
+
+    element.remove();
+    element.data = null;
+    await element.updateComplete;
+    document.body.append(element);
+
+    // The element is empty again, and an empty element announces nothing.
+    expect(events.loads).toEqual([]);
+    expect(events.errors).toHaveLength(1);
+    events.stop();
+  });
+
+  it("fires one event for two payloads assigned one after the other, and none for the same object", async () => {
+    const element = await mountPhase1();
+    const events = recordEvents();
+    const second = copy(v1NormalizedFixture);
+    second.query = "fixture.second";
+
+    // Lit batches both assignments into one update, which renders the second payload.
+    element.data = copy(v1NormalizedFixture);
+    element.data = second;
+    await element.updateComplete;
+
+    expect(events.loads).toHaveLength(1);
+    expect(element.querySelector("caption")?.textContent).toContain("fixture.second");
+
+    // The same object again is no change, so no update runs.
+    element.data = second;
+    await element.updateComplete;
+
+    expect(events.loads).toHaveLength(1);
+    events.stop();
+  });
+});
+
+describe("the error sentence", () => {
+  const invalid = { contract: "nope" } as unknown as FeatureResponse;
+  const sentence = "Browser compatibility data could not be shown.";
+  const errorParagraphs = (element: Element): string[] =>
+    [...element.querySelectorAll(`.${RENDER_CONTAINER_CLASS} > p.bcd-error`)].map(
+      (paragraph) => paragraph.textContent ?? "",
+    );
+
+  it("shows when the payload is invalid and the author gave no fallback content", async () => {
+    const element = await mount({ data: invalid });
+
+    expect(errorParagraphs(element)).toEqual([sentence]);
+    expect(collapse(element.innerText)).toBe(sentence);
+    expect(element.hasAttribute(LOADED_ATTRIBUTE)).toBe(false);
+  });
+
+  it("shows when the only children are white space and a comment", async () => {
+    const element = await mount({ data: invalid, fallback: document.createComment("none") });
+    element.prepend("\n  ");
+    await element.updateComplete;
+
+    expect(errorParagraphs(element)).toEqual([sentence]);
+  });
+
+  it.for([
+    ["an element", () => document.createElement("p")],
+    ["bare text", () => document.createTextNode("Not available")],
+  ] as const)("does not show when the fallback is %s", async ([, create]) => {
+    const element = await mount({ data: invalid, fallback: create() });
+
+    expect(errorParagraphs(element)).toEqual([]);
+    expect(element.querySelector(`.${RENDER_CONTAINER_CLASS}`)?.childElementCount).toBe(0);
+  });
+
+  it("goes when fallback content arrives, and comes back when it leaves", async () => {
+    const element = await mount({ data: invalid });
+    const events = recordEvents();
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "Fallback";
+
+    // A framework, or the parser of an element defined early, adds children after the error.
+    element.append(paragraph);
+    await Promise.resolve();
+    await element.updateComplete;
+    expect(errorParagraphs(element)).toEqual([]);
+
+    paragraph.remove();
+    await Promise.resolve();
+    await element.updateComplete;
+    expect(errorParagraphs(element)).toEqual([sentence]);
+    // The state did not change, so neither re-render announced anything.
+    expect(events.errors).toEqual([]);
+    events.stop();
+  });
+
+  it("goes when a valid payload renders or data becomes null", async () => {
+    const element = await mount({ data: invalid, browsers: PHASE1_BROWSERS });
+
+    element.data = v1NormalizedFixture;
+    await element.updateComplete;
+    expect(errorParagraphs(element)).toEqual([]);
+    expect(element.querySelectorAll("tbody tr")).toHaveLength(14);
+
+    element.data = invalid;
+    await element.updateComplete;
+    expect(errorParagraphs(element)).toEqual([sentence]);
+
+    element.data = null;
+    await element.updateComplete;
+    expect(errorParagraphs(element)).toEqual([]);
+    expect(element.querySelector(`.${RENDER_CONTAINER_CLASS}`)?.childElementCount).toBe(0);
   });
 });
 

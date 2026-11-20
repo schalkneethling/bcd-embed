@@ -146,6 +146,25 @@ test.describe("fallback content", () => {
     await expectNoViolations(page);
   });
 
+  test("is replaced by the element's own sentence when the author gave none", async ({ page }) => {
+    await openFixture(page);
+
+    await page.evaluate(async () => {
+      const table = document.createElement("bcd-compat-table");
+      table.id = "no-fallback";
+      document.querySelector("main")?.append(table);
+      table.data = { contract: "1.1.0" } as unknown as typeof table.data;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await expect(page.locator("#no-fallback p.bcd-error")).toHaveText(
+      "Browser compatibility data could not be shown.",
+    );
+    await expect(page.locator("#no-fallback p.bcd-error")).toBeVisible();
+    await expect(page.locator("#no-fallback")).not.toHaveAttribute("loaded");
+    await expectNoViolations(page);
+  });
+
   test("hides a bare text fallback too, and records the space it still takes", async ({
     page,
   }, testInfo) => {
