@@ -56,19 +56,31 @@ and attribute bindings and nothing in a note ever becomes markup:
 These are the only tags BCD 8.1.9 uses. A test reads every note in the installed BCD and fails when
 a release adds another tag, which is the signal to extend the tokenizer. Everything else comes out
 as literal text: other tags, tags with other attributes, tags left open, and links whose decoded
-address does not start with `http://` or `https://` and a host, which rules out `javascript:`,
-relative, and protocol-relative links.
+address does not start with `https://` and a host, which rules out `http:`, `javascript:`,
+relative, and protocol-relative links. Every link in BCD 8.1.9 uses `https:`, so a test that
+expects every link to be kept fails when a release adds another scheme. Empty code and emphasis
+produce no segment, and a link whose content has no visible text gets its address as its text, so
+it always has an accessible name.
 
 Entities decode once, from a closed list: `&lt;`, `&gt;`, `&amp;`, `&quot;`, and decimal or
 hexadecimal numeric entities. So `&amp;lt;` reads `&lt;`, and `&lt;code&gt;` is text, not a tag.
 Unknown entities, and numeric ones for control characters, surrogates, noncharacters, or code
-points past U+10FFFF, stay literal.
+points past U+10FFFF, stay literal. An entity that stays literal inside a kept address is safe,
+because a Lit attribute binding sets the value as-is and never decodes it.
 
-The scanner reads each character once and never steps back, so it takes O(n) time and space for a
-note of n characters. `parseNoteWithSteps` returns the number of characters it read, and a test
-checks that a 100,000-character note, and a set of adversarial ones, take at most 2n reads. A test
-also checks that the package source never uses an HTML string sink such as `innerHTML` or
-`unsafeHTML`.
+The scanner consumes each character once and never steps back. A failed tag or entity attempt
+reads at most one character it does not consume, and each attempt starts at a consumed `<` or `&`,
+so a note of n characters takes at most 2n reads: O(n) time and space. `parseNoteWithSteps`
+returns the number of reads, and a test checks that a 100,000-character note, and a set of
+adversarial ones, take at most 2n. That count only sees reads through the scanner's reader, so a
+second test checks the source: the tokenizer touches the note only through that reader, `slice`,
+and `length`, never through a search such as `indexOf` or a regular expression. A third test checks
+that the package source never uses an HTML string sink such as `innerHTML` or `unsafeHTML`.
+
+A note can contain bidirectional control characters, written directly or as numeric entities,
+which can reorder the text around them. The tokenizer leaves them alone. The renderer (#198)
+should isolate each note's text, with `unicode-bidi: isolate` or a `<bdi>` element, so a note
+cannot reorder the text next to it.
 
 ## Build and tests
 
