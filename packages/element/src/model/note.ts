@@ -18,18 +18,25 @@
  * - `<` starts a tag only when the exact spelling of a tag allowed at that point follows it. Inside
  *   code or emphasis, only the matching closing tag is allowed. Inside a link, code, emphasis, and
  *   `</a>` are allowed. Any other `<` is literal text.
- * - A link opens only when its address starts with `http://` or `https://` and a host, after its
- *   entities are decoded. Otherwise the whole tag is literal text, and so is its closing tag.
+ * - A link opens only when its address starts with `https://` and a host, after its entities are
+ *   decoded. Otherwise the whole tag is literal text, and so is its closing tag. An entity the
+ *   tokenizer cannot decode stays literal inside a kept address, which is safe because a Lit
+ *   attribute binding sets the value as-is and never decodes entities.
  * - An element still open at the end of the note is not an element: its opening tag becomes
  *   literal text, and its content joins the enclosing content unchanged.
  *
  * When a tag or entity turns out not to match, the characters already read are literal text and
- * the scanner continues from the character that did not match. It never steps back. Each
- * character is therefore consumed once, and each tag or entity attempt reads at most one
- * character that it does not consume, which the next step reads again. For a note of n
- * characters, that is at most 2n reads: O(n) time. The output, the stack of open elements (at most
- * three deep: the note, a link, and code or emphasis inside it), and the text buffers are O(n)
- * space.
+ * the scanner continues from the character that did not match. It never steps back, so each
+ * character is consumed exactly once. A read that does not consume its character is the one
+ * that ends an attempt, and each attempt makes at most one. A character can be read more than
+ * twice when attempts nest: in `<a href="&<`, the entity attempt reads the second `<` and stops,
+ * the address attempt reads it and stops, and the main loop reads it a third time and consumes
+ * it. The bound still holds because every attempt starts at a `<` or `&` that was consumed, so
+ * there are at most as many non-consuming reads as consumed characters. For a note of n
+ * characters, that is at most 2n reads: O(n) time. Every access to the note goes through the
+ * counted reader, except `slice`, which copies ranges already read and never searches; a test
+ * checks the source for that. The output, the stack of open elements (at most three deep: the
+ * note, a link, and code or emphasis inside it), and the text buffers are O(n) space.
  */
 
 /** Plain text. A renderer writes it as a text node. */
@@ -45,9 +52,9 @@ export type NoteEmphasis = { readonly kind: "emphasis"; readonly text: string };
 export type NoteInline = NoteText | NoteCode | NoteEmphasis;
 
 /**
- * A link from an `<a href>` element. `href` is decoded and starts with `http://` or `https://`.
- * `children` is never empty: a link with no content gets its address as its text, so it always
- * has an accessible name.
+ * A link from an `<a href>` element. `href` is decoded and starts with `https://`. A link whose
+ * content has no visible text gets its address as its only child, so it always has an accessible
+ * name.
  */
 export type NoteLink = {
   readonly kind: "link";
@@ -138,7 +145,7 @@ const isAddressCharacter = (code: number): boolean =>
   code !== 0x5c &&
   code !== 0x60;
 
-const isLinkAddress = (href: string): boolean => /^https?:\/\/[a-z0-9]/i.test(href);
+const isLinkAddress = (href: string): boolean => /^https:\/\/[a-z0-9]/i.test(href);
 
 // The value of a decimal or hexadecimal digit, or -1 for any other character.
 const digitValue = (code: number, hexadecimal: boolean): number => {
@@ -267,7 +274,7 @@ export const parseNoteWithSteps = (note: string): { segments: NoteSegment[]; ste
         continue;
       }
       if (!isAddressCharacter(code)) break;
-      value += note[index];
+      value += String.fromCharCode(code);
       index += 1;
     }
     return { end: index, value, complete: false };
@@ -279,16 +286,21 @@ export const parseNoteWithSteps = (note: string): { segments: NoteSegment[]; ste
     if (frame.kind === "link") {
       // A link cannot open inside a link, so a link's children are text, code, and emphasis only.
       const children = frame.children as NoteInline[];
+      // Content with no visible text, such as `<code></code>` or spaces, would leave the link
+      // without an accessible name, so the address becomes its text.
+      const hasVisibleText = children.some((child) => child.text.trim() !== "");
       parent.push({
         kind: "link",
         href: frame.href,
-        children: children.length > 0 ? children : [{ kind: "text", text: frame.href }],
+        children: hasVisibleText ? children : [{ kind: "text", text: frame.href }],
       });
       return;
     }
-    // Code and emphasis allow no tags inside, so their content is one text segment or none.
+    // Code and emphasis allow no tags inside, so their content is one text segment or none. An
+    // empty element shows nothing, so it produces no segment.
     const first = frame.children[0];
     const text = first?.kind === "text" ? first.text : "";
+    if (text === "") return;
     parent.push(frame.kind === "code" ? { kind: "code", text } : { kind: "emphasis", text });
   };
 

@@ -64,10 +64,34 @@ describe("parseNote with the markup BCD uses", () => {
     expect(parseNote("")).toEqual([]);
   });
 
-  it("gives a link with no content its address as its text, so it always has a name", () => {
-    expect(parseNote('<a href="https://example.com/"></a>')).toEqual([
-      { kind: "link", href: "https://example.com/", children: [text("https://example.com/")] },
+  it("gives a link with no visible text its address as its text, so it always has a name", () => {
+    const notes = [
+      '<a href="https://example.com/"></a>',
+      '<a href="https://example.com/"><code></code></a>',
+      '<a href="https://example.com/"><em></em></a>',
+      '<a href="https://example.com/">  </a>',
+      '<a href="https://example.com/"> <code></code>\t</a>',
+    ];
+    for (const note of notes) {
+      expect(parseNote(note), note).toEqual([
+        { kind: "link", href: "https://example.com/", children: [text("https://example.com/")] },
+      ]);
+    }
+  });
+
+  it("keeps a link's whitespace when the link also has visible text", () => {
+    expect(parseNote('<a href="https://example.com/"> <code>x</code> </a>')).toEqual([
+      {
+        kind: "link",
+        href: "https://example.com/",
+        children: [text(" "), { kind: "code", text: "x" }, text(" ")],
+      },
     ]);
+  });
+
+  it("drops empty code and emphasis, and joins the text around them", () => {
+    expect(parseNote("a<code></code>b<em></em>c")).toEqual([text("abc")]);
+    expect(parseNote("<code></code>")).toEqual([]);
   });
 });
 
@@ -158,7 +182,7 @@ describe("parseNote with hostile or broken markup", () => {
     }
   });
 
-  it("drops links that use any scheme other than http and https", () => {
+  it("drops links that use any scheme other than https", () => {
     const notes = [
       '<a href="JavaScript:alert(1)">x</a>',
       '<a href="data:text/html,hi">x</a>',
@@ -166,6 +190,8 @@ describe("parseNote with hostile or broken markup", () => {
       '<a href="file:///etc/passwd">x</a>',
       '<a href="mailto:a@example.com">x</a>',
       '<a href="ftp://example.com/">x</a>',
+      '<a href="http://example.com/">x</a>',
+      '<a href="HTTP://example.com/">x</a>',
       '<a href="https:example.com">x</a>',
       '<a href="https://">x</a>',
     ];
@@ -217,6 +243,28 @@ describe("parseNote with hostile or broken markup", () => {
     ]);
     expect(parseNote('<a href="https://example.com/&quot;onmouseover=&quot;x">x</a>')).toEqual([
       text('<a href="https://example.com/"onmouseover="x">x</a>'),
+    ]);
+  });
+
+  it("drops a link whose address contains a single quote or a backtick, written or encoded", () => {
+    const notes = [
+      '<a href="https://example.com/\'x">x</a>',
+      '<a href="https://example.com/`x">x</a>',
+    ];
+    for (const note of notes) {
+      expect(parseNote(note), note).toEqual([text(note)]);
+    }
+    expect(parseNote('<a href="https://example.com/&#39;x">x</a>')).toEqual([
+      text('<a href="https://example.com/\'x">x</a>'),
+    ]);
+    expect(parseNote('<a href="https://example.com/&#x60;x">x</a>')).toEqual([
+      text('<a href="https://example.com/`x">x</a>'),
+    ]);
+  });
+
+  it("keeps an entity it cannot decode literal inside a kept address", () => {
+    expect(parseNote('<a href="https://example.com/?a&notreal;b">x</a>')).toEqual([
+      { kind: "link", href: "https://example.com/?a&notreal;b", children: [text("x")] },
     ]);
   });
 
@@ -454,6 +502,34 @@ describe("the package source", () => {
         ? sourceFiles(join(directory, entry.name))
         : [join(directory, entry.name)],
     );
+
+  // The step test counts reads through the scanner's `read` function, so it would miss a search
+  // that bypasses it, such as `note.indexOf("</code>")` inside a loop, which is quadratic. This
+  // test closes that gap by listing every way the tokenizer touches the note: `length`, the one
+  // `charCodeAt` inside `read`, and `slice`, which copies ranges the scanner has already read.
+  // Any other property access or index on the note, or an alias that could hide one, fails here.
+  it("touches the note only through the counted reader, slice, and length", () => {
+    const code = readFileSync(join(sourceRoot, "model", "note.ts"), "utf8")
+      .replaceAll(/\/\*[\s\S]*?\*\//g, "")
+      .replaceAll(/\/\/.*$/gm, "");
+    const accesses = [...code.matchAll(/\bnote\s*(?:\?\.|\.|\[)\s*(\w*)/g)].map(
+      (match) => match[1] ?? "",
+    );
+
+    expect(accesses.filter((name) => name === "charCodeAt")).toHaveLength(1);
+    expect(accesses.filter((name) => !["charCodeAt", "slice", "length"].includes(name))).toEqual(
+      [],
+    );
+    // A bare `note` (not the frame kind `"note"`) is a parameter, or an argument that could alias it. The only allowed ones are
+    // the two parameters and `parseNote` passing the note to `parseNoteWithSteps`.
+    const bare = [...code.matchAll(/(?<!")\bnote\b(?!"|\s*(?:\?\.|\.|\[))/g)].map((match) =>
+      code.slice(Math.max(0, match.index - 20), match.index + 12).replaceAll(/\s+/g, " "),
+    );
+    expect(bare).toHaveLength(3);
+    expect(
+      bare.filter((context) => !/= \(note: string|parseNoteWithSteps\(note\)/.test(context)),
+    ).toEqual([]);
+  });
 
   it("never uses an HTML string sink", () => {
     const sinks = /unsafeHTML|innerHTML|outerHTML|insertAdjacentHTML|createContextualFragment/;
