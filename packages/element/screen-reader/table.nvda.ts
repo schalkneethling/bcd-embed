@@ -172,7 +172,7 @@ const variantASteps = (page: Page, moves: Moves): ExtraStep[] => [
     step: "step 9: read removed_partial in Chrome",
     perform: moves.down,
     expected:
-      "removed partial, row 7, button, collapsed, , No support in Chrome. History and notes for removed partial in Chrome",
+      "removed partial, row 7, button, collapsed, , Supported from Chrome 11.1, then removed in Chrome 12.1. History and notes for removed partial in Chrome",
   },
   expandStep(page, moves, "removed_partial"),
   {
