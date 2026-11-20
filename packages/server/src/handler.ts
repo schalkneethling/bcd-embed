@@ -2,10 +2,8 @@ import {
   apiErrorResponseSchema,
   blobPath,
   featureKeySchema,
-  indexResponseSchema,
   MAX_ROOT_BYTES,
   MAX_SHARD_BYTES,
-  metaResponseSchema,
   namespaceSchema,
   RELEASE_HEADERS,
   shardPath,
@@ -13,6 +11,8 @@ import {
   snapshotIdentifierSchema,
   snapshotRootPath,
   snapshotRootSchema,
+  storedIndexResponseSchema,
+  storedMetaResponseSchema,
   type ApiErrorCode,
   type Shard,
   type Snapshot,
@@ -455,7 +455,7 @@ export function createArtifactHandler(
       if (route.type === "meta" && encoding === "identity")
         return await serveArtifact(request, metaArtifact, CURRENT_CACHE, encoding);
       const metaBytes = await boundedBytes(metaArtifact, MAX_METADATA_BYTES);
-      const metadata = metaResponseSchema.parse(parseJson(metaBytes));
+      const metadata = storedMetaResponseSchema.parse(parseJson(metaBytes));
       if (route.type === "meta") {
         const metaSha256 = (await digest(metaBytes)).slice(1, -1);
         const representation = await options.store.get(
@@ -507,7 +507,7 @@ export function createArtifactHandler(
       }
       const indexArtifact = await options.store.get(blobPath(indexHash, "identity"));
       if (indexArtifact === null) throw new Error("Required index blob missing.");
-      const shard = indexResponseSchema.parse(
+      const shard = storedIndexResponseSchema.parse(
         await boundedJson(indexArtifact, MAX_INDEX_SHARD_BYTES),
       );
       if (shard.namespace !== namespace) throw new Error("Index shard namespace mismatch.");

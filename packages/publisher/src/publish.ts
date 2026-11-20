@@ -17,8 +17,10 @@ import {
   shardPath,
   snapshotIdentifierSchema,
   snapshotRootPath,
+  storedMetaResponseSchema,
   type MetaResponse,
   type Snapshot,
+  type StoredMetaResponse,
 } from "@bcd-embed/schema";
 import { compare as compareVersions, valid as validVersion } from "semver";
 
@@ -95,7 +97,11 @@ const assertMonotonic = (previous: Snapshot | undefined, candidate: Snapshot, no
   }
 };
 
-const mergedMetadata = (candidate: MetaResponse, previous: MetaResponse | undefined, now: Date) => {
+const mergedMetadata = (
+  candidate: MetaResponse,
+  previous: StoredMetaResponse | undefined,
+  now: Date,
+) => {
   const kept: Snapshot[] = [];
   for (const snapshot of previous?.snapshots ?? []) {
     if (snapshot.id !== candidate.current && Date.parse(snapshot.expires) > now.getTime()) {
@@ -149,7 +155,8 @@ const retireExpiredMembership = async (
       snapshot.id === remote.body.current || Date.parse(snapshot.expires) > now.getTime(),
   );
   if (kept.length === remote.body.snapshots.length) return;
-  const body = metaResponseSchema.parse({ ...remote.body, snapshots: kept });
+  // Retirement changes only the snapshot list, so the file keeps the contract it was published at.
+  const body = storedMetaResponseSchema.parse({ ...remote.body, snapshots: kept });
   const bytes = Buffer.from(`${JSON.stringify(body)}\n`, "utf8");
   if (bytes.byteLength > MAX_META_BYTES)
     throw new PublisherError("Retired metadata exceeds server read cap.");

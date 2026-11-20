@@ -1,9 +1,26 @@
 import { z } from "zod";
 
-/** The initial semantic version of the documented API contract. */
-export const CONTRACT_VERSION = "1.0.0" as const;
+/**
+ * The version of the documented API contract that this code generates. 1.1.0 added
+ * `versionAddedIsApproximate` to the support summary, an additive change (Document 1 §7).
+ */
+export const CONTRACT_VERSION = "1.1.0" as const;
 
+/** Generated output, and every check of it, accepts only `CONTRACT_VERSION`. */
 export const contractVersionSchema = z.literal(CONTRACT_VERSION);
+
+/**
+ * Every contract version that a v1 bucket can still hold. A retained snapshot keeps the contract
+ * it was published with until it expires, so the Worker and the publisher read stored metadata
+ * and index files at any of these versions. Nothing generates or validates new output with it.
+ * A version leaves this list only after a publication has moved `meta.json` past it and every
+ * snapshot published under it has expired: for 1.0.0, not before 12 February 2027, when
+ * `bcd-8.1.9-gen-0.0.0` expires. `meta.json` records no contract per snapshot, so the readers
+ * accept a listed version in any snapshot, the current one included.
+ */
+export const STORED_CONTRACT_VERSIONS = ["1.0.0", CONTRACT_VERSION] as const;
+export const storedContractVersionSchema = z.enum(STORED_CONTRACT_VERSIONS);
+export type StoredContractVersion = z.infer<typeof storedContractVersionSchema>;
 
 /**
  * Response headers that say which release a snapshot response came from. They are headers and
@@ -224,6 +241,9 @@ const supportSummaryCommon = {
   hasNotes: z.boolean(),
 };
 
+// A summary's `versionAddedIsApproximate` follows the same rule as a statement's: it can be true
+// only beside a version string, so each variant whose `versionAdded` cannot be a string fixes it
+// to `false`. The rule is structural, so the generated JSON Schema states it too.
 const summarySchemasForIdentity = <
   Prefix extends z.ZodType<string | null>,
   AlternativeName extends z.ZodType<string | null>,
@@ -236,6 +256,7 @@ const summarySchemasForIdentity = <
       ...supportSummaryCommon,
       state: z.literal("unsupported"),
       versionAdded: z.literal(false),
+      versionAddedIsApproximate: z.literal(false),
       versionRemoved: z.string().min(1).nullable(),
       partialImplementation: z.boolean(),
       isPreview: z.boolean(),
@@ -245,7 +266,17 @@ const summarySchemasForIdentity = <
     z.strictObject({
       ...supportSummaryCommon,
       state: z.literal("unsupported"),
-      versionAdded: versionValueSchema,
+      ...knownVersionStatement,
+      versionRemoved: z.string().min(1),
+      partialImplementation: z.boolean(),
+      isPreview: z.boolean(),
+      prefix,
+      alternativeName,
+    }),
+    z.strictObject({
+      ...supportSummaryCommon,
+      state: z.literal("unsupported"),
+      ...unknownVersionStatement,
       versionRemoved: z.string().min(1),
       partialImplementation: z.boolean(),
       isPreview: z.boolean(),
@@ -256,6 +287,7 @@ const summarySchemasForIdentity = <
       ...supportSummaryCommon,
       state: z.literal("unknown"),
       versionAdded: z.null(),
+      versionAddedIsApproximate: z.literal(false),
       versionRemoved: z.null(),
       partialImplementation: z.boolean(),
       isPreview: z.boolean(),
@@ -265,7 +297,7 @@ const summarySchemasForIdentity = <
     z.strictObject({
       ...supportSummaryCommon,
       state: z.literal("preview"),
-      versionAdded: normalizedVersionSchema,
+      ...knownVersionStatement,
       versionRemoved: z.null(),
       partialImplementation: z.boolean(),
       isPreview: z.literal(true),
@@ -275,7 +307,7 @@ const summarySchemasForIdentity = <
     z.strictObject({
       ...supportSummaryCommon,
       state: z.literal("partial"),
-      versionAdded: normalizedVersionSchema,
+      ...knownVersionStatement,
       versionRemoved: z.null(),
       partialImplementation: z.literal(true),
       isPreview: z.literal(false),
@@ -285,7 +317,7 @@ const summarySchemasForIdentity = <
     z.strictObject({
       ...supportSummaryCommon,
       state: z.literal("supported"),
-      versionAdded: normalizedVersionSchema,
+      ...knownVersionStatement,
       versionRemoved: z.null(),
       partialImplementation: z.literal(false),
       isPreview: z.literal(false),
@@ -369,6 +401,17 @@ export const supportTargetSupportSchema = z
         code: "custom",
         path: ["summary"],
         message: "Summary fields must project the highest-precedence branch statement.",
+      });
+      return;
+    }
+    // Checked apart from the other projected fields so that the message names the field. Contract
+    // 1.1.0 added it to the summary, so it is the field an older projection would leave out.
+    if (support.summary.versionAddedIsApproximate !== selectedStatement.versionAddedIsApproximate) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary", "versionAddedIsApproximate"],
+        message:
+          "Summary versionAddedIsApproximate must equal the selected statement's versionAddedIsApproximate.",
       });
       return;
     }
@@ -482,12 +525,23 @@ export const browsersResponseSchema = z.strictObject({
 });
 export type BrowsersResponse = z.infer<typeof browsersResponseSchema>;
 
-export const indexResponseSchema = z.strictObject({
-  ...normalizedResponseEnvelope,
+const indexResponseShape = {
   namespace: namespaceSchema.nullable(),
   keys: z.array(featureKeySchema).min(1),
+};
+
+export const indexResponseSchema = z.strictObject({
+  ...normalizedResponseEnvelope,
+  ...indexResponseShape,
 });
 export type IndexResponse = z.infer<typeof indexResponseSchema>;
+
+/** An index file as a bucket stores it, at any contract in `STORED_CONTRACT_VERSIONS`. */
+export const storedIndexResponseSchema = z.strictObject({
+  contract: storedContractVersionSchema,
+  ...indexResponseShape,
+});
+export type StoredIndexResponse = z.infer<typeof storedIndexResponseSchema>;
 
 export const snapshotIdentifierSchema = z.string().regex(/^bcd-[A-Za-z0-9.-]+-gen-[A-Za-z0-9.-]+$/);
 
@@ -511,39 +565,51 @@ export const snapshotSchema = z
   });
 export type Snapshot = z.infer<typeof snapshotSchema>;
 
-export const metaResponseSchema = z
-  .strictObject({
-    contract: contractVersionSchema,
-    generated: generatedTimestampSchema,
-    current: snapshotIdentifierSchema,
-    snapshots: z.array(snapshotSchema).min(1),
-    namespaces: z.array(namespaceSchema).min(1).meta({ uniqueItems: true }),
-  })
-  .superRefine((metadata, context) => {
-    const snapshotIds = metadata.snapshots.map((snapshot) => snapshot.id);
-    if (!snapshotIds.includes(metadata.current)) {
-      context.addIssue({
-        code: "custom",
-        path: ["current"],
-        message: "Current must identify one of the available snapshots.",
-      });
-    }
-    if (new Set(snapshotIds).size !== snapshotIds.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["snapshots"],
-        message: "Snapshot identifiers must be unique.",
-      });
-    }
-    if (new Set(metadata.namespaces).size !== metadata.namespaces.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["namespaces"],
-        message: "Namespaces must be unique.",
-      });
-    }
-  });
+const metaResponseSchemaFor = <Contract extends z.ZodType<string>>(contract: Contract) =>
+  z
+    .strictObject({
+      contract,
+      generated: generatedTimestampSchema,
+      current: snapshotIdentifierSchema,
+      snapshots: z.array(snapshotSchema).min(1),
+      namespaces: z.array(namespaceSchema).min(1).meta({ uniqueItems: true }),
+    })
+    .superRefine((metadata, context) => {
+      const snapshotIds = metadata.snapshots.map((snapshot) => snapshot.id);
+      if (!snapshotIds.includes(metadata.current)) {
+        context.addIssue({
+          code: "custom",
+          path: ["current"],
+          message: "Current must identify one of the available snapshots.",
+        });
+      }
+      if (new Set(snapshotIds).size !== snapshotIds.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["snapshots"],
+          message: "Snapshot identifiers must be unique.",
+        });
+      }
+      if (new Set(metadata.namespaces).size !== metadata.namespaces.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["namespaces"],
+          message: "Namespaces must be unique.",
+        });
+      }
+    });
+
+export const metaResponseSchema = metaResponseSchemaFor(contractVersionSchema);
 export type MetaResponse = z.infer<typeof metaResponseSchema>;
+
+/**
+ * `meta.json` as a bucket stores it, at any contract in `STORED_CONTRACT_VERSIONS`. The Worker
+ * and the publisher read the live file with this, so neither fails while the bucket and the code
+ * are one contract apart: the Worker is deployed before a publication changes the contract, and
+ * the publisher reads the previous file before it replaces it.
+ */
+export const storedMetaResponseSchema = metaResponseSchemaFor(storedContractVersionSchema);
+export type StoredMetaResponse = z.infer<typeof storedMetaResponseSchema>;
 
 export const apiErrorCodeSchema = z.enum([
   "invalid_key",

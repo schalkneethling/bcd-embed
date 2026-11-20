@@ -283,6 +283,43 @@ describe("normalizeTargetSupport", () => {
     }
   });
 
+  it("carries the selected statement's approximate added version into the summary", () => {
+    const opera = browser("opera");
+    const raw = (statements: Array<Partial<SimpleSupportStatement> & { version_added: string }>) =>
+      statements as unknown as BcdSupportStatement;
+
+    const approximate = normalizeTargetSupport(raw([{ version_added: "≤12.1" }]), opera);
+    expect(approximate.summary).toMatchObject({
+      versionAdded: "12.1",
+      versionAddedIsApproximate: true,
+    });
+    expect(supportTargetSupportSchema.safeParse(approximate).success).toBe(true);
+
+    // The flag comes from the selected statement, not from the first or from any other one.
+    const flagged: SimpleSupportStatement["flags"] = [{ type: "preference", name: "flag" }];
+    expect(
+      normalizeTargetSupport(
+        raw([{ version_added: "≤10", flags: flagged }, { version_added: "12" }]),
+        opera,
+      ).summary,
+    ).toMatchObject({ versionAdded: "12", versionAddedIsApproximate: false });
+    expect(
+      normalizeTargetSupport(
+        raw([{ version_added: "10", flags: flagged }, { version_added: "≤12" }]),
+        opera,
+      ).summary,
+    ).toMatchObject({ versionAdded: "12", versionAddedIsApproximate: true });
+  });
+
+  it.each([false, null])("never marks a %s added version as approximate", (versionAdded) => {
+    const normalized = normalizeTargetSupport(
+      { version_added: versionAdded } as unknown as BcdSupportStatement,
+      browser("opera"),
+    );
+    expect(normalized.summary).toMatchObject({ versionAdded, versionAddedIsApproximate: false });
+    expect(supportTargetSupportSchema.safeParse(normalized).success).toBe(true);
+  });
+
   it("keeps explicit unknown support distinct from unsupported", () => {
     const unknown = { version_added: null } as unknown as BcdSupportStatement;
     expect(normalizeTargetSupport(unknown, browser("nodejs")).summary).toMatchObject({

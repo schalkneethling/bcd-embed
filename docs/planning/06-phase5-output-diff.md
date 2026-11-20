@@ -92,6 +92,37 @@ node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate
 node packages/generator/dist/diff-bin.js --baseline artifacts-before --candidate artifacts-after --approval reviewed-approval.json
 ```
 
+## Comparing across a contract change
+
+Both trees must be at `CONTRACT_VERSION`. A baseline emitted under an earlier
+contract fails at its `meta.json`, before the magnitude gate. On 19 November
+2026, a BCD 8.1.9 baseline from the contract 1.0.0 code and a candidate from
+the contract 1.1.0 code (issue #191) gave this, from both
+`packages/generator/dist/diff-bin.js` and
+`scripts/compare-freshness-output.mjs`:
+
+```text
+Invalid artifact 'v1/meta.json': [ { "code": "invalid_value", "values": [ "1.1.0" ],
+  "path": [ "contract" ], "message": "Invalid input: expected \"1.1.0\"" } ]
+```
+
+That check stays strict for every freshness run. A contract change is compared
+instead by `scripts/compare-contract-change.mjs`, which reads the earlier
+baseline's `meta.json` with `storedMetaResponseSchema` and then only its root
+and shards, as the publisher reads the live snapshot from R2, and loads the
+candidate with the full checks above. It refuses a baseline already at
+`CONTRACT_VERSION`. Its report for the same two trees blocked on the
+changed-feature magnitude alone: 20,968 of 20,968 features changed, none added
+or removed, and no namespace changes. Regenerating the baseline with the new
+code is not a substitute: from the same BCD release it produces the same
+pointers as the candidate, so the diff would be empty.
+
+Publication needs no separate method, because the publisher already compares
+pointers. The steps are in "Publishing a contract change" on the documentation
+site's
+[How publication works](../../apps/website/src/content/docs/publication.md)
+page.
+
 ## Complexity and limits
 
 The gate does not load the BCD aggregate. It keeps a sorted physical file-path

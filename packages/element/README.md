@@ -2,7 +2,7 @@
 
 The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architecture.md`). The
 component class does not exist yet. The package currently holds the build, the message table, the
-public types, and the screen reader tests for the Phase 1 static markup in
+note tokenizer, the public types, and the screen reader tests for the Phase 1 static markup in
 `docs/planning/phase1-markup/`.
 
 ## Layout
@@ -12,7 +12,10 @@ public types, and the screen reader tests for the Phase 1 static markup in
 | `src/index.ts`                             | The package entry. Everything the package exports passes through it.                          |
 | `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                        |
 | `src/strings/format.ts`                    | `formatMessage`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English. |
+| `src/data/request-cache.ts`                | The request cache: one entry per URL, shared in-flight requests, and per-result retention.    |
+| `src/data/feature-client.ts`               | The feature client: builds the URL, calls `fetch`, and classifies the answer.                 |
 | `src/public-types.ts`                      | The public types. `@bcd-embed/schema` is imported with `import type` only.                    |
+| `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.      |
 | `tests/`                                   | Vitest tests, and `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks.   |
 | `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                     |
 | `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.    |
@@ -39,6 +42,92 @@ message and the placeholder. `selectStrings("xx")` returns the English table, an
 
 The ids and the text match the string inventory in `docs/planning/07-component-phase1-markup.md`.
 A test reads that table and fails when the two differ, so change both together.
+
+## Notes
+
+A BCD (`@mdn/browser-compat-data`) note is a string with a little HTML in it, such as
+`Use <code>a</code>, see <a href="https://…">bug</a>.`. `parseNote` in `src/model/note.ts` turns
+that string into a closed set of segments, so the renderer can write each one through Lit's text
+and attribute bindings and nothing in a note ever becomes markup:
+
+| Note markup                 | Segment                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| Plain text                  | `{ kind: "text", text }`                                                            |
+| `<code>…</code>`            | `{ kind: "code", text }`                                                            |
+| `<em>…</em>`                | `{ kind: "emphasis", text }`                                                        |
+| `<a href="https://…">…</a>` | `{ kind: "link", href, children }`, where `children` holds text, code, and emphasis |
+
+These are the only tags BCD 8.1.9 uses. A test reads every note in the installed BCD and fails when
+a release adds another tag, which is the signal to extend the tokenizer. Everything else comes out
+as literal text: other tags, tags with other attributes, tags left open, and links whose decoded
+address does not start with `https://` and a host, which rules out `http:`, `javascript:`,
+relative, and protocol-relative links. Every link in BCD 8.1.9 uses `https:`, so a test that
+expects every link to be kept fails when a release adds another scheme. Empty code and emphasis
+produce no segment, and a link whose content has no visible text gets its address as its text, so
+it always has an accessible name.
+
+Entities decode once, from a closed list: `&lt;`, `&gt;`, `&amp;`, `&quot;`, and decimal or
+hexadecimal numeric entities. So `&amp;lt;` reads `&lt;`, and `&lt;code&gt;` is text, not a tag.
+Unknown entities, and numeric ones for control characters, surrogates, noncharacters, or code
+points past U+10FFFF, stay literal. An entity that stays literal inside a kept address is safe,
+because a Lit attribute binding sets the value as-is and never decodes it.
+
+The scanner consumes each character once and never steps back. A failed tag or entity attempt
+reads at most one character it does not consume, and each attempt starts at a consumed `<` or `&`,
+so a note of n characters takes at most 2n reads: O(n) time and space. `parseNoteWithSteps`
+returns the number of reads, and a test checks that a 100,000-character note, and a set of
+adversarial ones, take at most 2n. That count only sees reads through the scanner's reader, so a
+second test checks the source: the tokenizer touches the note only through that reader, `slice`,
+and `length`, never through a search such as `indexOf` or a regular expression. A third test checks
+that the package source never uses an HTML string sink such as `innerHTML` or `unsafeHTML`.
+
+A note can contain bidirectional control characters, written directly or as numeric entities,
+which can reorder the text around them. The tokenizer leaves them alone. The renderer (#198)
+should isolate each note's text, with `unicode-bidi: isolate` or a `<bdi>` element, so a note
+cannot reorder the text next to it.
+
+## Feature client and request cache
+
+`createFeatureClient({ fetch, now })` in `src/data/feature-client.ts` requests
+`{endpoint}/v1/current/features/{query}.json` and resolves with a classified result. It never
+throws for a failed request. A result is either `{ ok: true, payload, snapshot }`, where `snapshot`
+is the `bcd-embed-snapshot` header, or `{ ok: false, reason, status, code }` with a `reason` of
+`invalid-query`, `network`, `http`, or `invalid-payload`. Tests inject `fetch` and the clock, so no
+test touches the network. The element will call `getPageFeatureClient()`, which creates one client
+per page on first use (#203).
+
+| Outcome                                                             | Cached for                       |
+| ------------------------------------------------------------------- | -------------------------------- |
+| A 200 with a feature response                                       | The life of the page             |
+| A 4xx with a contract error code, except 429                        | The life of the page             |
+| A network failure, a timeout, a 429, a 5xx, any other failed answer | 10 seconds (`FAILURE_WINDOW_MS`) |
+
+The 10 seconds equal the block duration of the hosted API's rate limit
+(`apps/website/src/content/docs/deployment.md`). The cache never retries by timer: a request goes
+out again only when a caller asks after the window. A browser cannot read Cloudflare's edge 429,
+because it has no CORS header, so `fetch` rejects and the result is `network` with `status: null`.
+
+A caller's `AbortSignal` ends only that caller's wait. The shared request has its own internal
+deadline instead, `REQUEST_TIMEOUT_MS` (20 seconds, covering the fetch and the body read), so a
+stalled request ends as `network` and is held for the 10-second window instead of leaving every
+element waiting. The header comment of `src/data/request-cache.ts` walks through the abort rule with
+three elements.
+
+The client checks the payload with types only (`isFeatureResponseEnvelope`), because Zod must stay
+out of the bundle. The check is linear: the contract's major version is 1, each browser entry is an
+object, and each feature is an object with a `support` object. It does not look inside a `support`
+entry, so **the consumer must still map a throw while it builds its model or renders to
+`invalid-payload`**. Callers share one payload object, so consumers must not mutate it; the cache
+does not freeze it, because a deep freeze costs time proportional to the payload. The cache holds
+one entry per distinct URL and never evicts a success. The default clock is `performance.now()`,
+which a change to the system time cannot move.
+
+Notes for #203: the client does not validate `endpoint`. An empty string, or one containing `?` or
+`#`, produces a URL that sends a query string or fragment, or a relative request. #203 should
+reject such values before calling the client.
+
+The client is not exported from `src/index.ts` yet, so it adds nothing to the size budget until the
+element uses it.
 
 ## Build and tests
 
