@@ -248,24 +248,55 @@ this first inventory. The message ids are proposals.
 | `supported-since-or-earlier` | Supported since {target} {version} or earlier                             |
 | `supported-prefixed`        | Supported since {target} {version} with the prefix {prefix}                |
 | `supported-flagged`         | Supported since {target} {version} behind a flag                           |
+| `supported-alternative-name` | Supported since {target} {version} under the name {name} |
 | `supported-preview`         | Supported in {target} {version}, a preview release                         |
 | `supported-preview-unversioned` | Supported in a preview release of {target}                             |
+| `supported-preview-flagged` | Supported behind a flag in {target} {version}, a preview release |
+| `supported-preview-unversioned-flagged` | Supported behind a flag in a preview release of {target} |
 | `partial-since`             | Partial support since {target} {version}                                   |
+| `partial-prefixed` | Partial support since {target} {version} with the prefix {prefix} |
+| `partial-alternative-name` | Partial support since {target} {version} under the name {name} |
+| `partial-flagged` | Partial support since {target} {version} behind a flag |
 | `partial-preview`           | Partial support in {target} {version}, a preview release                   |
 | `partial-preview-unversioned` | Partial support in a preview release of {target}                         |
 | `no-support`                | No support in {target}                                                     |
 | `unknown`                   | Support unknown in {target}                                                |
 | `no-data`                   | No data for {target}                                                       |
+| `version-or-earlier` | {version} or earlier |
+| `version-preview` | preview |
+| `compact-or-earlier` | ≤{version} |
+| `compact-range` | {added} – {removed} |
+| `compact-preview` | {version} (preview) |
+| `compact-preview-unversioned` | preview |
 | `part-of`                   | (part of {parent})                                                         |
 | `disclosure-history`        | History for {feature} in {target}                                          |
 | `disclosure-history-notes`  | History and notes for {feature} in {target}                                |
 | `disclosure-notes`          | Notes for {feature} in {target}                                            |
 | `disclosure-flag`           | Flag details for {feature} in {target}                                     |
-| `history-prefixed`          | With the prefix {prefix}: supported since {target} {version}.              |
+| `disclosure-summary` | {fact}. {label} |
+| `history-supported` | Supported since {target} {version}. |
+| `history-flagged` | Supported since {target} {version} behind a flag. |
+| `history-partial` | Partial support since {target} {version}. |
+| `history-partial-flagged` | Partial support since {target} {version} behind a flag. |
+| `history-preview` | Supported in {target} {version}, a preview release. |
+| `history-partial-preview` | Partial support in {target} {version}, a preview release. |
+| `history-preview-unversioned` | Supported in a preview release of {target}. |
+| `history-partial-preview-unversioned` | Partial support in a preview release of {target}. |
+| `history-removed` | Supported from {target} {added}, removed in {target} {removed}. |
+| `history-partial-removed` | Partially supported from {target} {added}, removed in {target} {removed}. |
+| `history-no-support` | No support in {target}. |
+| `history-unknown` | Support unknown in {target}. |
+| `history-prefixed` | With the prefix {prefix}: supported since {target} {version}. |
+| `history-prefixed-partial` | With the prefix {prefix}: partial support since {target} {version}. |
+| `history-prefixed-removed` | With the prefix {prefix}: supported from {target} {added}, removed in {target} {removed}. |
+| `history-prefixed-partial-removed` | With the prefix {prefix}: partially supported from {target} {added}, removed in {target} {removed}. |
+| `history-alternative` | Under the name {name}: supported since {target} {version}. |
+| `history-alternative-partial` | Under the name {name}: partial support since {target} {version}. |
 | `history-alternative-removed` | Under the name {name}: supported from {target} {added}, removed in {target} {removed}. |
-| `history-removed`           | Supported from {target} {added}, removed in {target} {removed}.            |
-| `history-partial-removed`   | Partially supported from {target} {added}, removed in {target} {removed}.  |
-| `history-last-supported`    | Last supported in {target} {version}.                                      |
+| `history-alternative-partial-removed` | Under the name {name}: partially supported from {target} {added}, removed in {target} {removed}. |
+| `history-uses-prefix` | This uses the prefix {prefix}. |
+| `history-uses-alternative-name` | This uses the name {name}. |
+| `history-last-supported` | Last supported in {target} {version}. |
 | `flag-preference`           | To enable it, set the preference {name} to {value}.                        |
 | `flag-preference-no-value`  | To enable it, set the preference {name}.                                   |
 | `flag-runtime`              | To enable it, start {target} with the command-line flag {name}.            |
@@ -287,6 +318,33 @@ and `partial-preview-unversioned` cover it. The same issue added the
 `platform-other` group for a support target whose `type` the component does not know, and the
 `loading` and `error` sentences. The table in `packages/element/src/strings/en.ts` holds exactly these
 ids, and a test fails when the two differ.
+
+The table model (Issue #196) added the rest, chosen from the statement combinations that occur in
+BCD 8.1.9 after normalization. A count over its 20,968 features found, for example, 166 cells whose
+summary has an alternative name, 24 with partial support behind a flag, 34 statements in a preview
+release behind a flag, and 11 statements whose removal or last-supported version is BCD's literal
+"preview". The additions fall into five sets:
+
+- **Cell sentences with a modifier.** `supported-alternative-name`, the three `partial-` sentences
+  with a prefix, an alternative name, or a flag, and the two flagged preview sentences. A cell
+  sentence carries at most one modifier, chosen in the order flag, prefix, alternative name, and
+  the disclosure always holds the rest.
+- **Version values.** `version-or-earlier` is the value of a `{version}`, `{added}`, or `{removed}`
+  placeholder for an approximate version, so "or earlier" needs no extra sentence for each form.
+  The plain supported sentence keeps its own `supported-since-or-earlier`. A removal or
+  last-supported version that is the literal "preview" becomes the target's preview name, such as
+  "Nightly", or `version-preview` for a target with none, so no sentence reads "removed in Firefox
+  preview".
+- **Compact text.** `compact-or-earlier`, `compact-range`, `compact-preview`, and
+  `compact-preview-unversioned` give the short visible text beside the icon, such as "≤12.1",
+  "11.1 – 12.1", and "25 (preview)".
+- **The summary.** `disclosure-summary` joins the cell's fact and its label as one message,
+  because the punctuation between them belongs to the locale.
+- **History sentences.** One sentence for each form of statement: supported, partial, flagged,
+  preview, removed, no support, and unknown. A statement with a prefix or an alternative name has
+  its own sentences for the four commonest forms (supported, partial, removed, and partially
+  removed). Any other form uses the plain sentence followed by `history-uses-prefix` or
+  `history-uses-alternative-name`, so the name is never dropped.
 
 ## Not covered by Phase 1
 
