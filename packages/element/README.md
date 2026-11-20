@@ -2,7 +2,7 @@
 
 The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architecture.md`). The
 component class does not exist yet. The package currently holds the build, the message table, the
-public types, and the screen reader tests for the Phase 1 static markup in
+note tokenizer, the public types, and the screen reader tests for the Phase 1 static markup in
 `docs/planning/phase1-markup/`.
 
 ## Layout
@@ -13,6 +13,7 @@ public types, and the screen reader tests for the Phase 1 static markup in
 | `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                        |
 | `src/strings/format.ts`                    | `formatMessage`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English. |
 | `src/public-types.ts`                      | The public types. `@bcd-embed/schema` is imported with `import type` only.                    |
+| `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.      |
 | `tests/`                                   | Vitest tests, and `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks.   |
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests (below).                                                              |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                  |
@@ -37,6 +38,49 @@ message and the placeholder. `selectStrings("xx")` returns the English table, an
 
 The ids and the text match the string inventory in `docs/planning/07-component-phase1-markup.md`.
 A test reads that table and fails when the two differ, so change both together.
+
+## Notes
+
+A BCD (`@mdn/browser-compat-data`) note is a string with a little HTML in it, such as
+`Use <code>a</code>, see <a href="https://…">bug</a>.`. `parseNote` in `src/model/note.ts` turns
+that string into a closed set of segments, so the renderer can write each one through Lit's text
+and attribute bindings and nothing in a note ever becomes markup:
+
+| Note markup                 | Segment                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| Plain text                  | `{ kind: "text", text }`                                                            |
+| `<code>…</code>`            | `{ kind: "code", text }`                                                            |
+| `<em>…</em>`                | `{ kind: "emphasis", text }`                                                        |
+| `<a href="https://…">…</a>` | `{ kind: "link", href, children }`, where `children` holds text, code, and emphasis |
+
+These are the only tags BCD 8.1.9 uses. A test reads every note in the installed BCD and fails when
+a release adds another tag, which is the signal to extend the tokenizer. Everything else comes out
+as literal text: other tags, tags with other attributes, tags left open, and links whose decoded
+address does not start with `https://` and a host, which rules out `http:`, `javascript:`,
+relative, and protocol-relative links. Every link in BCD 8.1.9 uses `https:`, so a test that
+expects every link to be kept fails when a release adds another scheme. Empty code and emphasis
+produce no segment, and a link whose content has no visible text gets its address as its text, so
+it always has an accessible name.
+
+Entities decode once, from a closed list: `&lt;`, `&gt;`, `&amp;`, `&quot;`, and decimal or
+hexadecimal numeric entities. So `&amp;lt;` reads `&lt;`, and `&lt;code&gt;` is text, not a tag.
+Unknown entities, and numeric ones for control characters, surrogates, noncharacters, or code
+points past U+10FFFF, stay literal. An entity that stays literal inside a kept address is safe,
+because a Lit attribute binding sets the value as-is and never decodes it.
+
+The scanner consumes each character once and never steps back. A failed tag or entity attempt
+reads at most one character it does not consume, and each attempt starts at a consumed `<` or `&`,
+so a note of n characters takes at most 2n reads: O(n) time and space. `parseNoteWithSteps`
+returns the number of reads, and a test checks that a 100,000-character note, and a set of
+adversarial ones, take at most 2n. That count only sees reads through the scanner's reader, so a
+second test checks the source: the tokenizer touches the note only through that reader, `slice`,
+and `length`, never through a search such as `indexOf` or a regular expression. A third test checks
+that the package source never uses an HTML string sink such as `innerHTML` or `unsafeHTML`.
+
+A note can contain bidirectional control characters, written directly or as numeric entities,
+which can reorder the text around them. The tokenizer leaves them alone. The renderer (#198)
+should isolate each note's text, with `unicode-bidi: isolate` or a `<bdi>` element, so a note
+cannot reorder the text next to it.
 
 ## Build and tests
 
