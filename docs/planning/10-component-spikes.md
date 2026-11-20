@@ -893,7 +893,7 @@ lists the same 341 tests as the old root config, the browser project lists the 1
 `pnpm check` took 66 s end to end, and the three-engine Playwright Test run took 4.2 s for 3 tests.
 
 Measured in CI on pull request #228 (the `check` job is run 44728957761, the Element browser workflow is run
-44728957783). Firefox's row is filled in below once the fix has run.
+44728957783). The Firefox rows show the failure and the fix.
 
 | What the spike asked CI to measure | Value |
 | ---------------------------------- | ----- |
@@ -903,7 +903,7 @@ Measured in CI on pull request #228 (the `check` job is run 44728957761, the Ele
 | Element browser, Chromium job | 55 s: install 26 s (`--with-deps --only-shell`), tests 3 s, run [44728957783](https://github.com/schalkneethling/bcd-embed/actions/runs/44728957783). |
 | Element browser, WebKit job | 72 s: install 49 s (`--with-deps`), tests 3 s, same run. |
 | Element browser, Firefox job, `--with-deps` | Hit the 15 minute timeout inside the install, same run, both attempts. `libavcodec62` and the 12 font packages in Playwright's Firefox list on Ubuntu 26.04 made `apt-get` fetch 39 packages (54 MB) from a mirror that served about one a minute. |
-| Element browser, Firefox job, without `--with-deps` | Pending. |
+| Element browser, Firefox job, without `--with-deps` | 26 s: install 5 s, tests 4 s, run [44733739093](https://github.com/schalkneethling/bcd-embed/actions/runs/44733739093). The dry run still lists the 39 packages as missing (the `libavcodec62` chain and fonts), and Firefox launched and passed without them. In the same run Chromium took 49 s and WebKit 53 s. |
 
 The recommendation in section 10 holds: Chromium joins `pnpm check`, which finished 339 s under its limit.
 
