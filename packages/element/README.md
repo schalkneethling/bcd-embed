@@ -46,17 +46,29 @@ is. Importing the package defines the element.
 The element fires two events. Both are `CustomEvent`s that bubble, so a listener on the element,
 an ancestor, or the document receives them, and neither can be cancelled.
 
-| Event       | When                                                                    | `detail` in data mode                                                   |
-| ----------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `bcd-load`  | Once for each assigned payload, after the table is in the document      | `{ mode: "data", snapshot: null }`                                      |
-| `bcd-error` | Once for each assigned value that is not a payload the element can read | `{ mode: "data", reason: "invalid-payload", status: null, code: null }` |
+| Event       | When                                                                                           | `detail` in data mode                                                   |
+| ----------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `bcd-load`  | Once for each update that renders a newly assigned payload, after the table is in the document | `{ mode: "data", snapshot: null }`                                      |
+| `bcd-error` | Once for each update that rejects a newly assigned value                                       | `{ mode: "data", reason: "invalid-payload", status: null, code: null }` |
 
 A change to `browsers` or `locale` renders the table again without a second `bcd-load`. The one
 exception is a change that turns a rendered payload into a rejected one, or back: the model checks
 only the support targets it shows, so asking for a target whose `browsers` entry is malformed fires
-`bcd-error`, and removing it again fires `bcd-load`. After an error the element renders nothing of
-its own: the fallback content is the message. It cannot use the `error` sentence in the string
-table, because that sentence names the query and an invalid payload may not have one.
+`bcd-error`, and removing it again fires `bcd-load`. **What "once" means.** The element updates in a batch. Two payloads assigned one after the other
+in the same task render the second and fire one event. Assigning the object that is already
+assigned is no change, so nothing renders and nothing fires. An event never fires while the
+element is out of the document: the element holds it back and dispatches one event, for the state
+it is in, when it is connected again, so a listener on the document misses nothing.
+
+**After an error.** When the element has fallback content, it renders nothing of its own and the
+fallback is the message. When it has none, it renders
+`<p class="bcd-error">Browser compatibility data could not be shown.</p>` in its container, so it
+is never empty. The owner decided this on 20 November 2026. Fallback content is an element child,
+or text that is not only white space. The sentence is the message `error-no-query`; the `error`
+message names the query, and a value that is not a payload may have none.
+
+**What counts as invalid.** Anything the table model rejects with a `TablePayloadError`: a value
+that is not a contract 1.x feature response, and a payload in which two features share a key.
 
 **How the fallback is hidden.** While a table is rendered, the element carries the boolean
 attribute `loaded`, and the table sits in a child `<div class="bcd-render-container">`. The base
@@ -118,25 +130,25 @@ one fast machine, so measure again on a slow phone before relying on them for ve
 
 ## Layout
 
-| Path                                          | Holds                                                                                                                                                              |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/index.ts`                                | The package entry. It defines the element, and everything the package exports passes through it.                                                                   |
-| `src/bcd-compat-table.ts`                     | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                     |
-| `src/render/table.ts`, `src/render/status.ts` | The Lit templates that map the table model to the Phase 1 markup, and the placeholder glyphs.                                                                      |
-| `src/model/table-model.ts`                    | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                    |
-| `src/strings/en.ts`                           | The English message table, keyed by message id, with `{placeholders}`.                                                                                             |
-| `src/strings/format.ts`                       | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                              |
-| `src/data/request-cache.ts`                   | The request cache: one entry per URL, shared in-flight requests, and per-result retention.                                                                         |
-| `src/data/feature-client.ts`                  | The feature client: builds the URL, calls `fetch`, and classifies the answer.                                                                                      |
-| `src/public-types.ts`                         | The public types, including the hand-written `BcdCompatTableElement`. `@bcd-embed/schema` is imported with `import type` only.                                     |
-| `src/model/note.ts`                           | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.                                                                           |
-| `tests/`                                      | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size. |
-| `browser/`                                    | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                          |
-| `e2e/`, `playwright.e2e.config.ts`            | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                         |
-| `screen-reader/`, `playwright.*.config.ts`    | The screen reader tests (below).                                                                                                                                   |
-| `vite.config.ts`, `tsconfig.build.json`       | The library build and its type declarations.                                                                                                                       |
-| `.size-limit.json`                            | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 7 kB with Brotli.                                                                      |
-| `custom-elements-manifest.config.mjs`         | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
+| Path                                       | Holds                                                                                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/index.ts`                             | The package entry. It defines the element, and everything the package exports passes through it.                                                                   |
+| `src/bcd-compat-table.ts`                  | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                     |
+| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the placeholder glyphs (`status.ts`), and the error sentence (`error.ts`).                       |
+| `src/model/table-model.ts`                 | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                    |
+| `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                                                                                             |
+| `src/strings/format.ts`                    | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                              |
+| `src/data/request-cache.ts`                | The request cache: one entry per URL, shared in-flight requests, and per-result retention.                                                                         |
+| `src/data/feature-client.ts`               | The feature client: builds the URL, calls `fetch`, and classifies the answer.                                                                                      |
+| `src/public-types.ts`                      | The public types, including the hand-written `BcdCompatTableElement`. `@bcd-embed/schema` is imported with `import type` only.                                     |
+| `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.                                                                           |
+| `tests/`                                   | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size. |
+| `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                          |
+| `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                         |
+| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests (below).                                                                                                                                   |
+| `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
+| `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 7 kB with Brotli.                                                                      |
+| `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
 `private` stays `true`, so nothing publishes yet. The package already has the shape a published one
 needs: `exports` for `.` and `./package.json`, `files` set to `dist`, and `sideEffects` in array
@@ -259,8 +271,9 @@ directory under `node_modules/.cache` and follows every import from `index.d.ts`
 none of those files imports from `lit`.
 
 The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
-element, the table model, and the note tokenizer measure 6.26 kB with Brotli, without Lit, so the
-limit is now 7 kB. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
+element, the table model, and the note tokenizer measure 6.43 kB with Brotli, without Lit, so the
+limit is now 7 kB. The entry's `name` in `.size-limit.json` records that measurement, so the
+next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
 packaging issue (#206).
 
 ## Browser tests
