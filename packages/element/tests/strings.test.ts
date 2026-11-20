@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { en, formatMessage, MissingPlaceholderError, selectStrings } from "../src/index.js";
+import { formatMessageToParts } from "../src/strings/format.js";
 import type { MessageId } from "../src/index.js";
 
 const inventoryPath = fileURLToPath(
@@ -162,5 +163,66 @@ describe("selectStrings", () => {
   it("treats names from Object.prototype as unknown locales", () => {
     expect(selectStrings("constructor")).toBe(en);
     expect(selectStrings("__proto__")).toBe(en);
+  });
+});
+
+describe("formatMessageToParts", () => {
+  it("splits a message into its words and its named values, in order", () => {
+    expect(
+      formatMessageToParts(en, "history-prefixed", {
+        prefix: "-webkit-",
+        target: "Chrome",
+        version: "22",
+      }),
+    ).toEqual([
+      { kind: "text", text: "With the prefix " },
+      { kind: "value", name: "prefix", text: "-webkit-" },
+      { kind: "text", text: ": supported since " },
+      { kind: "value", name: "target", text: "Chrome" },
+      { kind: "text", text: " " },
+      { kind: "value", name: "version", text: "22" },
+      { kind: "text", text: "." },
+    ]);
+  });
+
+  it("gives no empty text part when a message starts or ends with a placeholder", () => {
+    expect(formatMessageToParts(en, "disclosure-summary", { fact: "A", label: "B" })).toEqual([
+      { kind: "value", name: "fact", text: "A" },
+      { kind: "text", text: ". " },
+      { kind: "value", name: "label", text: "B" },
+    ]);
+    expect(formatMessageToParts(en, "header-feature", {})).toEqual([
+      { kind: "text", text: "Feature" },
+    ]);
+  });
+
+  it("joins to the same text as formatMessage, for every message", () => {
+    for (const id of Object.keys(en) as MessageId[]) {
+      const names = [...en[id].matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/g)].map(
+        ([, name = ""]) => name,
+      );
+      const values = Object.fromEntries(names.map((name) => [name, `{${name}} value`]));
+      const parts = formatMessageToParts(en, id, values);
+
+      expect(parts.map((part) => part.text).join(""), id).toBe(
+        formatMessage(en, id, values as never),
+      );
+    }
+  });
+
+  it("keeps braces inside a value as they are", () => {
+    expect(formatMessageToParts(en, "note", { text: "{text} {other}" })).toEqual([
+      { kind: "text", text: "Note: " },
+      { kind: "value", name: "text", text: "{text} {other}" },
+    ]);
+  });
+
+  it("throws a MissingPlaceholderError that names the message and the placeholder", () => {
+    expect(() => formatMessageToParts(en, "supported-since", { target: "Chrome" })).toThrow(
+      new MissingPlaceholderError("supported-since", "version"),
+    );
+    expect(() =>
+      formatMessageToParts(en, "supported-since", { target: "Chrome", version: 46 }),
+    ).toThrow(MissingPlaceholderError);
   });
 });

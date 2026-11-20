@@ -115,4 +115,7 @@ export const en = {
   // Loading and error states.
   loading: "Loading browser compatibility data for {query}.",
   error: "Browser compatibility data for {query} could not be loaded.",
+  // For an error with no query to name: a value assigned to `data` that is not a payload. The
+  // element shows it only when the author gave no fallback content.
+  "error-no-query": "Browser compatibility data could not be shown.",
 } as const;

@@ -1,7 +1,10 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { build } from "vite";
 import { describe, expect, it } from "vitest";
@@ -52,4 +55,80 @@ describe("a production build", () => {
       await rm(outDir, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+describe("the type declarations", () => {
+  // Emits the declarations the way `tsconfig.build.json` does, into a temporary directory. The
+  // configuration extends the package's `tsconfig.json`, whose `paths` point at the schema
+  // package's source, so the test does not need `@bcd-embed/schema` built first. It sits under
+  // `node_modules/.cache`, inside the package, so TypeScript finds `@types/node` from there.
+  const emitDeclarations = async (): Promise<{ directory: string; sourceRoot: string }> => {
+    const cache = join(packageRoot, "node_modules", ".cache");
+    await mkdir(cache, { recursive: true });
+    const directory = await mkdtemp(join(cache, "declarations-"));
+    const outDir = join(directory, "out");
+    await writeFile(
+      join(directory, "tsconfig.json"),
+      JSON.stringify({
+        extends: join(packageRoot, "tsconfig.json"),
+        compilerOptions: {
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir,
+          rootDir: resolve(packageRoot, ".."),
+        },
+        include: [join(packageRoot, "src/**/*.ts")],
+      }),
+    );
+    const require = createRequire(import.meta.url);
+    const tsc = join(dirname(require.resolve("typescript/package.json")), "bin", "tsc");
+    await promisify(execFile)(process.execPath, [tsc, "--project", directory]);
+    return { directory, sourceRoot: join(outDir, "element", "src") };
+  };
+
+  // Every declaration file that `entry` reaches through an import or an export, itself included.
+  const reachableDeclarations = async (entry: string): Promise<Map<string, string>> => {
+    const files = new Map<string, string>();
+    const queue = [entry];
+    for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
+      if (files.has(file)) continue;
+      const text = await readFile(file, "utf8");
+      files.set(file, text);
+      for (const [, specifier = ""] of text.matchAll(
+        /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g,
+      )) {
+        if (specifier.startsWith(".")) {
+          queue.push(resolve(dirname(file), specifier.replace(/\.js$/, ".d.ts")));
+        }
+      }
+    }
+    return files;
+  };
+
+  it("names the hand-written interface in HTMLElementTagNameMap and never imports from lit", async () => {
+    const { directory, sourceRoot } = await emitDeclarations();
+    try {
+      const entry = join(sourceRoot, "index.d.ts");
+      const files = await reachableDeclarations(entry);
+      const publicTypes = files.get(join(sourceRoot, "public-types.d.ts")) ?? "";
+
+      // The element's class extends a Lit class, so its own declaration file does import from
+      // lit. That shows the check below can fail, and that the entry does not reach the class.
+      expect(await readFile(join(sourceRoot, "bcd-compat-table.d.ts"), "utf8")).toMatch(
+        /from ["']lit["']/,
+      );
+      expect(files.size).toBeGreaterThan(1);
+      for (const [file, text] of files) {
+        expect(/["'](?:lit|lit\/[^"']*|lit-[^"']*|@lit\/[^"']*)["']/.test(text), file).toBe(false);
+      }
+      expect(publicTypes).toMatch(/interface BcdCompatTableElement extends HTMLElement/);
+      expect(publicTypes).toMatch(
+        /interface HTMLElementTagNameMap\s*\{\s*"bcd-compat-table": BcdCompatTableElement;/,
+      );
+      expect(files.get(entry)).toMatch(/BcdCompatTableElement/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

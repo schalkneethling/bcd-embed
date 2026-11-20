@@ -47,7 +47,8 @@ export type CellDisclosure = {
 
 /**
  * The short visible text beside the icon, hidden from assistive technology. The renderer chooses
- * the icon from the cell's `state` and `behindFlag`, and marks up `prefix` as code.
+ * the icon from the cell's `state`, `behindFlag`, and `partialImplementation`, and marks up
+ * `prefix` and `alternativeName` as code.
  */
 export type CellCompact = {
   /** The version text, such as "46", "≤12.1", or "11.1 – 12.1". Null when there is no version. */
@@ -62,6 +63,11 @@ export type TableCell = {
   /** The summary's state, or "no-data" when the payload has no entry for this target. */
   readonly state: SupportState | "no-data";
   readonly behindFlag: boolean;
+  /**
+   * The summary's `partialImplementation`, as the payload gives it. A preview cell needs it,
+   * because its state is "preview" whether the support is partial or full.
+   */
+  readonly partialImplementation: boolean;
   /** The cell's accessible name: the whole fact, including the target. */
   readonly name: TableMessage;
   readonly compact: CellCompact;
@@ -330,6 +336,7 @@ const noData = (context: CellContext): TableCell => ({
   target: context.target.id,
   state: "no-data",
   behindFlag: false,
+  partialImplementation: false,
   name: message(context.strings, "no-data", { target: context.target.name }),
   compact: { text: null, prefix: null, alternativeName: null, hasNotes: false },
   disclosure: null,
@@ -423,6 +430,7 @@ export const buildCell = (
     target: target.id,
     state: summary.state,
     behindFlag: summary.behindFlag,
+    partialImplementation: summary.partialImplementation === true,
     name,
     compact: {
       text: compactFromSummary(strings, summary),

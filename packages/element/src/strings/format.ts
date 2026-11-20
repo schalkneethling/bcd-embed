@@ -55,6 +55,46 @@ export const formatMessage = <Id extends MessageId>(
   });
 };
 
+/**
+ * One piece of a formatted message: the template's own words, or the value of a placeholder with
+ * the placeholder's name. A renderer uses the parts to mark up a value, such as a prefix as code,
+ * without joining pieces of a sentence itself.
+ */
+export type MessagePart =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "value"; readonly name: string; readonly text: string };
+
+/**
+ * Formats a message as a list of parts, in the template's order. Joining every part's `text`
+ * gives the same string as `formatMessage`. An empty stretch of template text gives no part.
+ *
+ * Time and space are O(m + v), as for `formatMessage`: one pass reads the template, and each
+ * value is copied once and never scanned.
+ *
+ * @throws {MissingPlaceholderError} when `values` has no string for a placeholder.
+ */
+export const formatMessageToParts = (
+  table: StringTable,
+  id: MessageId,
+  values: Readonly<Record<string, unknown>>,
+): MessagePart[] => {
+  const template = table[id];
+  const parts: MessagePart[] = [];
+  let textStart = 0;
+  for (const match of template.matchAll(placeholderPattern)) {
+    const name = match[1] ?? "";
+    const value = Object.hasOwn(values, name) ? values[name] : undefined;
+    if (typeof value !== "string") throw new MissingPlaceholderError(id, name);
+    if (match.index > textStart) {
+      parts.push({ kind: "text", text: template.slice(textStart, match.index) });
+    }
+    parts.push({ kind: "value", name, text: value });
+    textStart = match.index + match[0].length;
+  }
+  if (textStart < template.length) parts.push({ kind: "text", text: template.slice(textStart) });
+  return parts;
+};
+
 // Each key is a language subtag. Locale tables beyond English will join this object, loaded on
 // demand, when a second locale ships.
 const stringTables: Readonly<Record<string, StringTable>> = { en };

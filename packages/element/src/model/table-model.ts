@@ -14,7 +14,8 @@
  *   by a nested row's `part-of` message comes from a stack indexed by depth, so no row searches
  *   the rows before it.
  * - Space is O(F × T + S + C): one cell for each feature and target, and one history line for each
- *   statement, flag, and note. The depth stack holds at most one key per level.
+ *   statement, flag, and note. The depth stack holds at most one key per level, and a set holds
+ *   each feature's key once, to reject a payload that repeats one: one lookup for each feature.
  *
  * C is the total number of characters in the notes of the displayed cells, because a note is
  * tokenized in time proportional to its length. BCD's notes are short, so C stays small next to S.
@@ -89,7 +90,8 @@ export type TableModel = {
  * Builds the table model.
  *
  * @throws {TablePayloadError} when `payload` is not a contract 1.x feature response, and for
- * nothing else. The guard checks the envelope, each feature, and each displayed support entry.
+ * nothing else. The guard checks the envelope, each feature, and each displayed support entry. A
+ * feature whose key an earlier feature already has is rejected as `invalid-feature`.
  * Deeper fields, such as a statement's flags, are not checked one by one: any error that a
  * malformed field causes while the model reads it is rethrown as a `TablePayloadError` with the
  * reason `invalid-content` and the original error as its `cause`.
@@ -121,6 +123,8 @@ const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions
   // key before its own name.
   const ancestors: string[] = [];
   let rootPrefix = "";
+  // Every key seen so far. A key names one feature, and the renderer keys each row by it.
+  const keys = new Set<string>();
 
   const rows = payload.features.map((feature, index): TableRow => {
     assertTableModelFeature(feature, index);
@@ -129,6 +133,8 @@ const buildFromPayload = (payload: TableModelPayload, options: TableModelOptions
     if (depth > ancestors.length) {
       throw new TablePayloadError("invalid-feature", `features[${index}].depth`);
     }
+    if (keys.has(key)) throw new TablePayloadError("invalid-feature", `features[${index}].key`);
+    keys.add(key);
 
     let partOf: TableMessage | null = null;
     const parentKey = depth === 0 ? undefined : ancestors[depth - 1];
