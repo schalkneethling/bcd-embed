@@ -25,7 +25,12 @@
  * Space. The cache holds one entry per distinct URL, so memory grows with the number of distinct
  * features a page asks for, not with the number of elements. There is no eviction for successes:
  * a page asks for a handful of features, and a successful result is the data the page is
- * showing. A failure entry is replaced, not added to, when its window ends.
+ * showing. A failure entry stays in the map after its window ends, and only a later call for the
+ * same URL replaces it, so a failed URL that nobody asks for again is not removed.
+ *
+ * Sharing a payload. Callers that share a result share one object. Consumers must not mutate it.
+ * The cache does not freeze it, because a deep freeze walks the whole payload, which is O(size)
+ * for a large feature tree, and the element only reads it.
  *
  * Time. `request` does one `Map` lookup and, at most, one insertion, so each call costs O(1)
  * apart from the work in `load`. A call registers one abort listener and removes it when the
@@ -77,19 +82,26 @@ export const createRequestCache = <Result>({
 
   const start = (url: string, load: () => Promise<Result>): Entry<Result> => {
     const entry: Entry<Result> = {
-      promise: load().then(
-        (result) => {
-          const retention = retentionOf(result);
-          entry.expiresAt = retention === null ? null : now() + retention;
+      // `Promise.resolve().then(load)` turns a synchronous throw from `load` into a rejection.
+      promise: Promise.resolve()
+        .then(load)
+        .then((result) => {
+          try {
+            const retention = retentionOf(result);
+            entry.expiresAt = retention === null ? null : now() + retention;
+          } catch {
+            // A throwing retention function must not leave a settled entry that never expires.
+            // The callers waiting now still get the result, and the next call asks again.
+            if (entries.get(url) === entry) entries.delete(url);
+          }
           return result;
-        },
-        (error: unknown) => {
+        })
+        .catch((error: unknown) => {
           // `load` promised not to reject. If it does anyway, forget the entry so the next call
           // can try again, and pass the error on to the callers that already wait on it.
           if (entries.get(url) === entry) entries.delete(url);
           throw error;
-        },
-      ),
+        }),
       expiresAt: undefined,
     };
     entries.set(url, entry);

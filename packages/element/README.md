@@ -94,22 +94,35 @@ is the `bcd-embed-snapshot` header, or `{ ok: false, reason, status, code }` wit
 test touches the network. The element will call `getPageFeatureClient()`, which creates one client
 per page on first use (#203).
 
-| Outcome                                                  | Cached for                       |
-| -------------------------------------------------------- | -------------------------------- |
-| A 200 with a feature response                            | The life of the page             |
-| A 4xx with a contract error code, except 429             | The life of the page             |
-| A network failure, a 429, a 5xx, any other failed answer | 10 seconds (`FAILURE_WINDOW_MS`) |
+| Outcome                                                             | Cached for                       |
+| ------------------------------------------------------------------- | -------------------------------- |
+| A 200 with a feature response                                       | The life of the page             |
+| A 4xx with a contract error code, except 429                        | The life of the page             |
+| A network failure, a timeout, a 429, a 5xx, any other failed answer | 10 seconds (`FAILURE_WINDOW_MS`) |
 
 The 10 seconds equal the block duration of the hosted API's rate limit
 (`apps/website/src/content/docs/deployment.md`). The cache never retries by timer: a request goes
 out again only when a caller asks after the window. A browser cannot read Cloudflare's edge 429,
 because it has no CORS header, so `fetch` rejects and the result is `network` with `status: null`.
 
-A caller's `AbortSignal` ends only that caller's wait. The shared request has no signal, so it
-finishes and serves every other caller, and the header comment of `src/data/request-cache.ts`
-walks through an example with three elements. The client checks the body's top-level shape with
-types only (`isFeatureResponseEnvelope`), because Zod must stay out of the bundle. The cache holds
-one entry per distinct URL and never evicts a success.
+A caller's `AbortSignal` ends only that caller's wait. The shared request has its own internal
+deadline instead, `REQUEST_TIMEOUT_MS` (20 seconds, covering the fetch and the body read), so a
+stalled request ends as `network` and is held for the 10-second window instead of leaving every
+element waiting. The header comment of `src/data/request-cache.ts` walks through the abort rule with
+three elements.
+
+The client checks the payload with types only (`isFeatureResponseEnvelope`), because Zod must stay
+out of the bundle. The check is linear: the contract's major version is 1, each browser entry is an
+object, and each feature is an object with a `support` object. It does not look inside a `support`
+entry, so **the consumer must still map a throw while it builds its model or renders to
+`invalid-payload`**. Callers share one payload object, so consumers must not mutate it; the cache
+does not freeze it, because a deep freeze costs time proportional to the payload. The cache holds
+one entry per distinct URL and never evicts a success. The default clock is `performance.now()`,
+which a change to the system time cannot move.
+
+Notes for #203: the client does not validate `endpoint`. An empty string, or one containing `?` or
+`#`, produces a URL that sends a query string or fragment, or a relative request. #203 should
+reject such values before calling the client.
 
 The client is not exported from `src/index.ts` yet, so it adds nothing to the size budget until the
 element uses it.

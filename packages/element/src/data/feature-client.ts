@@ -7,20 +7,31 @@
  * refusing them. The rules, from `retentionOf` below:
  *
  *   - A success stays for the life of the page.
- *   - A 4xx response whose body carries a contract error code (Document 1 §8), other than 429,
- *     stays for the life of the page. The API said this key is wrong, and asking again cannot
- *     change that within one page view.
- *   - Everything else stays for `FAILURE_WINDOW_MS`: a network failure, a 429, a 5xx, a 4xx
- *     without a contract code (such as Cloudflare's own `400`), and a body that is not a
+ *   - A 4xx response whose body carries one of the contract's permanent error codes
+ *     (`PERMANENT_ERROR_CODES`, from Document 1 §8) stays for the life of the page. The API said
+ *     this key or snapshot is wrong, and asking again cannot change that within one page view.
+ *   - Everything else stays for `FAILURE_WINDOW_MS`: a network failure, a timeout, a 429, a 5xx,
+ *     a 4xx without a permanent code (such as Cloudflare's own `400`), and a body that is not a
  *     feature response. A call after the window sends one new request. Nothing retries by timer.
  *
  * A browser cannot read the edge rate limit's 429, because Cloudflare's page has no
  * `access-control-allow-origin` header (Document 1 §8, Document 9). `fetch` rejects, and the
  * client reports `reason: "network"` with `status: null`, which the window above covers.
  *
- * Payload validation uses types only. `isFeatureResponseEnvelope` checks the top-level shape of
- * the body and not the data inside it, because the schema package's Zod runtime must not enter
- * the element's bundle (Document 3 §4). The full schema runs at build time on the server.
+ * A request that never settles. The shared request has an internal deadline, `REQUEST_TIMEOUT_MS`,
+ * that covers the fetch and the reading of the body. It belongs to the shared request, not to any
+ * caller, so one caller's abort cannot trigger it. When it fires, the result is `network`, which
+ * the failure window then holds. Without it, a stalled body would keep every element waiting.
+ *
+ * Payload validation uses types only. `isFeatureResponseEnvelope` checks the envelope and the
+ * outer layer of the data in linear time: the contract's major version is 1, `browsers` is an
+ * object of objects, and `features` is an array of objects that each have a `support` object. It
+ * does not check the values inside a `support` entry, because the schema package's Zod runtime
+ * must not enter the element's bundle (Document 3 §4). The full schema runs on the server at
+ * build time. A body can therefore pass this check and still be malformed deeper down, so the
+ * consumer must map a throw while it builds its model or renders to `invalid-payload`.
+ *
+ * Callers share one payload object, so consumers must not mutate it.
  */
 
 import type { FeatureResponse } from "@bcd-embed/schema";
@@ -37,6 +48,25 @@ export const DEFAULT_ENDPOINT = "https://api.browser-compat.dev";
  * (`deployment.md`).
  */
 export const FAILURE_WINDOW_MS = 10_000;
+
+/**
+ * How long the shared request may take, fetch and body together. Twenty seconds is far above a
+ * normal answer (a cached edge response takes well under a second) and gives a slow mobile
+ * connection time to finish a large feature, while still ending a stalled request before a reader
+ * gives up on the page.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000;
+
+/**
+ * The error codes after which asking again cannot help in one page view (Document 1 §8). Other
+ * codes, such as `rate_limited` and `generation_in_progress`, are temporary.
+ */
+export const PERMANENT_ERROR_CODES: ReadonlySet<string> = new Set([
+  "invalid_key",
+  "feature_not_found",
+  "namespace_not_queryable",
+  "snapshot_not_found",
+]);
 
 /**
  * The key pattern from the schema package's `featureKeySchema`. The element cannot import that
@@ -79,7 +109,7 @@ export type FeatureRequest = {
 export type FeatureClientOptions = {
   /** The `fetch` to call. A test injects a fake one. */
   readonly fetch: typeof fetch;
-  /** The clock, in milliseconds. A test injects a fake one. */
+  /** The monotonic clock, in milliseconds. It defaults to `performance.now()`. A test injects a fake one. */
   readonly now?: () => number;
 };
 
@@ -111,15 +141,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * Checks the top-level shape of a feature response, not the data inside it. This is a type guard
- * that trusts the server's own validation for everything below the envelope.
+ * Checks the envelope and the outer layer of a feature response in O(browsers + features) time.
+ * Despite the type predicate, it does not prove the whole `FeatureResponse` shape: it trusts the
+ * server's own validation for everything inside a `support` entry.
  */
 export const isFeatureResponseEnvelope = (value: unknown): value is FeatureResponse =>
   isRecord(value) &&
   typeof value.contract === "string" &&
+  value.contract.startsWith("1.") &&
   typeof value.query === "string" &&
   isRecord(value.browsers) &&
-  Array.isArray(value.features);
+  Object.values(value.browsers).every(isRecord) &&
+  Array.isArray(value.features) &&
+  value.features.every((feature) => isRecord(feature) && isRecord(feature.support));
 
 /** Reads `error.code` from a contract error body, or `null` when the body has none. */
 const readErrorCode = (text: string): string | null => {
@@ -152,8 +186,8 @@ const classify = async (response: Response): Promise<FeatureResult> => {
 };
 
 /**
- * How long a result stays cached. A 4xx with a contract code is the API's definite answer, so it
- * stays for the page's life. A 429 is the exception: it is temporary even when it has a code.
+ * How long a result stays cached. A 4xx with a permanent contract code is the API's definite answer, so
+ * it stays for the page's life. Any other code, such as `rate_limited`, is temporary.
  */
 export const retentionOf = (result: FeatureResult): Retention => {
   if (result.ok) return null;
@@ -162,8 +196,7 @@ export const retentionOf = (result: FeatureResult): Retention => {
     result.status !== null &&
     result.status >= 400 &&
     result.status < 500 &&
-    result.status !== 429 &&
-    result.code !== null
+    PERMANENT_ERROR_CODES.has(result.code ?? "")
   ) {
     return null;
   }
@@ -172,24 +205,32 @@ export const retentionOf = (result: FeatureResult): Retention => {
 
 export const createFeatureClient = ({
   fetch: fetchImpl,
-  now = Date.now,
+  now = () => performance.now(),
 }: FeatureClientOptions): FeatureClient => {
   const cache: RequestCache<FeatureResult> = createRequestCache({ now, retentionOf });
 
+  const attempt = async (url: string, signal: AbortSignal): Promise<FeatureResult> =>
+    classify(await fetchImpl(url, { credentials: "omit", signal }));
+
   const load = async (url: string): Promise<FeatureResult> => {
-    let response: Response;
+    // The deadline is the shared request's own. No caller's signal reaches it.
+    const controller = new AbortController();
+    const deadline = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener("abort", () => reject(controller.signal.reason), {
+        once: true,
+      });
+    });
+    deadline.catch(() => {});
+    const timer = setTimeout(() => controller.abort(new Error("timeout")), REQUEST_TIMEOUT_MS);
     try {
-      // No headers, no body, and no credentials: the request is a plain `GET` that the API's CORS
-      // policy allows without a preflight. The shared request gets no signal on purpose.
-      response = await fetchImpl(url, { credentials: "omit" });
+      // No headers, no body, and no credentials: a plain `GET` that the API's CORS policy allows
+      // without a preflight. The race ends the wait even for a `fetch` that ignores the signal,
+      // and the signal stops the real request and its body read.
+      return await Promise.race([attempt(url, controller.signal), deadline]);
     } catch {
       return failure("network");
-    }
-    try {
-      return await classify(response);
-    } catch {
-      // Reading the body failed partway, for example a dropped connection.
-      return failure("network");
+    } finally {
+      clearTimeout(timer);
     }
   };
 

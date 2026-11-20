@@ -8,7 +8,10 @@ import {
   DEFAULT_ENDPOINT,
   FAILURE_WINDOW_MS,
   FEATURE_KEY_PATTERN,
+  REQUEST_TIMEOUT_MS,
 } from "../../src/data/feature-client.js";
+
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const DISPLAY_URL =
   "https://api.browser-compat.dev/v1/current/features/css.properties.display.json";
@@ -263,6 +266,7 @@ describe("failure caching", () => {
     });
 
     const pending = client.requestFeature({ query: "css.x" });
+    await tick();
     advanceTo(30_000);
     release(new Response("", { status: 503 }));
     await pending;
@@ -333,6 +337,7 @@ describe("cancellation", () => {
     const a = client.requestFeature({ query: "css.x", signal: controller.signal });
     const b = client.requestFeature({ query: "css.x" });
     const c = client.requestFeature({ query: "css.x" });
+    await tick();
     controller.abort();
 
     await expect(a).rejects.toMatchObject({ name: "AbortError" });
@@ -346,12 +351,15 @@ describe("cancellation", () => {
     expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("never gives the shared request a signal", async () => {
+  it("gives the shared request its own signal, never the caller's", async () => {
     const { client, fakeFetch } = setup(okResponse);
+    const callerSignal = new AbortController().signal;
 
-    await client.requestFeature({ query: "css.x", signal: new AbortController().signal });
+    await client.requestFeature({ query: "css.x", signal: callerSignal });
 
-    expect(fakeFetch.mock.calls[0]?.[1]).not.toHaveProperty("signal");
+    const sent = fakeFetch.mock.calls[0]?.[1]?.signal;
+    expect(sent).toBeInstanceOf(AbortSignal);
+    expect(sent).not.toBe(callerSignal);
   });
 
   it("sends no request for a caller that is already aborted", async () => {
@@ -386,9 +394,147 @@ describe("what the request sends", () => {
     const [url, init] = fakeFetch.mock.calls[0] ?? [];
     expect(url).toBe(DISPLAY_URL);
     expect(String(url)).not.toContain("?");
-    expect(init).toEqual({ credentials: "omit" });
+    expect(init).toEqual({ credentials: "omit", signal: expect.any(AbortSignal) });
     expect(init).not.toHaveProperty("headers");
     expect(init).not.toHaveProperty("body");
     expect(init?.method).toBeUndefined();
+  });
+});
+
+describe("a request that never settles", () => {
+  it("ends as network after the timeout, then holds the failure for 10 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const fakeFetch: FakeFetch = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+      // Fake timers also fake `Date`, so one clock drives both the deadline and the cache.
+      const client = createFeatureClient({ fetch: fakeFetch, now: () => Date.now() });
+
+      const waiting = [
+        client.requestFeature({ query: "css.x" }),
+        client.requestFeature({ query: "css.x" }),
+      ];
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+      const results = await Promise.all(waiting);
+      expect(results[0]).toEqual({ ok: false, reason: "network", status: null, code: null });
+      expect(results[1]).toBe(results[0]);
+
+      await vi.advanceTimersByTimeAsync(9_000);
+      await client.requestFeature({ query: "css.x" });
+      expect(fakeFetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      const retry = client.requestFeature({ query: "css.x" });
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+      await retry;
+      expect(fakeFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts the signal it gave to fetch when the deadline passes", async () => {
+    vi.useFakeTimers();
+    try {
+      const fakeFetch: FakeFetch = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+      const client = createFeatureClient({ fetch: fakeFetch, now: () => 0 });
+
+      const pending = client.requestFeature({ query: "css.x" });
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+      await pending;
+
+      expect(fakeFetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not time out a request that finishes in time", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client } = setup(okResponse);
+
+      expect(await client.requestFeature({ query: "css.x" })).toMatchObject({ ok: true });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("payload shape", () => {
+  const withFeatures = (features: unknown) => ({ ...v1NormalizedFixture, features });
+
+  for (const [name, body] of [
+    ["a null feature", withFeatures([null])],
+    ["a feature without support", withFeatures([{}])],
+    ["a null browser entry", { ...v1NormalizedFixture, browsers: { a: null } }],
+    ["a contract from major version 2", { ...v1NormalizedFixture, contract: "2.0.0" }],
+    ["a contract that is not a version", { ...v1NormalizedFixture, contract: "v1" }],
+  ] as const) {
+    it(`reports invalid-payload for ${name}`, async () => {
+      const { client } = setup(() => new Response(JSON.stringify(body), { status: 200 }));
+
+      expect(await client.requestFeature({ query: "css.x" })).toMatchObject({
+        ok: false,
+        reason: "invalid-payload",
+      });
+    });
+  }
+
+  it("accepts a later minor version of contract 1", async () => {
+    const body = { ...v1NormalizedFixture, contract: "1.4.0" };
+    const { client } = setup(() => new Response(JSON.stringify(body), { status: 200 }));
+
+    expect(await client.requestFeature({ query: "css.x" })).toMatchObject({ ok: true });
+  });
+});
+
+describe("permanent error codes", () => {
+  for (const [status, code] of [
+    [400, "invalid_key"],
+    [404, "namespace_not_queryable"],
+    [404, "snapshot_not_found"],
+  ] as const) {
+    it(`keeps a ${status} ${code} for the life of the page`, async () => {
+      const { client, fakeFetch, advanceTo } = setup(() =>
+        errorResponse(status, { code, message: "No.", query: "css.x" }),
+      );
+
+      await client.requestFeature({ query: "css.x" });
+      advanceTo(24 * 60 * 60 * 1000);
+      await client.requestFeature({ query: "css.x" });
+
+      expect(fakeFetch).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("holds a 4xx with an unknown code for 10 seconds only", async () => {
+    const { client, fakeFetch, advanceTo } = setup(() =>
+      errorResponse(403, { code: "something_new", message: "No.", query: null }),
+    );
+
+    await client.requestFeature({ query: "css.x" });
+    advanceTo(10_000);
+    await client.requestFeature({ query: "css.x" });
+
+    expect(fakeFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the default clock", () => {
+  it("is monotonic, so a wall-clock jump does not expire a failure", async () => {
+    const wall = vi.spyOn(Date, "now");
+    const fakeFetch: FakeFetch = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    const client = createFeatureClient({ fetch: fakeFetch });
+
+    await client.requestFeature({ query: "css.x" });
+    wall.mockReturnValue(Date.now() + 60_000);
+    await client.requestFeature({ query: "css.x" });
+
+    expect(fakeFetch).toHaveBeenCalledTimes(1);
+    wall.mockRestore();
   });
 });
