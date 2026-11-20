@@ -24,7 +24,12 @@ The data is `v1NormalizedFixture` from `@bcd-embed/schema`
 two-tier header: Desktop over Chrome and Opera, Server over Node.js.
 
 The glyphs (✓, ✕, ◐, ⚑, ?, —) are placeholders for the icons that Phase 3
-chooses. They are hidden from assistive technology.
+chooses. They are hidden from assistive technology. An asterisk after the
+version marks a cell whose support summary has notes, as in "✓ 20 \*" for
+`notes_only` and "✕ 11.1 – 12.1 \*" for `removed_partial`. Issue #198 added the
+second asterisk, which the page lacked although that cell has a note too, so
+the page agrees with what the element renders. The asterisk sits in the hidden
+glyph span, so no screen reader announces it.
 
 Each glyph-and-version span carries both `aria-hidden="true"` and the `hidden`
 attribute. With no stylesheet, the browser's own `hidden` rule removes the span
@@ -50,7 +55,11 @@ therefore hears a complete fact at every stop. Cells with nothing further,
 such as "Supported since Chrome 1", are plain text and take no tab stop.
 
 **Notes and flag details sit inside the disclosure of their own cell.** There
-are no footnote markers that point elsewhere.
+are no footnote markers that point elsewhere. The built element (Issue #198)
+wraps each note in a `<bdi>` element, which these pages do not have. It keeps a
+note that contains bidirectional control characters from reordering the words
+around it. `<bdi>` has no role, so the CI walks of these pages say nothing about
+it, and the pass on the built component is the first to hear it.
 
 **An absent support target and an explicitly unknown one read differently.**
 "No data for Opera" means BCD has no entry. "Support unknown in Node.js" means

@@ -1,28 +1,142 @@
 # `@bcd-embed/element`
 
 The `<bcd-compat-table>` web component (`docs/planning/03-web-component-architecture.md`). The
-component class does not exist yet. The package currently holds the build, the message table, the
-note tokenizer, the public types, and the screen reader tests for the Phase 1 static markup in
+element renders in data mode: a page assigns a payload to its `data` property, and the element
+renders the table with no request. Fetch mode (the `query` attribute) and the `source` attribute
+are later issues. The package also holds the message table, the note tokenizer, the table model,
+the feature client, and the screen reader tests for the Phase 1 static markup in
 `docs/planning/phase1-markup/`.
+
+## Usage
+
+The package is not published yet (`private` is `true`), so this is how a page will use it once it
+is. Importing the package defines the element.
+
+```html
+<bcd-compat-table id="display" browsers="chrome firefox safari">
+  <p>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/display#browser_compatibility"
+      >Browser compatibility for <code>display</code> on MDN Web Docs</a
+    >
+  </p>
+</bcd-compat-table>
+
+<script type="module">
+  import "@bcd-embed/element";
+
+  const table = document.querySelector("#display");
+  table.addEventListener("bcd-load", (event) => {
+    console.log(event.detail); // { mode: "data", snapshot: null }
+  });
+  table.addEventListener("bcd-error", (event) => {
+    console.warn(event.detail.reason); // "invalid-payload"
+  });
+  // `payload` is a feature response from the API contract, obtained at build time.
+  table.data = payload;
+</script>
+```
+
+| Input                  | Kind                   | What it does                                                                                                                                                                                                                                  |
+| ---------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`                 | Property only          | A contract 1.x feature response. Assigning one renders the table. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data.                                                       |
+| `browsers`             | Attribute and property | Space-separated support target ids, such as `chrome firefox`. Without it, the table shows `chrome firefox safari nodejs`, less any target the payload does not describe, or every target in the payload when it describes none of those four. |
+| `locale`               | Attribute and property | Selects the string table. Only English ships, and an unknown locale selects English.                                                                                                                                                          |
+| The element's children | Fallback content       | Shown until a table renders, and again after an error or `data = null`. The element never moves or removes them.                                                                                                                              |
+
+The element fires two events. Both are `CustomEvent`s that bubble, so a listener on the element,
+an ancestor, or the document receives them, and neither can be cancelled.
+
+| Event       | When                                                                    | `detail` in data mode                                                   |
+| ----------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `bcd-load`  | Once for each assigned payload, after the table is in the document      | `{ mode: "data", snapshot: null }`                                      |
+| `bcd-error` | Once for each assigned value that is not a payload the element can read | `{ mode: "data", reason: "invalid-payload", status: null, code: null }` |
+
+A change to `browsers` or `locale` renders the table again without a second `bcd-load`. The one
+exception is a change that turns a rendered payload into a rejected one, or back: the model checks
+only the support targets it shows, so asking for a target whose `browsers` entry is malformed fires
+`bcd-error`, and removing it again fires `bcd-load`. After an error the element renders nothing of
+its own: the fallback content is the message. It cannot use the `error` sentence in the string
+table, because that sentence names the query and an invalid payload may not have one.
+
+**How the fallback is hidden.** While a table is rendered, the element carries the boolean
+attribute `loaded`, and the table sits in a child `<div class="bcd-render-container">`. The base
+stylesheet, which Phase 3 ships, hides every other child while `loaded` is present. Until then the
+rule lives in `e2e/fixtures/fallback.css`. A page that loads no stylesheet shows the fallback next
+to the table. If a script removes the container, which React does when it changes a single string
+child, the element puts the same container back. The class `bcd-render-container` belongs to the
+element: it removes any other child that carries it, because such a child is a copy of an earlier
+table, from `cloneNode(true)` or from saved HTML. That is the one case where it removes a child.
+
+**Re-rendering.** Rows are keyed by feature and cells by target, so a disclosure a reader opened
+stays open on its own cell when `browsers` changes or a new payload has the same feature.
+
+**What the markup is.** The table matches `docs/planning/phase1-markup/index.html` (variant A,
+headers associated by `scope`), element for element and attribute for attribute, with one
+addition: each note sits in a `<bdi>` element, so a note that contains bidirectional control
+characters cannot reorder the words around it. A browser test compares the two. Each cell holds a
+glyph span with `aria-hidden="true"` and `hidden`, then a span with the full sentence, so a page
+with no stylesheet reads every cell as its sentence. The glyphs are Phase 1's placeholders until
+Phase 3 chooses icons.
+
+**TypeScript.** `document.querySelector("bcd-compat-table")` returns `BcdCompatTableElement`, a
+hand-written interface, and `addEventListener("bcd-load", …)` types `event.detail`. No type from
+Lit is public: the entry does not export the element's class, and a test fails when any
+declaration file the entry reaches imports from `lit`.
+
+### Size of the rendered table
+
+The element builds the model and the markup in one pass each, so one update costs
+O(F × T + S + C) time and space for F features, T shown targets, S statements with their flags and
+notes, and C characters of text. The number of elements is bounded too. `src/render/table.ts`
+derives the exact bound, and a browser test checks it on 2,000 features by four targets:
+
+```text
+elements ≤ 14 × F × T + 9 × S + E + 10
+```
+
+Here S counts each statement, flag, and note, and E counts the code, emphasis, and link elements
+inside notes. The short form holds for at least one feature and one target; the exact bound in
+`src/render/table.ts` holds always. The 2,000-feature test payload renders 61,618 elements, including the render
+container.
+
+Render time for that payload, measured on 20 November 2026 on an Apple silicon Mac (Darwin 27.2.0,
+load average near 15, because other work ran beside it) with Playwright 1.65.1, one test at a time, three runs each. The page ran
+Lit's development build from the Vite dev server, which is slower than the production build. The
+times are recorded by `e2e/data-mode.e2e.ts`, which prints them and never asserts them.
+
+| Engine (Playwright build) | Until `bcd-load` (model and markup) | Until two animation frames later (layout and paint) |
+| ------------------------- | ----------------------------------- | --------------------------------------------------- |
+| Chromium                  | 191 to 199 ms                       | 394 to 412 ms                                       |
+| Firefox                   | 365 to 572 ms                       | 598 to 903 ms                                       |
+| WebKit                    | 355 to 376 ms                       | 921 to 939 ms                                       |
+
+A row cap does not need to become a follow-up now. A feature's table holds the feature and
+everything nested under it, and the largest such subtree in BCD 8.1.9 is `api.Element` with 314
+features; five subtrees have more than 200 and none has more than 500. So 2,000 rows is more than
+six times the largest real table, and it rendered in under a second here. These numbers come from
+one fast machine, so measure again on a slow phone before relying on them for very large tables.
 
 ## Layout
 
-| Path                                       | Holds                                                                                         |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `src/index.ts`                             | The package entry. Everything the package exports passes through it.                          |
-| `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                        |
-| `src/strings/format.ts`                    | `formatMessage`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English. |
-| `src/data/request-cache.ts`                | The request cache: one entry per URL, shared in-flight requests, and per-result retention.    |
-| `src/data/feature-client.ts`               | The feature client: builds the URL, calls `fetch`, and classifies the answer.                 |
-| `src/public-types.ts`                      | The public types. `@bcd-embed/schema` is imported with `import type` only.                    |
-| `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.      |
-| `tests/`                                   | Vitest tests, and `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks.   |
-| `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                     |
-| `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.    |
-| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests (below).                                                              |
-| `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                  |
-| `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`.                   |
-| `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                             |
+| Path                                          | Holds                                                                                                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/index.ts`                                | The package entry. It defines the element, and everything the package exports passes through it.                                                                   |
+| `src/bcd-compat-table.ts`                     | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                     |
+| `src/render/table.ts`, `src/render/status.ts` | The Lit templates that map the table model to the Phase 1 markup, and the placeholder glyphs.                                                                      |
+| `src/model/table-model.ts`                    | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                    |
+| `src/strings/en.ts`                           | The English message table, keyed by message id, with `{placeholders}`.                                                                                             |
+| `src/strings/format.ts`                       | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                              |
+| `src/data/request-cache.ts`                   | The request cache: one entry per URL, shared in-flight requests, and per-result retention.                                                                         |
+| `src/data/feature-client.ts`                  | The feature client: builds the URL, calls `fetch`, and classifies the answer.                                                                                      |
+| `src/public-types.ts`                         | The public types, including the hand-written `BcdCompatTableElement`. `@bcd-embed/schema` is imported with `import type` only.                                     |
+| `src/model/note.ts`                           | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.                                                                           |
+| `tests/`                                      | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size. |
+| `browser/`                                    | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                          |
+| `e2e/`, `playwright.e2e.config.ts`            | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                         |
+| `screen-reader/`, `playwright.*.config.ts`    | The screen reader tests (below).                                                                                                                                   |
+| `vite.config.ts`, `tsconfig.build.json`       | The library build and its type declarations.                                                                                                                       |
+| `.size-limit.json`                            | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 7 kB with Brotli.                                                                      |
+| `custom-elements-manifest.config.mjs`         | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
 `private` stays `true`, so nothing publishes yet. The package already has the shape a published one
 needs: `exports` for `.` and `./package.json`, `files` set to `dist`, and `sideEffects` in array
@@ -82,9 +196,9 @@ and `length`, never through a search such as `indexOf` or a regular expression. 
 that the package source never uses an HTML string sink such as `innerHTML` or `unsafeHTML`.
 
 A note can contain bidirectional control characters, written directly or as numeric entities,
-which can reorder the text around them. The tokenizer leaves them alone. The renderer (#198)
-should isolate each note's text, with `unicode-bidi: isolate` or a `<bdi>` element, so a note
-cannot reorder the text next to it.
+which can reorder the text around them. The tokenizer leaves them alone. The renderer wraps each
+note's segments in a `<bdi>` element, which isolates the note's text direction, so a note cannot
+reorder the "Note:" label before it or the text after it.
 
 ## Feature client and request cache
 
@@ -136,17 +250,25 @@ element uses it.
 | `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
 | `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                |
 | `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                |
-| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists nothing until a class exists.                                                                                                                                                                                                                |
+| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists the `bcd-compat-table` element with its `browsers` and `locale` attributes and its two events.                                                                                                                                               |
 
 The Vitest tests include a production build into a temporary directory, which checks that
 `dist/index.js` has no mention of `zod`. The element reads the schema package's types only, because
-Zod would roughly double the bundle.
+Zod would roughly double the bundle. Another test emits the type declarations into a temporary
+directory under `node_modules/.cache` and follows every import from `index.d.ts`, to check that
+none of those files imports from `lit`.
+
+The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
+element, the table model, and the note tokenizer measure 6.26 kB with Brotli, without Lit, so the
+limit is now 7 kB. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
+packaging issue (#206).
 
 ## Browser tests
 
 Two harnesses run the component in a real browser. Each was run once by the implementer of issue
-#197 on macOS with Playwright 1.65.1, and the Element browser workflow runs the three-engine one on
-every pull request that changes this package.
+#197 on macOS with Playwright 1.65.1, and again with the element's own tests by the implementer of
+issue #198 on 20 November 2026. The Element browser workflow runs the three-engine one on every
+pull request that changes this package.
 
 | Harness                                      | Engines                   | Runs in         | Command                                                           |
 | -------------------------------------------- | ------------------------- | --------------- | ----------------------------------------------------------------- |
@@ -174,9 +296,21 @@ one project and the list of Node tests does not change. The `*.e2e.ts` files mat
 `package.json` and in this package. Update them together. `pnpm why playwright @playwright/test -r`
 prints one version of each when they agree.
 
+`browser/bcd-compat-table.browser.test.ts` holds the element's rendering tests: the markup against
+the Phase 1 page, the events, the fallback rules, notes that contain markup, and the bound on the
+size of the rendered tree.
+
 `e2e/fixtures/smoke.html` is an inert page, and `e2e/smoke.e2e.ts` runs axe on it, so the harness
-proves itself before the element exists. A violation fails the test with the rule's id and the
+proves itself without the element. A violation fails the test with the rule's id and the
 elements it flags, for example `image-alt` with `img`.
+
+`e2e/fixtures/data-mode.html` is the element's fixture page. Its script assigns the adversarial
+fixture to `data`, and its only stylesheet is the fallback rule. `e2e/data-mode.e2e.ts` runs axe on
+the loaded table, with every disclosure open, after an error, and after `data = null`. It also
+checks the fallback rule's computed styles, the Tab key's stops, and that a note's markup never
+runs, and it records the render time of a 2,000-feature table. The page imports TypeScript source,
+so `playwright.e2e.config.ts` starts Vite's dev server on port 5198 through `webServer` and stops
+it afterwards. The run fails at once if that port is taken.
 
 The Element browser workflow (`.github/workflows/element-browser.yml`) has a `changes` job, one
 test job per engine, and a final `element-browser` job that is the required status check. It
