@@ -12,6 +12,8 @@ note tokenizer, the public types, and the screen reader tests for the Phase 1 st
 | `src/index.ts`                             | The package entry. Everything the package exports passes through it.                          |
 | `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                        |
 | `src/strings/format.ts`                    | `formatMessage`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English. |
+| `src/data/request-cache.ts`                | The request cache: one entry per URL, shared in-flight requests, and per-result retention.    |
+| `src/data/feature-client.ts`               | The feature client: builds the URL, calls `fetch`, and classifies the answer.                 |
 | `src/public-types.ts`                      | The public types. `@bcd-embed/schema` is imported with `import type` only.                    |
 | `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.      |
 | `tests/`                                   | Vitest tests, and `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks.   |
@@ -81,6 +83,36 @@ A note can contain bidirectional control characters, written directly or as nume
 which can reorder the text around them. The tokenizer leaves them alone. The renderer (#198)
 should isolate each note's text, with `unicode-bidi: isolate` or a `<bdi>` element, so a note
 cannot reorder the text next to it.
+
+## Feature client and request cache
+
+`createFeatureClient({ fetch, now })` in `src/data/feature-client.ts` requests
+`{endpoint}/v1/current/features/{query}.json` and resolves with a classified result. It never
+throws for a failed request. A result is either `{ ok: true, payload, snapshot }`, where `snapshot`
+is the `bcd-embed-snapshot` header, or `{ ok: false, reason, status, code }` with a `reason` of
+`invalid-query`, `network`, `http`, or `invalid-payload`. Tests inject `fetch` and the clock, so no
+test touches the network. The element will call `getPageFeatureClient()`, which creates one client
+per page on first use (#203).
+
+| Outcome                                                  | Cached for                       |
+| -------------------------------------------------------- | -------------------------------- |
+| A 200 with a feature response                            | The life of the page             |
+| A 4xx with a contract error code, except 429             | The life of the page             |
+| A network failure, a 429, a 5xx, any other failed answer | 10 seconds (`FAILURE_WINDOW_MS`) |
+
+The 10 seconds equal the block duration of the hosted API's rate limit
+(`apps/website/src/content/docs/deployment.md`). The cache never retries by timer: a request goes
+out again only when a caller asks after the window. A browser cannot read Cloudflare's edge 429,
+because it has no CORS header, so `fetch` rejects and the result is `network` with `status: null`.
+
+A caller's `AbortSignal` ends only that caller's wait. The shared request has no signal, so it
+finishes and serves every other caller, and the header comment of `src/data/request-cache.ts`
+walks through an example with three elements. The client checks the body's top-level shape with
+types only (`isFeatureResponseEnvelope`), because Zod must stay out of the bundle. The cache holds
+one entry per distinct URL and never evicts a success.
+
+The client is not exported from `src/index.ts` yet, so it adds nothing to the size budget until the
+element uses it.
 
 ## Build and tests
 
