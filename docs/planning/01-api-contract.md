@@ -84,7 +84,7 @@ from that list (see the separate statement-ordering rule in §5.1):
 
 ```jsonc
 {
-  "contract": "1.0.0",
+  "contract": "1.1.0",
   "browsers": {
     "chrome": {
       "name": "Chrome",
@@ -119,7 +119,7 @@ document order.
 
 ```jsonc
 {
-  "contract": "1.0.0",
+  "contract": "1.1.0",
   "namespace": "css",
   "keys": ["css.at-rules.container", "css.properties.display"]
 }
@@ -135,7 +135,7 @@ Contract version, available snapshots, the current alias target, generation time
 
 ```jsonc
 {
-  "contract": "1.0.0",
+  "contract": "1.1.0",
   "generated": "2026-08-28T12:00:00Z",
   "current": "bcd-8.0.13-gen-0.1.0",
   "snapshots": [
@@ -176,7 +176,7 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 
 ```jsonc
 {
-  "contract": "1.0.0",
+  "contract": "1.1.0",
   "query": "css.properties.display",
 
   "browsers": {
@@ -209,6 +209,7 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
           "summary": {
             "state": "supported",
             "versionAdded": "1",
+            "versionAddedIsApproximate": false, // added in contract 1.1.0
             "versionRemoved": null,
             "versionRemovedIsApproximate": false,
             "releaseDate": "2008-12-11",
@@ -269,6 +270,13 @@ This resource carries no contract guarantee beyond "this is what BCD says." It i
 The normalized `versionAdded` value never contains the raw `≤` sigil, and
 `versionAddedIsApproximate: true` is valid only alongside a version string.
 
+The summary carries the selected statement's `versionAddedIsApproximate` as
+well (contract 1.1.0), so a consumer can state the selected fact in full, for
+example "12.1 or earlier", without reading `branches`. Like every summary
+field, it is copied from the one selected statement (§6) and never combined
+from several. It is `false` whenever the summary's `versionAdded` is `false`
+or `null`.
+
 The same lossless representation applies to removal and last-supported
 versions through `versionRemovedIsApproximate` and
 `versionLastIsApproximate`. `versionLast` preserves BCD's distinct
@@ -326,6 +334,13 @@ After fully supported cases, stable partial support outranks stable flag-only su
 Two independent axes.
 
 **Contract version** (`v1` in the path) describes the shape of the JSON. It changes only on a breaking change to the response format. Additive fields ship within `v1`; the `contract` field in the body carries a full semantic version so a consumer can detect additions.
+
+An additive change raises the minor version. It adds a field and changes no existing field's name, type, or meaning, so a consumer written for the earlier version reads the new body correctly if it ignores fields it does not know. A file is never rewritten: a snapshot keeps the contract it was generated under until it expires, so a pinned URL keeps returning the same bytes, and a consumer reads the `contract` field of the body it received rather than assuming the current one. `meta.json` carries the contract of the current snapshot.
+
+| Contract | Change | Kind |
+| --- | --- | --- |
+| 1.0.0 | The initial contract. | — |
+| 1.1.0 | `summary.versionAddedIsApproximate`, the selected statement's flag (§5.1). Statement selection and ordering are unchanged. | Additive |
 
 **Snapshot** identifies one generation of the data. `current` is a moving alias to the most recent generation and is the component's default. Every generation is also published under an immutable path whose identifier encodes both inputs that determine the output — the BCD version and the generator version, e.g. `bcd-8.0.13-gen-1.2.0` — so a consumer needing short-to-medium-term build stability can pin to it. The BCD version alone would not be a sufficient identifier: a fix to the transformation logic regenerates from the same BCD release, and must land as a new immutable snapshot rather than silently replacing an existing one (Document 2 §3). Retention is bounded, not indefinite (Document 2 §3, default 90 days): pinning is for keeping a build or a staged rollout stable across a release cycle, not for indefinite historical reference. A pinned snapshot older than the retention window returns `snapshot_not_found` (§8); this project does not serve as a historical archive of past BCD data (Document 0 §3).
 

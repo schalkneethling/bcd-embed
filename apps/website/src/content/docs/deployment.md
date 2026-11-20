@@ -189,6 +189,38 @@ deploy replaces the Worker's variables with the ones in the schema. A variable
 added in the Cloudflare dashboard is removed by the next deploy. Add new
 variables to `env/.env.schema` instead.
 
+### Rolling a deploy back
+
+To return to an earlier Worker version, list the recent deployments and roll
+back to a version ID from that list:
+
+```sh
+pnpm --filter @bcd-embed/worker exec wrangler deployments list
+pnpm --filter @bcd-embed/worker exec wrangler rollback <version-id>
+```
+
+Without a version ID, `wrangler rollback` returns to the previous deployment.
+
+:::caution[Not to a version from before contract 1.1.0 once the bucket is at 1.1.0]
+A Worker version from before contract 1.1.0 can read only a 1.0.0
+`v1/meta.json`. Read the bucket's file before you roll back:
+
+```sh
+pnpm --filter @bcd-embed/worker exec wrangler r2 object get bcd-embed-artifacts/v1/meta.json --remote --pipe
+```
+
+If it names contract `1.1.0`, the publication's compare-and-swap of
+`meta.json` has happened, and a pre-1.1.0 version would answer every request
+that reads `meta.json` with a 500 error. If a publication reported that the
+switch's outcome is unknown, read the file first. Until the Worker is deployed
+again after the contract 1.1.0 deploy, the previous deployment is a pre-1.1.0
+version, so do not run `wrangler rollback` without a version ID either.
+
+The edge cache holds `meta.json` and `current` answers for up to a day, so a bad
+rollback can look healthy at first and fail as entries expire. See
+[Publishing a contract change](/publication/#publishing-a-contract-change).
+:::
+
 ## Checking a deploy without deploying
 
 Two commands exercise the Worker without touching a Cloudflare account:

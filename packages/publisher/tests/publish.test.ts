@@ -15,7 +15,7 @@ import {
   generateSnapshot,
   type DiffApproval,
 } from "@bcd-embed/generator";
-import { blobPath, shardPath, snapshotRootPath } from "@bcd-embed/schema";
+import { blobPath, CONTRACT_VERSION, shardPath, snapshotRootPath } from "@bcd-embed/schema";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { parsePublishCommand } from "../src/cli.js";
@@ -351,6 +351,33 @@ describe("a later publication", () => {
     );
   });
 
+  it("replaces live metadata published under an earlier contract", async () => {
+    const store = new MemoryStore();
+    const first = await validateCandidate(await publishFirst(store));
+    // The live bucket before contract 1.1.0: the same metadata, at contract 1.0.0.
+    const live = store.objects.get("v1/meta.json")!;
+    const earlier = JSON.parse(live.bytes.toString()) as { contract: string };
+    live.bytes = Buffer.from(`${JSON.stringify({ ...earlier, contract: "1.0.0" })}\n`);
+    live.metadata.sha256 = sha256(live.bytes);
+
+    const candidateRoot = await emit(SECOND);
+    const second = await validateCandidate(candidateRoot);
+    const result = await publishCandidate({
+      candidateRoot,
+      store,
+      clock: at("2026-01-09"),
+      sleep: noSleep,
+    });
+    expect(result.type).toBe("published");
+    const meta = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()) as {
+      contract: string;
+      snapshots: Array<{ id: string }>;
+    };
+    expect(meta.contract).toBe(CONTRACT_VERSION);
+    // The earlier snapshot stays listed, so its pinned URLs keep working until it expires.
+    expect(meta.snapshots.map(({ id }) => id)).toEqual([second.snapshotId, first.snapshotId]);
+  });
+
   it("rejects live metadata whose recorded digest is not its root's hash", async () => {
     const store = new MemoryStore();
     await publishFirst(store);
@@ -613,6 +640,23 @@ describe("cleanup of unreferenced files", () => {
     expires: "2026-06-30",
     features: featuresWith({ Test: "2", Other: "2" }),
   };
+
+  it("keeps the contract of metadata it retires snapshots from", async () => {
+    const { store, second } = await threeReleases();
+    // The bucket as an earlier contract left it: two snapshots listed, the first one expiring.
+    const live = store.objects.get("v1/meta.json")!;
+    const earlier = JSON.parse(live.bytes.toString()) as { contract: string };
+    live.bytes = Buffer.from(`${JSON.stringify({ ...earlier, contract: "1.0.0" })}\n`);
+    live.metadata.sha256 = sha256(live.bytes);
+
+    await pruneRetiredSnapshots(store, { clock: at("2026-04-02"), sleep: noSleep });
+    const meta = JSON.parse(store.objects.get("v1/meta.json")!.bytes.toString()) as {
+      contract: string;
+      snapshots: Array<{ id: string }>;
+    };
+    expect(meta.contract).toBe("1.0.0");
+    expect(meta.snapshots.map(({ id }) => id)).toEqual([second.snapshotId]);
+  });
 
   it("deletes what only an expired snapshot used and keeps what a live one shares", async () => {
     const { store, first, second } = await threeReleases();

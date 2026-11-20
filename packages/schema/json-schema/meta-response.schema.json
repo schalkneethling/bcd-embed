@@ -7,7 +7,7 @@
   "properties": {
     "contract": {
       "type": "string",
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "generated": {
       "type": "string",

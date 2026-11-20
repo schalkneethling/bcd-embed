@@ -123,6 +123,12 @@ matching if the generated content on either side changes, for example when a
 generator change lands on `main` first. In that case, repeat the procedure with
 the new report.
 
+A contract change, such as contract 1.1.0 (issue #191), needs no entry here.
+The gate runs only for Dependabot pull requests and generates both trees with
+the trusted base code, so both always carry the same contract. An entry for a
+contract change would never match a report. Its publication needs only the
+exact-digest publication approval below.
+
 This approval and the publication approval are separate:
 
 | | Pull request gate approval | Publication approval |

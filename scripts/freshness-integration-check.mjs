@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -114,8 +114,45 @@ try {
   const routine = compare("routine", approvals);
   assert.equal(routine.status, 0, routine.stderr);
   assert.equal(routine.report.reviewApproval, null);
+
+  // A baseline published under an earlier contract. Only `meta.json` names the contract among
+  // the files the pointer comparison reads, so changing it there is enough for both checks.
+  const earlier = join(root, "earlier-contract");
+  await cp(baseline, earlier, { recursive: true });
+  const earlierMeta = join(earlier, "v1/meta.json");
+  const meta = JSON.parse(await readFile(earlierMeta, "utf8"));
+  await writeFile(earlierMeta, `${JSON.stringify({ ...meta, contract: "1.0.0" })}\n`);
+  // A normal freshness run still rejects it before the magnitude gate.
+  const strict = spawnSync(
+    process.execPath,
+    [script, "--baseline", earlier, "--candidate", join(root, "blocked")],
+    { encoding: "utf8" },
+  );
+  assert.equal(strict.status, 1, strict.stderr);
+  assert.match(strict.stderr, /Invalid artifact 'v1\/meta\.json'/);
+  // The contract-change comparison reads its pointers and blocks on magnitude alone.
+  const contractChange = fileURLToPath(new URL("./compare-contract-change.mjs", import.meta.url));
+  const crossed = spawnSync(
+    process.execPath,
+    [contractChange, "--baseline", earlier, "--candidate", join(root, "blocked")],
+    { encoding: "utf8" },
+  );
+  assert.equal(crossed.status, 2, crossed.stderr);
+  const crossedReport = JSON.parse(crossed.stdout);
+  assert.equal(crossedReport.baselineContract, "1.0.0");
+  assert.deepEqual(crossedReport.blocked, [blocked.blocked[0]]);
+  assert.equal(crossedReport.baselineSemanticDigest, blocked.baselineSemanticDigest);
+  assert.equal(crossedReport.semanticDigest, blocked.semanticDigest);
+  // It refuses a baseline at the current contract, which the full comparison must check instead.
+  const sameContract = spawnSync(
+    process.execPath,
+    [contractChange, "--baseline", baseline, "--candidate", join(root, "blocked")],
+    { encoding: "utf8" },
+  );
+  assert.equal(sameContract.status, 1);
+  assert.match(sameContract.stderr, /already at contract/);
   process.stdout.write(
-    "Freshness CLI integration passed: unchanged, routine, excessive, and reviewed output diffs.\n",
+    "Freshness CLI integration passed: unchanged, routine, excessive, reviewed, and contract-change output diffs.\n",
   );
 } finally {
   await rm(root, { recursive: true, force: true });

@@ -175,6 +175,11 @@ const supportState = (statement: SupportStatement): SupportState =>
           ? "partial"
           : "supported";
 
+/**
+ * Projects the one statement that `selectionRank` selects. Time is O(S) for the target's S
+ * statements, one pass to collect them and one `reduce` to select; copying the selected
+ * statement's fields, `versionAddedIsApproximate` among them, is constant work. Space is O(S).
+ */
 const summarize = (branches: SupportBranch[]): SupportSummary => {
   const statements = branches.flatMap((branch) => branch.statements as SupportStatement[]);
   const selected = statements.reduce((current, candidate) =>
@@ -184,6 +189,7 @@ const summarize = (branches: SupportBranch[]): SupportSummary => {
   return {
     state: supportState(selected),
     versionAdded: selected.versionAdded,
+    versionAddedIsApproximate: selected.versionAddedIsApproximate,
     versionRemoved: selected.versionRemoved,
     versionRemovedIsApproximate: selected.versionRemovedIsApproximate,
     releaseDate: selected.releaseDate,

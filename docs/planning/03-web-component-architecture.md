@@ -333,7 +333,7 @@ The second, worth building because it removes that dependency, is an inline JSON
 
 ```html
 <script type="application/json" id="bcd-data-css-properties-display">
-  { "contract": "1.0.0", "query": "css.properties.display", ... }
+  { "contract": "1.1.0", "query": "css.properties.display", ... }
 </script>
 <bcd-compat-table query="css.properties.display" source="bcd-data-css-properties-display"></bcd-compat-table>
 ```

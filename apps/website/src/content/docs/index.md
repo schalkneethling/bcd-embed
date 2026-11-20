@@ -104,6 +104,38 @@ The **ETag** is a fingerprint of the exact bytes sent. A client that already has
 those bytes sends the fingerprint back in `If-None-Match` and receives a short
 `304 Not Modified` response instead of the body.
 
+## What one answer says
+
+Every feature response gives each browser a `summary`: one support statement
+from BCD, chosen by a documented order of precedence and copied field by field.
+This is Opera's summary for `api.Attr.localName`, where BCD records support as
+`≤12.1`, meaning version 12.1 or earlier:
+
+```json
+{
+  "state": "supported",
+  "versionAdded": "12.1",
+  "versionAddedIsApproximate": true,
+  "versionRemoved": null,
+  "versionRemovedIsApproximate": false,
+  "releaseDate": "2012-11-20",
+  "removalDate": null,
+  "partialImplementation": false,
+  "behindFlag": false,
+  "prefix": null,
+  "alternativeName": null,
+  "isPreview": false,
+  "hasNotes": false
+}
+```
+
+`versionAdded` never contains the `≤` sign. `versionAddedIsApproximate` says
+whether BCD wrote one, so the consumer decides whether to show "12.1" or
+"12.1 or earlier". The summary gained this field in contract 1.1.0. A snapshot
+published under contract 1.0.0 has no such field, and a pinned URL to one keeps
+returning it unchanged until the snapshot expires. The full set of statements
+is in the same response under `branches`.
+
 ## The endpoints
 
 Every route is a `GET` that maps to one stored file. `{snapshot}` is either

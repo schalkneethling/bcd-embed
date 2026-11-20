@@ -302,6 +302,7 @@ export const goldenExpected: NormalizedFeatureSubtree = {
           summary: {
             state: "supported",
             versionAdded: "3",
+            versionAddedIsApproximate: false,
             versionRemoved: null,
             versionRemovedIsApproximate: false,
             releaseDate: "2022-01-01",
@@ -354,6 +355,7 @@ export const goldenExpected: NormalizedFeatureSubtree = {
           summary: {
             state: "unsupported",
             versionAdded: false,
+            versionAddedIsApproximate: false,
             versionRemoved: null,
             versionRemovedIsApproximate: false,
             releaseDate: null,
@@ -373,6 +375,7 @@ export const goldenExpected: NormalizedFeatureSubtree = {
           summary: {
             state: "supported",
             versionAdded: "2",
+            versionAddedIsApproximate: false,
             versionRemoved: null,
             versionRemovedIsApproximate: false,
             releaseDate: "2022-02-01",
@@ -404,6 +407,7 @@ export const goldenExpected: NormalizedFeatureSubtree = {
           summary: {
             state: "unknown",
             versionAdded: null,
+            versionAddedIsApproximate: false,
             versionRemoved: null,
             versionRemovedIsApproximate: false,
             releaseDate: null,

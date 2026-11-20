@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { metaResponseSchema, type MetaResponse } from "@bcd-embed/schema";
+import { storedMetaResponseSchema, type StoredMetaResponse } from "@bcd-embed/schema";
 import { PublisherError } from "./errors.js";
 import type { PublicationStore, PutObject, PutResult, StoredObject } from "./store.js";
 import { MAX_META_BYTES } from "./validate.js";
@@ -64,9 +64,13 @@ export const readSmallObject = async (
   return bytes;
 };
 
+/**
+ * Reads the live `meta.json`. It may still be at an earlier contract than this code generates,
+ * because the publication that replaces it is the one that moves it to `CONTRACT_VERSION`.
+ */
 export const readMetadata = async (
   store: PublicationStore,
-): Promise<{ body: MetaResponse; object: StoredObject } | null> => {
+): Promise<{ body: StoredMetaResponse; object: StoredObject } | null> => {
   const object = await store.get(META_KEY);
   if (object === null) return null;
   if (
@@ -86,7 +90,7 @@ export const readMetadata = async (
   );
   if (bytes === undefined) throw new PublisherError("Metadata read returned no bytes.");
   return {
-    body: metaResponseSchema.parse(JSON.parse(Buffer.from(bytes).toString("utf8"))),
+    body: storedMetaResponseSchema.parse(JSON.parse(Buffer.from(bytes).toString("utf8"))),
     object,
   };
 };
