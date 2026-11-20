@@ -137,6 +137,9 @@ importers:
       '@guidepup/playwright':
         specifier: 0.21.0
         version: 0.21.0(@guidepup/guidepup@0.39.0(supports-color@10.2.2))(@playwright/test@1.65.1)
+      '@mdn/browser-compat-data':
+        specifier: 8.1.9
+        version: 8.1.9
       '@playwright/test':
         specifier: 1.65.1
         version: 1.65.1
