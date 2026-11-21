@@ -1,14 +1,10 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const run = promisify(execFile);
-const websiteDirectory = fileURLToPath(new URL("../apps/website/", import.meta.url));
+import { buildWebsite, websiteDirectory } from "./website-build.js";
 
 type HeaderRule = { path: string; headers: Map<string, string> };
 
@@ -53,9 +49,7 @@ describe("documentation site deployment", () => {
   // a temporary directory also keeps this test from racing the real build.
   beforeAll(async () => {
     outDirectory = await mkdtemp(join(tmpdir(), "bcd-embed-website-"));
-    await run("pnpm", ["exec", "astro", "build", "--outDir", outDirectory], {
-      cwd: websiteDirectory,
-    });
+    await buildWebsite(outDirectory);
   }, 120_000);
 
   afterAll(async () => {

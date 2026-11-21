@@ -1,0 +1,24 @@
+---
+// The live example on the getting-started page. Its markup is `examples/fetch-mode.html` from the
+// element package, the same file the page shows as a sample and a browser test runs, so the
+// example and the sample cannot differ. Without script, the reader sees the element's fallback
+// link to MDN Web Docs.
+import fetchModeHtml from "../../../../packages/element/examples/fetch-mode.html?raw";
+import "@bcd-embed/element/base.css";
+---
+
+<!-- `not-content` keeps Starlight's Markdown table styles off the element's table, so the
+     example shows what the base stylesheet alone gives. -->
+<div class="not-content live-example">
+  <Fragment set:html={fetchModeHtml} />
+</div>
+
+<script>
+  import "@bcd-embed/element";
+</script>
+
+<style>
+  .live-example {
+    margin-block: 1.5rem;
+  }
+</style>

@@ -257,6 +257,25 @@ for (const framework of FRAMEWORKS) {
         expect(opened.errors).toEqual([]);
       });
 
+      // The documentation site shows `examples/<framework>/CompatTable.*` as the framework's
+      // sample, so this test is what keeps that sample correct.
+      test("renders the documentation site's example component", async ({ page }) => {
+        const opened = await open(page, framework, build, "example=docs");
+        await page.locator("bcd-compat-table[loaded] table").waitFor();
+
+        const state = await inspect(page);
+        expect(state.sameObject).toBe(true);
+        expect(state.hasDataAttribute).toBe(false);
+        // The example's own listener, written in the framework's syntax, received `bcd-load`.
+        expect(opened.messages).toContain("Table loaded: data");
+        // The example's `browsers` attribute reached the element: without it, the default set
+        // would show the fixture's Node.js column.
+        await expect(page.getByRole("columnheader", { name: "Chrome" })).toBeVisible();
+        await expect(page.getByRole("columnheader", { name: "Node.js" })).toHaveCount(0);
+        await expect(page.locator("bcd-compat-table > p")).toBeHidden();
+        expect(opened.errors).toEqual([]);
+      });
+
       test(`${build.name === "dev" ? "loads" : "does not load"} Lit's development build`, async ({
         page,
       }) => {

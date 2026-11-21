@@ -1,0 +1,14 @@
+/* Load this file before base.css, so this statement decides the order of all three layers. */
+@layer reset, bcd-embed.base, components;
+
+@layer reset {
+  caption {
+    font-weight: normal;
+  }
+}
+
+@layer components {
+  .bcd-table caption {
+    text-align: center;
+  }
+}

@@ -22,6 +22,12 @@ export type PageOptions = {
   readonly fallback: "element" | "string";
   /** Whether the page keeps the payload in the framework's deeply reactive state. */
   readonly state: "raw" | "deep";
+  /**
+   * "docs" renders the documentation site's example component (`examples/<framework>/`) instead
+   * of the page's own, so the sample the site shows is a sample a test runs. The example imports
+   * the element itself, which makes `define` irrelevant to it.
+   */
+  readonly example: "none" | "docs";
 };
 
 const pick = <Value extends string>(
@@ -40,6 +46,7 @@ export const readOptions = (search: string): PageOptions => {
     binding: pick(params, "binding", ["plain", "robust"]),
     fallback: pick(params, "fallback", ["element", "string"]),
     state: pick(params, "state", ["raw", "deep"]),
+    example: pick(params, "example", ["none", "docs"]),
   };
 };
 

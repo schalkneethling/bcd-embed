@@ -8,9 +8,13 @@
   Referrer-Policy: strict-origin-when-cross-origin
   # Report-only: browsers report each violation in their console and block
   # nothing. Starlight writes inline scripts, inline styles and `data:` images,
-  # so this policy allows each of them. Move to an enforcing policy only after
-  # the three views in docs/planning/10-component-spikes.md report no violation.
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
+  # so this policy allows each of them. The live example on the component's
+  # getting-started page requests its table from the hosted API, so
+  # `connect-src` allows that origin; it keeps 'self' for the search index,
+  # which `default-src` no longer covers once `connect-src` is set. Move to an
+  # enforcing policy only after the views in docs/planning/10-component-spikes.md
+  # report no violation.
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.browser-compat.dev
 
 # Astro writes a content hash into the name of every file in `_astro/`, so a
 # file at one address never changes.

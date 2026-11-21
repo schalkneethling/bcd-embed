@@ -20,7 +20,8 @@ export default defineConfig(({ command }) => ({
   // that a build of the package writes (e2e/global-setup.ts).
   root: packageRoot,
   plugins: [
-    react({ include: /\/frameworks\/react\/.*\.tsx$/ }),
+    // The React page, and the documentation site's React example that the page renders.
+    react({ include: /\/(?:frameworks|examples)\/react\/.*\.tsx$/ }),
     // Vue reads `<bcd-compat-table>` as an unknown component unless the compiler is told that it
     // is a custom element (vuejs.org, "Vue and Web Components").
     vue({

@@ -1,0 +1,6 @@
+bcd-compat-table {
+  --bcd-color-supported-light: #116329;
+  --bcd-color-unsupported-light: #a40e26;
+  --bcd-cell-padding: 0.25rem;
+  --bcd-border-width: 2px;
+}

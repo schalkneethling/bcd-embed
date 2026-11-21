@@ -1,0 +1,5 @@
+.bcd-table thead tr:first-child > :first-child,
+.bcd-table .bcd-feature {
+  position: static;
+  background-color: transparent;
+}
