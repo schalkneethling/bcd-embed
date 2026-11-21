@@ -2,7 +2,7 @@
 
 `@bcd-embed/home` is the introduction page for `https://browser-compat.dev`. It is built with
 [Astro](https://astro.build), without Starlight, and produces one static HTML page with one
-stylesheet and one script. It is not deployed yet: the Wrangler configuration, the response headers,
+stylesheet and two scripts, the element's and the status region's. It is not deployed yet: the Wrangler configuration, the response headers,
 and the deploy belong to #211.
 
 The page shows four example tables, one at a time, chosen with four radio inputs. Their data is
@@ -100,8 +100,8 @@ the note appears as text in the table.
 
 ## How the panels switch
 
-All four panels are in the HTML. Four rules in `src/styles/home.css` use `:has()` on the
-`.examples` wrapper to hide every panel whose `data-example` does not match the checked radio's
+All four panels are in the HTML. One rule in `src/styles/home.css`, with a list of four selectors,
+uses `:has()` on the `.examples` wrapper to hide every panel whose `data-example` does not match the checked radio's
 `value`. No script is involved, so switching works with script turned off. Focus stays on the
 radio: the arrow keys move between radios as they do in any native radio group, and nothing moves
 focus to the table.
@@ -136,20 +136,40 @@ reach the label from the radio with the sibling combinator:
 No focus or checked rule of the control uses `:has()`, and none uses `box-shadow`, which forced
 colours mode removes. The checked state does not depend on colour, because its border is thicker
 and its text is bold. A radio group puts keyboard focus on the checked radio, so the ring and the
-checked style show together, and the ring's colour and gap keep them apart.
+checked style show together. The ring's offset is at least 2 pixels, so it never touches the
+checked border, and the colour next to it is the page's on both sides, which is why the contrast
+test measures it against the page.
 
 Every label is at least 44 by 44 CSS pixels, above the 24 pixels of WCAG 2.5.8 (Target Size,
 Minimum). The labels share the row equally, so bold text moves nothing. Nothing transitions, so
 `prefers-reduced-motion: reduce` has nothing to turn off, and a test checks that no transition
 starts.
 
-The colours are `light-dark()` pairs, written as `-light` and `-dark` custom properties on
-`.example-choices`, the way `packages/element/src/styles/tokens.css` writes its tokens. The text and
-the checked border are the system colours `CanvasText` on `Canvas`. The stylesheet needs the
-Baseline 2025 floor for `light-dark()`, and the root `.stylelintrc.json` still checks for widely
-available features (the same state as `packages/element/README.md`, "Building and linting it"), so this
-workspace's `.stylelintrc.json` extends the root and sets `available: 2025`. Delete it when the
-root configuration carries the floor.
+The colours are `light-dark()` pairs with literal arguments. The text and the checked border are
+the system colours `CanvasText` on `Canvas`. Each `light-dark()` declaration follows a plain one: a
+grey border, and a blue ring that holds 3:1 on white and on near black. A browser that parses
+`:has()` but not `light-dark()` drops the second declaration at parse time and keeps the plain one,
+so it still shows a border and a focus ring. A `var()` argument would parse everywhere and then
+compute as invalid, which is why the pairs are literal. The checked label keeps its thicker border
+and bold text in that browser, and hover shows no change, because a light grey would sit under
+white text in a dark scheme. A test plays that browser by renaming `light-dark(` in the stylesheet.
+
+Stylelint with `stylelint-plugin-use-baseline` 1.4.8 treats `light-dark()` as available from 2024:
+it flags it at the `widely` and 2023 floors and reports nothing at 2024 and 2025 (checked on 21
+November 2026). The repository's policy floor is 2025 (`calavera.config.json`), but the root
+`.stylelintrc.json` still checks for widely available features, the same state as
+`packages/element/README.md`, "Building and linting it". So this workspace's `.stylelintrc.json`
+extends the root and sets `available: 2025`. Delete it when the root configuration carries the
+floor.
+
+### Known limit: the keyboard ring in WebKit
+
+In Playwright's WebKit 27.2, `:focus-visible` matches the first radio after Tab (`true`), and stops
+matching after an arrow key moves focus to the next radio (`false`), so the ring disappears. The
+checked border and bold text still move with the arrow keys, so the position stays visible. A
+review reproduced it on a bare page with no stylesheet, so it is the engine's behaviour and not
+this page's. Real Safari was not tested. The rule stays `input:focus-visible + label`, as #210
+requires, and the owner's manual pass should confirm what Safari does.
 
 ## The status region
 
@@ -161,8 +181,8 @@ the build writes from `announcement` in `src/data/examples.ts`. The region is cl
 `display: none`, because a screen reader skips an element that is not rendered.
 
 The static HTML has no status element, so the page without script has no empty region. Focus stays
-on the radio. The script is a file bundled with the element's script, never inline, so the page can
-be served with `script-src 'self'` (#211), and the built HTML has no `style` attribute, so it can
+on the radio. The script is its own file, never inline and not part of the element's bundle, so the
+region does not depend on the element's script running, and the page can be served with `script-src 'self'` (#211), and the built HTML has no `style` attribute, so it can
 be served with `style-src 'self'`.
 
 ## Accessibility checks
@@ -180,6 +200,10 @@ The page test covers each criterion of #210 that a browser can measure, in Chrom
   differ.
 - **axe.** `@axe-core/playwright` reports no violation with each of the four panels showing, in
   light and dark.
+- **A browser without `light-dark()`.** The same test renames `light-dark(` in the stylesheet and
+  requires a border, a thicker checked border, and a 3 pixel ring with 3:1 against the page.
+- **Reduced motion.** Under `prefers-reduced-motion: reduce`, no element of the page has a
+  transition duration, and no transition starts across a selection and a table disclosure.
 - **Size and layout.** Every label is at least 44 pixels each way at 320 and 1280 pixels wide, and
   choosing an example moves no label.
 
@@ -194,7 +218,7 @@ imports each through its `exports`:
 
 | Import                        | Resolves to                                                      | Where it ends up                                    |
 | ----------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
-| `@bcd-embed/element`          | `packages/element/dist/index.js`, kept by the `sideEffects` list | Bundled with Lit into the page's one script file    |
+| `@bcd-embed/element`          | `packages/element/dist/index.js`, kept by the `sideEffects` list | Bundled with Lit into the element's script file     |
 | `@bcd-embed/element/base.css` | `packages/element/dist/base.css`                                 | Bundled, unminified, into the page's one stylesheet |
 | `@bcd-embed/core`, `schema`   | Their `dist/index.js`                                            | Run at build time only; nothing of them ships       |
 
