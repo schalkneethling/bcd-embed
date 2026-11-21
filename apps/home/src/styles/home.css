@@ -63,14 +63,6 @@ pre {
 .example-choices {
   --choice-border-width: 2px;
   --choice-border-width-checked: 4px;
-  --choice-boundary-light: #6b6b6b;
-  --choice-boundary-dark: #9a9a9a;
-  --choice-fill-hover-light: #f0f0f0;
-  --choice-fill-hover-dark: #262626;
-  --choice-fill-checked-light: #e1ebfa;
-  --choice-fill-checked-dark: #1e3354;
-  --choice-ring-light: #0b57d0;
-  --choice-ring-dark: #8ab4f8;
 
   position: relative;
   display: flex;
@@ -114,8 +106,17 @@ pre {
   min-block-size: 2.75rem;
   min-inline-size: 2.75rem;
   padding-inline: 1rem;
-  border: var(--choice-border-width) solid
-    light-dark(var(--choice-boundary-light), var(--choice-boundary-dark));
+  border-style: solid;
+  border-width: var(--choice-border-width);
+
+  /*
+   * A browser without light-dark() drops the second declaration at parse time, because its
+   * arguments are literals, and keeps the plain one, a grey that holds 3:1 on white and on near
+   * black. With a var() argument the second declaration would parse everywhere, and a browser
+   * without light-dark() would then compute it as invalid and paint no border colour.
+   */
+  border-color: #808080;
+  border-color: light-dark(#6b6b6b, #9a9a9a);
   border-radius: 0.5rem;
   background-color: Canvas;
   color: CanvasText;
@@ -126,19 +127,27 @@ pre {
 .example-choices input:checked + label {
   border-width: var(--choice-border-width-checked);
   border-color: CanvasText;
-  background-color: light-dark(var(--choice-fill-checked-light), var(--choice-fill-checked-dark));
+
+  /* Without light-dark() the label keeps its plain background, and the border and bold text remain. */
+  background-color: light-dark(#e1ebfa, #1e3354);
   font-weight: 700;
 }
 
 /* An outline, because forced colours mode removes a box-shadow. The offset keeps it off the border. */
 .example-choices input:focus-visible + label {
-  outline: 3px solid light-dark(var(--choice-ring-light), var(--choice-ring-dark));
+  /* The plain blue holds 3:1 on white and on near black, for a browser without light-dark(). */
+  outline: 3px solid #4285f4;
+  outline-color: light-dark(#0b57d0, #8ab4f8);
   outline-offset: 3px;
 }
 
-/* Hover changes the background only, and only on a label that is not checked. */
+/*
+ * Hover changes the background only, and only on a label that is not checked. It has no plain
+ * fallback: a light grey would sit under white text in a dark scheme, so a browser without
+ * light-dark() shows no hover change, which costs nothing.
+ */
 .example-choices input:not(:checked) + label:hover {
-  background-color: light-dark(var(--choice-fill-hover-light), var(--choice-fill-hover-dark));
+  background-color: light-dark(#f0f0f0, #262626);
 }
 
 /* Visually hidden, but still read by a screen reader. */

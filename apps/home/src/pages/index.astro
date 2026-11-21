@@ -135,6 +135,9 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
     </footer>
     <script>
       import "@bcd-embed/element";
+    </script>
+    <script>
+      // Its own script, so the status region does not depend on the element's bundle evaluating.
       import "../scripts/example-status.js";
     </script>
   </body>

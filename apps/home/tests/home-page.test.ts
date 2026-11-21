@@ -90,6 +90,8 @@ const openPage = async (
     colorScheme?: "light" | "dark";
     forcedColors?: "active" | "none";
     reducedMotion?: "reduce" | "no-preference";
+    /** Rewrites each stylesheet before the page receives it, to play a browser that lacks a feature. */
+    transformCss?: (css: string) => string;
   } = {},
 ): Promise<PageSession> => {
   if (browser === undefined || site === undefined) throw new Error("The test setup did not run.");
@@ -117,6 +119,11 @@ const openPage = async (
       return;
     }
     if (new URL(url).origin === local) {
+      if (options.transformCss !== undefined && new URL(url).pathname.endsWith(".css")) {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: options.transformCss(await response.text()) });
+        return;
+      }
       await route.continue();
       return;
     }
@@ -431,8 +438,9 @@ describe("the inline data", () => {
       await waitForTables(page);
       expect(await page.locator(`script#${id}`).count()).toBe(1);
       expect(await page.locator('script[type="application/json"]').count()).toBe(4);
-      // The four data scripts and the element's module. No script came from the note.
-      expect(await page.locator("script").count()).toBe(5);
+      // The four data scripts, the element's module, and the status module. No script came from
+      // the note.
+      expect(await page.locator("script").count()).toBe(6);
       const note = await page.locator("#panel-css bcd-compat-table").textContent();
       expect(note).toContain("</script><script>alert(1)</script>");
       expect(dialogs).toEqual([]);
@@ -571,6 +579,24 @@ describe("the status region", () => {
     }
   });
 
+  // A note or a name could hold markup, and the region must show it as text, never parse it.
+  it("sets the sentence as text, so markup in it stays literal", async () => {
+    const { context, page } = await openPage();
+    try {
+      await waitForTables(page);
+      const literal = "<b>x</b>";
+      await page.locator("#example-css").evaluate((radio, text) => {
+        (radio as HTMLInputElement).dataset.announcement = text;
+      }, literal);
+      await labelFor(page, "css").click();
+      const status = page.locator('[role="status"]');
+      expect(await status.evaluate((element) => element.childElementCount)).toBe(0);
+      expect(await status.textContent()).toBe(literal);
+    } finally {
+      await context.close();
+    }
+  });
+
   it("is not visible, and takes no room", async () => {
     const { context, page } = await openPage();
     try {
@@ -595,8 +621,14 @@ describe("the status region", () => {
         /type="application\/json"/.test(attributes) || /\ssrc="\/[^"]+\.js"/.test(attributes),
       ).toBe(true);
     }
-    expect(builtHtml).not.toMatch(/\sstyle=/);
-    expect(builtHtml).not.toMatch(/\son[a-z]+=/);
+    // Only the attributes of tags count. The text of a script is data, and a note in BCD may hold
+    // any characters, so the check removes script bodies and reads the tags that remain.
+    const tags = builtHtml.replace(/<script\b[^>]*>[^]*?<\/script>/g, "").match(/<[a-zA-Z][^>]*>/g);
+    expect(tags?.length).toBeGreaterThan(0);
+    for (const tag of tags ?? []) {
+      expect(tag, "a style attribute").not.toMatch(/\sstyle\s*=/);
+      expect(tag, "an event handler attribute").not.toMatch(/\son[a-z]+\s*=/);
+    }
   });
 });
 
@@ -661,25 +693,85 @@ describe("the segmented control's styles", () => {
   it("styles the checked and focus states with the sibling combinator, with no :has() and no box-shadow", async () => {
     const { context, page } = await openPage();
     try {
-      const rules = (await styleRules(page)).filter(({ selector }) =>
-        selector.includes(".example-choices"),
+      const rules = await styleRules(page);
+      const stateful = rules.filter(
+        ({ selector }) => selector.includes(":checked") || selector.includes(":focus"),
       );
-      const selectors = rules.map(({ selector }) => selector);
+      const selectors = stateful.map(({ selector }) => selector);
       expect(selectors.some((selector) => selector.includes("input:checked + label"))).toBe(true);
       expect(selectors.some((selector) => selector.includes("input:focus-visible + label"))).toBe(
         true,
       );
+      // The one rule allowed to use :has() in a :checked or :focus selector is the panel switching,
+      // which reaches the panels, not a label, so it cannot use the sibling combinator. Nothing
+      // else may.
+      const panelSwitching =
+        /^\.examples:has\(\[value="(html|css|javascript|api)"\]:checked\) \.example-panel:not\(\[data-example="\1"\]\)$/;
+      const withHas = selectors
+        .flatMap((selector) => selector.split(", "))
+        .filter((selector) => selector.includes(":has("));
+      expect(withHas).toHaveLength(4);
+      for (const selector of withHas) expect(selector).toMatch(panelSwitching);
+      // Forced colours removes a box-shadow, so no state rule and no rule of the control may use one.
       for (const { selector, boxShadow } of rules) {
-        if (selector.includes(":checked") || selector.includes(":focus")) {
-          expect(selector).not.toContain(":has(");
+        if (
+          selector.includes(":checked") ||
+          selector.includes(":focus") ||
+          selector.includes(".example-choices")
+        ) {
+          expect(boxShadow, selector).toBe("");
         }
-        // Forced colours removes a box-shadow, so no rule of the control may rely on one.
-        expect(boxShadow).toBe("");
       }
     } finally {
       await context.close();
     }
   });
+
+  // A browser that parses :has() but not light-dark() drops each declaration that has light-dark()
+  // with literal arguments and keeps the plain one before it. The test plays that browser by
+  // renaming the function in the stylesheets, which makes the declaration invalid at parse time.
+  it.each(SCHEMES)(
+    "keeps a border, a checked border and a focus ring in a browser without light-dark(), in the %s scheme",
+    async (scheme) => {
+      const { context, page } = await openPage({
+        colorScheme: scheme,
+        transformCss: (css) => css.replaceAll("light-dark(", "lightdark("),
+      });
+      try {
+        const pageBackground = parseRgb(
+          (await computed(page.locator("html"), ["background-color"] as const))["background-color"],
+        );
+        const names = ["border-top-width", "border-top-color"] as const;
+        const unchecked = await computed(labelFor(page, "css"), names);
+        const checked = await computed(labelFor(page, "html"), names);
+        expect(unchecked["border-top-width"]).toBe("2px");
+        expect(checked["border-top-width"]).toBe("4px");
+        // The plain fallback, which proves that the renamed function was dropped.
+        expect(unchecked["border-top-color"]).toBe("rgb(128, 128, 128)");
+        expect(
+          contrastRatio(parseRgb(unchecked["border-top-color"]), pageBackground),
+        ).toBeGreaterThanOrEqual(3);
+        expect(
+          contrastRatio(parseRgb(checked["border-top-color"]), pageBackground),
+        ).toBeGreaterThanOrEqual(3);
+
+        await page.keyboard.press("Tab");
+        const ring = await computed(labelFor(page, "html"), [
+          "outline-style",
+          "outline-width",
+          "outline-color",
+        ] as const);
+        expect(ring["outline-style"]).toBe("solid");
+        expect(ring["outline-width"]).toBe("3px");
+        expect(
+          contrastRatio(parseRgb(ring["outline-color"]), pageBackground),
+          `ring ${ring["outline-color"]} in ${scheme}`,
+        ).toBeGreaterThanOrEqual(3);
+      } finally {
+        await context.close();
+      }
+    },
+  );
 
   it("differs between the checked and an unchecked label by more than colour", async () => {
     const { context, page } = await openPage();
@@ -707,11 +799,12 @@ describe("the segmented control's styles", () => {
       expect((await computed(labelFor(page, "html"), names))["outline-style"]).toBe("none");
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("example-html");
-      const ring = await computed(labelFor(page, "html"), [...names, "border-top-color"] as const);
+      const ring = await computed(labelFor(page, "html"), names);
       expect(ring["outline-style"]).toBe("solid");
       expect(Number.parseFloat(ring["outline-width"])).toBeGreaterThanOrEqual(2);
-      expect(Number.parseFloat(ring["outline-offset"])).toBeGreaterThan(0);
-      expect(ring["outline-color"]).not.toBe(ring["border-top-color"]);
+      // An offset of at least 2 pixels keeps the ring off the checked border, so the colour next to
+      // the ring is the page's on both sides, and the contrast test measures it against the page.
+      expect(Number.parseFloat(ring["outline-offset"])).toBeGreaterThanOrEqual(2);
       // A mouse click on another label checks it without a ring.
       await labelFor(page, "css").click();
       expect((await computed(labelFor(page, "css"), names))["outline-style"]).toBe("none");
@@ -758,10 +851,11 @@ describe("the segmented control's styles", () => {
 
 // A developer sets this to a directory to keep the screenshots the tests take, for a visual check.
 const screenshotDirectory = process.env.BCD_EMBED_HOME_SCREENSHOTS;
-const keepScreenshot = async (name: string, image: Buffer): Promise<void> => {
+// It takes a function, so no screenshot is taken when the variable is unset.
+const keepScreenshot = async (name: string, take: () => Promise<Buffer>): Promise<void> => {
   if (screenshotDirectory === undefined) return;
   await mkdir(screenshotDirectory, { recursive: true });
-  await writeFile(join(screenshotDirectory, `${name}.png`), image);
+  await writeFile(join(screenshotDirectory, `${name}.png`), await take());
 };
 
 // A screenshot of the element and the margin around it, which holds a focus ring, taken with the
@@ -848,10 +942,8 @@ describe.each(SCHEMES)("the segmented control's contrast in the %s scheme", (sch
           minimum: 4.5,
         },
       ];
-      await page.mouse.move(0, 0);
-      await keepScreenshot(
-        `segmented-control-${scheme}`,
-        await photographAround(page, page.locator(".example-choices")),
+      await keepScreenshot(`segmented-control-${scheme}`, () =>
+        photographAround(page, page.locator(".example-choices")),
       );
       if (process.env.BCD_EMBED_HOME_CONTRAST_REPORT === "1") {
         const rows = checks.map(
@@ -869,7 +961,9 @@ describe.each(SCHEMES)("the segmented control's contrast in the %s scheme", (sch
 });
 
 describe("motion", () => {
-  it("starts no transition when a selection is made under prefers-reduced-motion: reduce", async () => {
+  // The listener sits on the document in the capture phase, so it sees a transition on any element
+  // of the page, the panels, the status region and the tables included.
+  it("starts no transition anywhere on the page under prefers-reduced-motion: reduce", async () => {
     const { context, page } = await openPage({ reducedMotion: "reduce" });
     try {
       await waitForTables(page);
@@ -880,16 +974,24 @@ describe("motion", () => {
         }
         (window as unknown as { started: string[] }).started = started;
       });
-      const durations = await page
-        .locator(".example-choices, .example-choices *")
-        .evaluateAll((elements) =>
-          elements.map((element) => getComputedStyle(element).transitionDuration),
-        );
+      const durations = await page.evaluate(() =>
+        [...document.querySelectorAll("*")].map(
+          (element) => getComputedStyle(element).transitionDuration,
+        ),
+      );
+      expect(durations.length).toBeGreaterThan(100);
       for (const duration of durations) {
         for (const value of duration.split(",")) expect(Number.parseFloat(value)).toBe(0);
       }
+      // A selection by mouse and by keyboard, a disclosure in the table, and the pointer over it.
       await labelFor(page, "css").click();
       await page.keyboard.press("ArrowRight");
+      const summary = page
+        .locator(".example-panel:visible bcd-compat-table details summary")
+        .first();
+      await summary.click();
+      await summary.hover();
+      await page.waitForTimeout(100);
       const started = await page.evaluate(
         () => (window as unknown as { started: string[] }).started,
       );
@@ -926,12 +1028,11 @@ describe("forced colours", () => {
       expect(focused.equals(unchecked)).toBe(false);
       expect(focused.equals(checked)).toBe(false);
 
-      await keepScreenshot("forced-colours-css-label-unchecked", unchecked);
-      await keepScreenshot("forced-colours-css-label-checked", checked);
-      await keepScreenshot("forced-colours-css-label-checked-and-focused", focused);
-      await keepScreenshot(
-        "forced-colours-control-checked-and-focused",
-        await photographAround(page, page.locator(".example-choices")),
+      await keepScreenshot("forced-colours-css-label-unchecked", async () => unchecked);
+      await keepScreenshot("forced-colours-css-label-checked", async () => checked);
+      await keepScreenshot("forced-colours-css-label-checked-and-focused", async () => focused);
+      await keepScreenshot("forced-colours-control-checked-and-focused", () =>
+        photographAround(page, page.locator(".example-choices")),
       );
 
       const ring = await computed(label, ["outline-style", "outline-width"] as const);
