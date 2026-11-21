@@ -15,7 +15,7 @@ Run these from the repository root:
 
 | Command                                   | What it does                                                          |
 | ----------------------------------------- | --------------------------------------------------------------------- |
-| `pnpm dev:home`                           | Serves the page locally and reloads on every change                   |
+| `pnpm dev:home`                           | Serves the page locally and reloads on every change (see below)       |
 | `pnpm --filter @bcd-embed/home build`     | Writes the page to `apps/home/dist`, then checks it has no `v1` entry |
 | `pnpm --filter @bcd-embed/home typecheck` | Generates Astro's types, then type-checks the TypeScript files        |
 | `pnpm exec vitest run apps/home`          | Runs this workspace's tests                                           |
@@ -28,7 +28,7 @@ load the page in Chromium's headless shell, so install it once with
 
 ```
 apps/home/
-├─ astro.config.ts          site address, workspace source resolution, CSS and script settings
+├─ astro.config.ts          site address, CSS and script settings, the test-only source plugin
 ├─ scripts/assert-no-v1.mjs fails when the built site has a top-level v1 entry
 ├─ src/
 │  ├─ data/examples.ts      the four examples, and everything the page reads from BCD
@@ -70,9 +70,12 @@ key, for each of the four keys.
 3. `toScriptJson` turns it into the text of a `<script type="application/json">`, and the page
    writes that next to a `<bcd-compat-table source="…">` that names the script's `id`. The element
    reads it once and renders with no request (`packages/element/README.md`, "Source mode").
-4. `findMdnUrl` gives each panel's fallback link: the feature's MDN Web Docs page, or the nearest
-   ancestor's page when the feature has none. `html.elements.video.loading` has none, so it links
-   to the `<video>` page. The `#browser_compatibility` fragment is added.
+4. `findMdnPage` gives each panel's fallback link: the feature's MDN Web Docs page, or the nearest
+   ancestor's page when the feature has none, with the `#browser_compatibility` fragment added.
+   The link text names the page it links to. `html.elements.video.loading` has no page, so its link
+   goes to the `<video>` page and reads "Browser compatibility for `<video>` on MDN Web Docs". Every
+   `mdn_url` on the key's path must start with `https://developer.mozilla.org/`, or the build
+   fails, so a bad address in a BCD release cannot become a link on the page.
 
 **Cost.** Astro loads BCD once, which is O(n) time and space for the n bytes of `data.json`, about
 20 MB. Each key then costs O(d) for its d segments to find, and O(s) to normalize, check, and
@@ -83,7 +86,7 @@ build does no work that grows with the size of BCD beyond the one load.
 
 ### The escaping rule
 
-`toScriptJson` writes every `<` in the JSON as the six characters `<`, and `JSON.parse` turns
+`toScriptJson` writes every `<` in the JSON as the six characters `\u003c`, and `JSON.parse` turns
 them back into `<`. This is the page's one injection control. BCD notes contain markup, such as
 `<code>`, and a note that held `</script>` would end the script early, while `<!--<script>` would
 make the HTML parser swallow the rest of the page. Escaping every `<` rules out both, and anything
@@ -100,7 +103,12 @@ radio: the arrow keys move between radios as they do in any native radio group, 
 focus to the table.
 
 A browser without `:has()` cannot parse those selectors and drops the rules, so every panel shows
-under its own heading. That is the fallback, which is why the file has no `@supports` block.
+under its own heading. The radios would then choose nothing, so an
+`@supports not selector(:has(*))` block hides the fieldset in that browser. A browser too old to
+know `selector()` in `@supports` treats the condition as false, so `not` hides the fieldset there
+too, and such a browser lacks `:has()` anyway. In the installed `stylelint-plugin-use-baseline`
+1.4.8, `:has()` is widely available (Baseline 2023), and the plugin reports nothing for this block
+at the root configuration or at the 2025 floor.
 
 ```
 .examples:has([value="css"]:checked)
@@ -108,16 +116,39 @@ under its own heading. That is the fallback, which is why the file has no `@supp
   └─ other three panels            → display: none
 ```
 
+## What the deployed page contains
+
+The deployed page ships what a consumer of the packages gets. `pnpm build` builds the workspaces in
+dependency order, so `schema`, `core`, and `element` are built before this page, and the page
+imports each through its `exports`:
+
+| Import                        | Resolves to                                                      | Where it ends up                                    |
+| ----------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| `@bcd-embed/element`          | `packages/element/dist/index.js`, kept by the `sideEffects` list | Bundled with Lit into the page's one script file    |
+| `@bcd-embed/element/base.css` | `packages/element/dist/base.css`                                 | Bundled, unminified, into the page's one stylesheet |
+| `@bcd-embed/core`, `schema`   | Their `dist/index.js`                                            | Run at build time only; nothing of them ships       |
+
+So `pnpm --filter @bcd-embed/home build` and `pnpm dev:home` need those packages built first. On a
+fresh checkout, run `pnpm --filter "@bcd-embed/home^..." build` once, which builds this workspace's
+dependencies and not the workspace itself. Without them the build stops with "failed to resolve
+import".
+
+The page test is the one exception. `pnpm check` runs the tests before it builds anything, so
+`tests/home-page.test.ts` sets `BCD_EMBED_HOME_WORKSPACE_SOURCE=1`, and a plugin in
+`astro.config.ts` then points each import at the package's source, as the root `vitest.config.ts`
+does. The plugin marks the element's `src/index.ts` as having side effects, because its
+`sideEffects` list names only `dist/` files and the bundler would otherwise drop the import. The
+type checker reads the source through `paths` in `tsconfig.json` in both cases.
+
 ## Build settings
 
-`astro.config.ts` holds four settings that the page depends on.
+`astro.config.ts` holds three settings that the deployed page depends on, besides the test-only
+plugin above.
 
-| Setting                                                                  | Why                                                                                                                                                                                        |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The `bcd-embed-workspace-source` plugin                                  | The workspace packages export `dist/`, which does not exist until `pnpm build` runs, and `pnpm check` runs the tests first. The plugin points each import at the package's source instead. |
-| `moduleSideEffects: true` on the element                                 | The element's `sideEffects` lists only `dist/` files, so without it the bundler drops `import "@bcd-embed/element";` from the source and nothing defines the element.                      |
-| `vite.build.cssMinify: false`                                            | Vite's default minifier drops the base stylesheet's `@layer` statement and rewrites its `light-dark()` colours into custom properties the page never defines (#246).                       |
-| `build.inlineStylesheets: "never"` and `vite.build.assetsInlineLimit: 0` | Every stylesheet and script is a file, never inline, so #211 can serve the page with `style-src 'self'` and `script-src 'self'`.                                                           |
+| Setting                                                                  | Why                                                                                                                                                                  |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vite.build.cssMinify: false`                                            | Vite's default minifier drops the base stylesheet's `@layer` statement and rewrites its `light-dark()` colours into custom properties the page never defines (#246). |
+| `build.inlineStylesheets: "never"` and `vite.build.assetsInlineLimit: 0` | Every stylesheet and script is a file, never inline, so #211 can serve the page with `style-src 'self'` and `script-src 'self'`.                                     |
 
 `src/styles/home.css` sets `color-scheme: light dark` and paints `Canvas` on the root, because the
 base stylesheet picks its colours with `light-dark()`, and its dark colours fail contrast on white.
@@ -139,22 +170,24 @@ request to `https://api.browser-compat.dev` is answered by the test from install
 other request that leaves the local server is aborted and recorded, so no test reaches a real
 server.
 
-| What the page test checks                                                                                  |
-| ---------------------------------------------------------------------------------------------------------- |
-| One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label  |
-| Every radio is rendered, not `display: none` or `visibility: hidden`, and is in the accessibility tree     |
-| Only the HTML panel shows on load; a click on CSS shows only the CSS panel, with its rendered table        |
-| Three right arrows in under a second reach the Web API panel, focus the Web API radio, and send no request |
-| Focus stays on the selected radio after every selection                                                    |
-| With script off, the panels switch and each shows its MDN Web Docs link                                    |
-| With the `:has()` rules deleted, all four panels show under their headings                                 |
-| Each panel has one JSON script, with no `<`, that validates and equals the build from installed BCD        |
-| A hostile note stays inside its script, and nothing runs                                                   |
-| The live table sends no request until it scrolls near, then exactly one                                    |
-| The stylesheet keeps `@layer bcd-embed.base;` and `light-dark()`, and the page has no `<style>` element    |
-| The build has no top-level `v1` entry, and the check fails when one is added                               |
+| What the page test checks                                                                                       |
+| --------------------------------------------------------------------------------------------------------------- |
+| One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label       |
+| Every radio is rendered, not `display: none` or `visibility: hidden`, and is in the accessibility tree          |
+| Only the HTML panel shows on load; a click on CSS shows only the CSS panel, with its rendered table             |
+| Each of three right arrows switches the panel at once, ending on Web API with focus there, and sends no request |
+| Focus stays on the selected radio after every selection                                                         |
+| With script off, the panels switch, each shows its MDN Web Docs link, and the HTML link names `<video>`         |
+| Without `:has()`, all four panels show under their headings and the fieldset is hidden                          |
+| Each panel has one JSON script, with no `<`, that validates and equals the build from installed BCD             |
+| A hostile note stays inside its script, and nothing runs                                                        |
+| The live table sends no request until it scrolls near, then exactly one                                         |
+| The stylesheet keeps `@layer bcd-embed.base;` and `light-dark()`, and the page has no `<style>` element         |
+| The build has no top-level `v1` entry; the check rejects one, and its command line exits with code 1            |
 
-Firefox and WebKit do not run these tests. The accessibility checks, axe among them, arrive with #210.
+The arrow-key test does not time the presses. Timed from Node, they would measure Playwright's round
+trips rather than the page, so the test checks that each press takes effect before the next and
+that nothing is requested. Firefox and WebKit do not run these tests. The accessibility checks, axe among them, arrive with #210.
 
 ## No top-level `v1` entry
 
