@@ -4,32 +4,8 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { parseHeadersFile, parseJsonc } from "./deploy-files.js";
 import { buildWebsite, websiteDirectory } from "./website-build.js";
-
-type HeaderRule = { path: string; headers: Map<string, string> };
-
-// Wrangler's own `_headers` parser lives inside its bundle and is not exported, so this reads
-// the same shape: a line that starts at column zero is a path, and the indented `Name: value`
-// lines under it are that path's headers. Comments and blank lines are skipped.
-const parseHeadersFile = (text: string): HeaderRule[] => {
-  const rules: HeaderRule[] = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    if (line.startsWith("/")) {
-      rules.push({ path: line, headers: new Map() });
-      continue;
-    }
-    const separator = line.indexOf(":");
-    const rule = rules.at(-1);
-    if (rule === undefined || separator === -1) throw new Error(`Unexpected line: ${line}`);
-    const name = line.slice(0, separator).trim().toLowerCase();
-    // Cloudflare joins repeated names with a comma, so a repeat within one rule or across two
-    // rules would change a value. The assertions below keep each name under one rule.
-    rule.headers.set(name, line.slice(separator + 1).trim());
-  }
-  return rules;
-};
 
 // The zone's rate limiting rule matches `/v1/` on every hostname, so a top-level `v1` entry in
 // the site would be answered by the rule, not by the site.
@@ -58,13 +34,11 @@ describe("documentation site deployment", () => {
 
   it("serves only on the custom domain, with no workers.dev or preview address", async () => {
     const text = await readFile(join(websiteDirectory, "wrangler.jsonc"), "utf8");
-    // The file holds whole-line comments and trailing commas, which JSON.parse rejects.
-    const json = text.replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1");
-    const config = JSON.parse(json);
+    const config = parseJsonc(text);
     expect(config.routes).toEqual([{ pattern: "docs.browser-compat.dev", custom_domain: true }]);
     expect(config.workers_dev).toBe(false);
     expect(config.preview_urls).toBe(false);
-    expect(config.assets.not_found_handling).toBe("404-page");
+    expect((config.assets as { not_found_handling: string }).not_found_handling).toBe("404-page");
   });
 
   it("writes the home page, Starlight's 404 page and a sitemap", async () => {

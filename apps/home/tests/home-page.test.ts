@@ -3,12 +3,11 @@
 // installs). Every request the page makes to a host other than the local server is answered by a
 // route in the test or aborted, so no test reaches the hosted API or any other real server.
 import { execFile } from "node:child_process";
-import { createServer, type Server } from "node:http";
+import type { Server } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import type { AddressInfo } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { extname, join, normalize, sep } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -27,7 +26,9 @@ import {
   findSubtree,
   toScriptJson,
 } from "../src/data/examples.js";
+import { buildAstroSite } from "../../../tests/astro-build.js";
 import { HOSTILE_NOTE } from "./hostile-note.js";
+import { serve } from "./serve.js";
 
 const run = promisify(execFile);
 const homeDirectory = fileURLToPath(new URL("..", import.meta.url));
@@ -35,33 +36,6 @@ const require = createRequire(import.meta.url);
 const bcd: CompatData = require("@mdn/browser-compat-data");
 
 const API_ORIGIN = "https://api.browser-compat.dev";
-const CONTENT_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-};
-
-// Serves the built site. A path that leaves the directory, or names no file, answers 404.
-const serve = async (directory: string): Promise<{ server: Server; url: string }> => {
-  const server = createServer((request, response) => {
-    const path = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
-    const file = normalize(join(directory, path.endsWith("/") ? `${path}index.html` : path));
-    if (!file.startsWith(directory + sep)) {
-      response.writeHead(404).end();
-      return;
-    }
-    readFile(file).then(
-      (body) => {
-        const type = CONTENT_TYPES[extname(file)] ?? "application/octet-stream";
-        response.writeHead(200, { "content-type": type }).end(body);
-      },
-      () => response.writeHead(404).end(),
-    );
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
-  return { server, url: `http://127.0.0.1:${port}/` };
-};
 
 let outDirectory = "";
 let site: { server: Server; url: string } | undefined;
@@ -162,10 +136,12 @@ beforeAll(async () => {
   // Vitest runs with `NODE_ENV=test`, which would make Vite select Lit's development build.
   // `pnpm check` runs the tests before any workspace package is built, so the build reads the
   // packages' source; the deployed page, built by `pnpm build`, reads their `dist/` instead
-  // (astro.config.ts).
-  await run("pnpm", ["exec", "astro", "build", "--outDir", outDirectory], {
-    cwd: homeDirectory,
-    env: { ...process.env, NODE_ENV: "production", BCD_EMBED_HOME_WORKSPACE_SOURCE: "1" },
+  // (astro.config.ts). The deployment test builds the same workspace, and two builds at once
+  // delete each other's intermediate files, so the builds take turns (tests/astro-build.ts).
+  await buildAstroSite(homeDirectory, outDirectory, {
+    ...process.env,
+    NODE_ENV: "production",
+    BCD_EMBED_HOME_WORKSPACE_SOURCE: "1",
   });
   builtHtml = await readFile(join(outDirectory, "index.html"), "utf8");
   site = await serve(outDirectory);
@@ -628,6 +604,8 @@ describe("the status region", () => {
     for (const tag of tags ?? []) {
       expect(tag, "a style attribute").not.toMatch(/\sstyle\s*=/);
       expect(tag, "an event handler attribute").not.toMatch(/\son[a-z]+\s*=/);
+      // `script-src 'self'` also blocks a `javascript:` URL, which would run as inline script.
+      expect(tag, "a javascript: URL").not.toMatch(/javascript:/i);
     }
   });
 });
