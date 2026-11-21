@@ -4,6 +4,7 @@ import {
   createRecord,
   defineElement,
   markReady,
+  payload,
   readOptions,
   recordFirstRender,
 } from "../shared.js";
@@ -15,11 +16,20 @@ const record = createRecord();
 const target = document.getElementById("app");
 if (target === null) throw new Error("The page has no #app.");
 
-if (options.define === "before") await defineElement();
-// `flushSync` runs the pending effects, so "after" really does define the element once Svelte has
-// rendered it.
-mount(App, { target });
-flushSync();
-recordFirstRender(record);
-if (options.define === "after") await defineElement();
+if (options.example === "docs") {
+  // The documentation site's sample. A dynamic import, because the example imports the element,
+  // and a static one would define it before every scenario's first render.
+  const { default: CompatTable } = await import("../../../examples/svelte/CompatTable.svelte");
+  mount(CompatTable, { target, props: { data: payload } });
+  flushSync();
+  recordFirstRender(record);
+} else {
+  if (options.define === "before") await defineElement();
+  // `flushSync` runs the pending effects, so "after" really does define the element once Svelte
+  // has rendered it.
+  mount(App, { target });
+  flushSync();
+  recordFirstRender(record);
+  if (options.define === "after") await defineElement();
+}
 markReady();

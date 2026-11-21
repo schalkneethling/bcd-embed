@@ -82,9 +82,17 @@ const container = document.getElementById("root");
 if (container === null) throw new Error("The page has no #root.");
 const root = createRoot(container);
 
-if (options.define === "before") await defineElement();
-// `flushSync` renders now, so "after" really does define the element once React has rendered it.
-flushSync(() => root.render(<App />));
-recordFirstRender(record);
-if (options.define === "after") await defineElement();
+if (options.example === "docs") {
+  // The documentation site's sample. A dynamic import, because the example imports the element,
+  // and a static one would define it before every scenario's first render.
+  const { CompatTable } = await import("../../../examples/react/CompatTable.js");
+  flushSync(() => root.render(<CompatTable data={payload} />));
+  recordFirstRender(record);
+} else {
+  if (options.define === "before") await defineElement();
+  // `flushSync` renders now, so "after" really does define the element once React has rendered it.
+  flushSync(() => root.render(<App />));
+  recordFirstRender(record);
+  if (options.define === "after") await defineElement();
+}
 markReady();

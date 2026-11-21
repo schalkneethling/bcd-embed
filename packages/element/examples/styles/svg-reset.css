@@ -1,0 +1,3 @@
+svg:not(.bcd-icon) {
+  fill: currentcolor;
+}
