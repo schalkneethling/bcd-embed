@@ -30,6 +30,20 @@ describe("the four examples", () => {
     ]);
   });
 
+  it("gives each example its own status sentence, which names the feature", () => {
+    const sentences = EXAMPLES.map(({ announcement }) => announcement);
+    expect(new Set(sentences).size).toBe(EXAMPLES.length);
+    for (const { announcement, name } of EXAMPLES) {
+      expect(announcement).toMatch(/^Showing the [^\n]+ example: [^\n]+$/);
+      expect(announcement).toContain(name);
+    }
+    // The page's wording for the kind of example, with each abbreviation in full the first time.
+    expect(sentences.slice(0, 2)).toEqual([
+      "Showing the HyperText Markup Language (HTML) example: video loading",
+      "Showing the Cascading Style Sheets (CSS) example: line-clamp",
+    ]);
+  });
+
   it.each(EXAMPLES.map((example) => [example.key]))(
     "builds a feature response for %s that validates against the contract",
     (key) => {

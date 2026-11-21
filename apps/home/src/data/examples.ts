@@ -16,6 +16,11 @@ export type ExampleDefinition = {
   readonly name: string;
   /** One sentence under the panel heading that says what the feature does. */
   readonly summary: string;
+  /**
+   * The sentence the status region holds after the example is chosen (#210). It writes the kind of
+   * example in full, with its abbreviation in parentheses, and names the feature.
+   */
+  readonly announcement: string;
 };
 
 export const EXAMPLES: readonly ExampleDefinition[] = [
@@ -25,6 +30,7 @@ export const EXAMPLES: readonly ExampleDefinition[] = [
     key: "html.elements.video.loading",
     name: "loading",
     summary: "Lazy loading for the video element, set with its loading attribute.",
+    announcement: "Showing the HyperText Markup Language (HTML) example: video loading",
   },
   {
     id: "css",
@@ -32,6 +38,7 @@ export const EXAMPLES: readonly ExampleDefinition[] = [
     key: "css.properties.line-clamp",
     name: "line-clamp",
     summary: "Limits a block of text to a number of lines.",
+    announcement: "Showing the Cascading Style Sheets (CSS) example: line-clamp",
   },
   {
     // Partial implementations in Safari and Node.js, and a Node.js history, make this table more
@@ -42,6 +49,7 @@ export const EXAMPLES: readonly ExampleDefinition[] = [
     name: "Error.isError()",
     summary:
       "Tells whether a value is an error object, even one created in another window or frame.",
+    announcement: "Showing the JavaScript example: Error.isError()",
   },
   {
     id: "api",
@@ -49,6 +57,8 @@ export const EXAMPLES: readonly ExampleDefinition[] = [
     key: "api.Navigator.share",
     name: "Navigator.share()",
     summary: "Opens the operating system's share dialog for a link, some text, or files.",
+    announcement:
+      "Showing the Web Application Programming Interface (API) example: Navigator.share()",
   },
 ];
 
