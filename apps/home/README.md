@@ -2,9 +2,9 @@
 
 `@bcd-embed/home` is the introduction page for `https://browser-compat.dev`. It is built with
 [Astro](https://astro.build), without Starlight, and produces one static HTML page with one
-stylesheet and two scripts, the element's and the status region's. It is built to be served as
-static files by a Cloudflare Worker with no script, only on that address, under an enforcing
-Content-Security-Policy (see "Deploying" below). It is not deployed yet.
+stylesheet and two scripts, the element's and the status region's. It is served as static
+files by a Cloudflare Worker with no script, only on that address, under an enforcing
+Content-Security-Policy (see "Deploying" below). It has been deployed since 21 November 2026.
 
 The page shows four example tables, one at a time, chosen with four radio inputs. Their data is
 built into the page, so showing them sends no request. One more table, lower on the page, asks the
