@@ -1649,3 +1649,117 @@ After `git checkout src/bcd-compat-table.ts`: exit 0.
 - `@custom-elements-manifest/analyzer/src/utils/cli-helpers.js` (0.11.0): the flag list (`outdir`, `globs`, `litelement`, `packagejson`, `quiet`), the config keys read by `getUserConfig`, and `addCustomElementsPropertyToPackageJson`. `cli.js` for how `outdir` is joined.
 - `vite/dist/node/index.d.ts` (8.3.8): the `configFile?: string | false` option of `InlineConfig`, with `root`, `mode`, and `logLevel` as the existing `e2e/global-setup.ts` uses them.
 - `playwright-core` 1.65.1 `types/types.d.ts`: the `pageerror` event on `Page`.
+
+---
+
+## Issue #207 — Framework fixture pages: React, Vue, and Svelte
+
+Measured on 21 November 2026 with React 19.3.1, Vue 3.5.45, Svelte 5.57.3, Vite 8.3.8, and Playwright 1.65.1 (Chromium 159.0.8154.6, Firefox 159.0, WebKit 27.2) on macOS. The element ran in the same three engines the Element browser workflow uses. The primary review question, "Does the element receive `data` as a property and report `bcd-load` in React 19.3.1, Vue 3.5.45, and Svelte 5.57.3?", is answered **yes in all three, in all three engines**, with one WebKit exception for Svelte that affects only an element defined after the first render (section 4).
+
+### Summary
+
+| Question                                                                                  | Answer                                                                                                                      |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `element.data` is the object the page passed, and the framework's own `bcd-load` listener ran | Yes, in React (`onbcd-load`), Vue (`@bcd-load`), and Svelte (`onbcd-load`), in dev and production builds, in three engines. |
+| A re-render with changed props after the fallback is hidden: no console error, table stays | Yes, in all three. The framework updates the hidden `<p>` in place, and the element never removes or replaces it.            |
+| A string child that changes: the render container is restored                              | Yes under real React and real Vue (section 3). Svelte updates a text node and never touches the container.                    |
+| React's `data` prop when the element is defined after the render                          | Lost, as #187 found. Vue's `:data` loses it the same way. Svelte's `data` keeps it, except in WebKit 27.2 (section 4). A `ref` callback or `:data.prop` keeps it. |
+| Did the element need a change?                                                             | No. The only source change is outside the element: test configuration and fixtures.                                           |
+
+### How it was tested
+
+Each framework has one page in `packages/element/e2e/frameworks/<name>/`, built with Vite. The query string selects a scenario (`define=before|after`, `binding=plain|robust`, `fallback=element|string`, `state=raw|deep`; `e2e/frameworks/shared.ts`). Each page has three buttons: "Re-render" changes the `browsers` prop and the fallback text, "Break data" passes an object the element rejects, and "Restore data" passes the payload again. The page records every event its framework's own listener syntax receives in `window.bcdPage`, so a passing test shows that the framework wired the listener.
+
+`e2e/frameworks.e2e.ts` runs each of 7 tests against each framework and each of two builds, plus one test for the two reactive-state proxies (Vue and Svelte) and one for the WebKit bug: 45 tests an engine, 135 in all.
+
+```text
+                         ┌── Vite dev server, port 5199 ───── element source, framework dev builds
+ Playwright (3 engines) ─┤
+                         └── static server, port 5200 ─────── `dist/index.js` bundled in production mode
+                              (reads the output of e2e/global-setup.ts on each request)
+```
+
+The production pages bundle `dist/index.js`, the file `vite build --mode lib` writes and a consumer's bundler reads through `exports`, with `NODE_ENV` forced to `production`. The #206 consumer test installed the package into a temporary `node_modules` for the same reason. This test did not, because the package directory already holds `dist/` and the `exports` map, and an alias to `dist/index.js` reads the same file; a difference between the two paths is therefore not covered. A test checks that Lit's development warning ("Lit is in dev mode") appears on the dev pages and never on the production pages, so a page cannot silently test the wrong build.
+
+The static server exists because Playwright starts web servers before it runs the global setup, and `vite preview` refuses to start without its output directory. The static server reads from disk on each request and answers once the global setup has written the build.
+
+### 1. How each framework sets `data`
+
+The tests passed in all three engines with the element defined before the first render. The load-order table below shows the page with the element defined after the first render.
+
+| Framework | Binding                       | Element defined first | Element defined after the first render                                          |
+| --------- | ----------------------------- | --------------------- | ------------------------------------------------------------------------------- |
+| React     | `data={x}`                    | property              | attribute `data="[object Object]"`, payload lost; next value arrives as property |
+| React     | `ref` callback                | property              | property                                                                        |
+| Vue       | `:data="x"`                   | property              | attribute `data="[object Object]"`, payload lost; next value arrives as property |
+| Vue       | `:data.prop="x"`              | property              | property                                                                        |
+| Svelte    | `{data}`                      | property              | property (an object is set as a property while the element is undefined)        |
+
+The "after" rows were tested with the page rendering first (`flushSync(() => root.render(...))` in React, `mount` in Vue, `mount` then `flushSync` in Svelte) and then defining the element through a dynamic import. The lost-payload case was checked after the upgrade: `element.data` is `null`, because the element's constructor sets it (Document 3 section 8 said `undefined`, from the spike's stand-in element, and now says `null`), and the table does not render. The tests then press "Break data" and "Restore data", and the table renders from the property the framework now sets.
+
+### 2. Events
+
+React: `onbcd-load` and `onbcd-error` as props. `setPropOnCustomElement` in `react-dom-client.development.js` reads a key that begins with `on` as a listener for the event named by the rest of the key, with no case change. Vue: `@bcd-load` compiles to the prop `onBcdLoad` (`toHandlerKey(camelize(rawName))` in `compiler-core`), and `parseName` in `runtime-dom` hyphenates it back to `bcd-load`. Svelte: `onbcd-load={handler}`; `visit_event_attribute` takes the name after `on`, so the listener is for `bcd-load`. All three received `{ mode: "data", snapshot: null }` for `bcd-load`, and `{ mode: "data", reason: "invalid-payload", status: null, code: null }` for `bcd-error`. The events bubble and are not composed, as before.
+
+### 3. Re-render, the author's children, and the render container
+
+After the table loaded, "Re-render" changed `browsers` and the text of the hidden `<p>`. In all three frameworks and both builds the table gained the new column, the `<p>` was the same node with the new text and still hidden, one render container existed, no `bcd-load` fired again (a changed `browsers` is not a new payload), and no console error or uncaught exception appeared.
+
+For a bare string child, the test checks that the element ends with one container, the table inside it, the same row count, and the new text node. **Mutation check:** with the line that starts the `MutationObserver` (`this.#containerGuard.observe(this, { childList: true })`) removed, the test failed for React and Vue in Chromium, and passed for Svelte, which updates a text node and never assigns `textContent`. Vue passed at first, because the page wrote the string inside `v-else`, where Vue did not assign `textContent`. The page now has a copy of the element whose only child is the text, which Vue sets with `el.textContent` (`setElementText` in `runtime-dom`), and that copy fails without the observer.
+
+### 4. A WebKit bug that hides the element from `customElements.define`
+
+In WebKit 27.2 the Svelte production page with the element defined after the first render never showed the table: `element.matches(":defined")` stayed false, even after `customElements.upgrade(element)`. Chromium, Firefox, and the Svelte dev page in WebKit were fine. A bisection found the cause with no framework and no Lit:
+
+```js
+const template = document.createElement("template");
+template.innerHTML = "<main><x-a></x-a></main>";
+const copy = document.importNode(template.content.firstChild, true);
+document.body.append(copy);
+customElements.define("x-a", class extends HTMLElement {}); // first read of window.customElements
+copy.firstChild.matches(":defined"); // false in WebKit 27.2; true when anything read customElements earlier
+```
+
+Svelte 5 builds markup with `document.importNode` when a template holds a custom element (`needs_import_node` in `RegularElement.js`), and its production page reads `customElements` only after the markup exists. Svelte's dev server hides the bug, because Vite's client script reads `customElements` first. The page that defines the element first (the recommended order) works in WebKit, which fits the reproduction. `document.createElement` and an early read of `customElements` both avoid it. The cause inside WebKit is not traced.
+
+`e2e/frameworks.e2e.ts` marks the three tests that meet it with `test.fail` for WebKit: the plain reproduction, and the two Svelte production "defined after" tests. The run fails when WebKit fixes the bug, which is the moment to remove the markers. The README's "Frameworks" section tells authors to import the element first.
+
+### 5. Deeply reactive state
+
+In Vue, `ref(payload)` makes the object deeply reactive, so the template passes a `Proxy`. In Svelte, `$state(payload)` does the same. In both, `element.data` was not the object the page passed, and the table still rendered once with one `bcd-load`. The README tells authors to use `shallowRef` or `markRaw` in Vue and `$state.raw` in Svelte. React has no equivalent.
+
+### Dependencies
+
+All are `devDependencies` of `packages/element`, with exact versions. Nothing was added to the element's `dependencies`. `pnpm-workspace.yaml` sets no `minimumReleaseAge`, so pnpm's default of 1,440 minutes (one day) applies (pnpm.io, "Supply chain security"). Every new version was at least nine days old on 21 November 2026, so `minimumReleaseAgeExclude` needed no entry. `pnpm add` printed "Lockfile passes supply-chain policies".
+
+| Package                          | Version | Published (npm `time`)    |
+| -------------------------------- | ------- | ------------------------- |
+| `react`, `react-dom`             | 19.3.1  | 2026-10-14                |
+| `vue`                            | 3.5.45  | 2026-11-05                |
+| `svelte`                         | 5.57.3  | 2026-10-26                |
+| `@vitejs/plugin-react`           | 6.3.0   | 2026-11-09                |
+| `@vitejs/plugin-vue`             | 6.0.11  | 2026-11-12                |
+| `@sveltejs/vite-plugin-svelte`   | 7.3.1   | 2026-09-23                |
+| `@types/react`, `@types/react-dom` | 19.3.0 | 2026-09-09                |
+
+The issue's pins for React, Vue, and Svelte were installed as written. Vue 3.5.46 (20 November 2026) and Svelte 5.59.1 (20 November 2026) exist; the issue fixes the older pins.
+
+### Cost
+
+`pnpm check` does not run these tests, because Playwright Test files are outside `vitest run`, so `pnpm check` gains no test time. Its type check and build gain the fixture pages' TypeScript and the extra build in `e2e/global-setup.ts` runs only under `test:e2e`. The full `test:e2e` run, three engines and every e2e file, took 54 seconds on this machine (load from other agents' work was present), 37 of them for the framework tests alone.
+
+### Not verified
+
+- The CI run of the `element-browser` job.
+- Real Safari, Chrome, and Firefox releases. The results are from Playwright's engine builds.
+- React in strict mode, server rendering, hydration, and the `ref` callback with a memoised function (#187 section 5 noted the caveat).
+- The `.vue` and `.svelte` files' types. `tsc` reads neither, so the shims in `e2e/frameworks/shims.d.ts` stand in and the pages are compiled and run only.
+- Other bundlers than Vite, other versions of the three frameworks, and Vue's and Svelte's own custom-element output.
+
+### Sources checked
+
+- `react-dom/cjs/react-dom-client.development.js` (19.3.1), `setPropOnCustomElement`: how `ref`, `children`, `on…` keys, and other keys are applied to a custom element.
+- `@vue/runtime-dom` (3.5.45), `shouldSetAsProp`, `patchProp` (the `.` and `^` prefixes), and `parseName`; `@vue/compiler-core` (3.5.45), the `prop` modifier and `toHandlerKey(camelize(rawName))`; `@vitejs/plugin-vue` 6.0.11 `README.md` and `index.d.mts` for the `template` option.
+- `svelte` 5.57.3 `src/internal/client/dom/elements/attributes.js` (`set_custom_element_data`), `src/internal/client/dom/template.js` (`from_html`, `document.importNode`), and `src/compiler/phases/3-transform/client/visitors/shared/events.js` (`visit_event_attribute`), plus the compiler's output for the page.
+- `@vitejs/plugin-react` 6.3.0 `README.md` and peer metadata (`npm view`); `@sveltejs/vite-plugin-svelte` 7.3.1 `types/index.d.ts` (the `svelte` export).
+- pnpm.io, "Supply chain security", for the default of `minimumReleaseAge`.
