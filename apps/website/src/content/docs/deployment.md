@@ -385,8 +385,30 @@ curl -sS -D - -o /dev/null http://docs.browser-compat.dev/
 | 5     | A redirect (`3xx`) with a `location` of `https://docs.browser-compat.dev/`. Cloudflare's Always Use HTTPS page names no status code.                                                                                                                                                         |
 
 Then open the site in a browser with the developer console open, load the home
-page, a page with diagrams (`/publication/`), and the search dialog. The
-console should show no Content-Security-Policy violation. In the Cloudflare
+page, a page with diagrams (`/publication/`), and the search dialog with a
+query typed. The console should show two Content-Security-Policy reports and no
+others:
+
+- `script-src` reports loading `https://static.cloudflareinsights.com/beacon.min.js/…`.
+  The build does not contain this script. Cloudflare Web Analytics inserts it
+  into HTML sent to browsers, because its automatic setup is on by default for
+  sites proxied through Cloudflare, as the
+  [Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/) and
+  [get-started page](https://developers.cloudflare.com/web-analytics/get-started/)
+  say. A `curl` request without a browser `User-Agent` did not receive it, so
+  the command-line checks above cannot see it.
+- `script-src` reports compiling WebAssembly, from Pagefind's search worker,
+  as described under "The headers file".
+
+Before the policy can be enforced, the owner decides whether to allow the
+beacon (the FAQ asks for `https://static.cloudflareinsights.com/beacon.min.js`
+in `script-src`; automatic setup reports to the site's own `/cdn-cgi/rum`, so
+`connect-src 'self'` covers it) or to disable automatic setup in the Web
+Analytics site settings, and whether to add `'wasm-unsafe-eval'`. The
+redeploy of 21 November 2026, which added the component pages, showed exactly
+these two reports in Chromium, and search returned results.
+
+In the Cloudflare
 dashboard, the Worker's domain and route settings should list only
 `docs.browser-compat.dev`, with `workers.dev` and preview URLs off.
 
