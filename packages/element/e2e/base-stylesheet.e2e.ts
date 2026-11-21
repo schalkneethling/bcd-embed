@@ -136,6 +136,10 @@ const overrideFor = (property: string, current: string): string | null => {
     "text-wrap-mode": ["wrap", "nowrap"],
     cursor: ["text", "default"],
     "border-collapse": ["separate", "collapse"],
+    "border-spacing": ["7px 9px", "9px 7px"],
+    // Chromium and WebKit expand `border-spacing` into these two longhands.
+    "-webkit-border-horizontal-spacing": ["7px", "9px"],
+    "-webkit-border-vertical-spacing": ["7px", "9px"],
     "font-weight": ["100", "900"],
     "white-space-trim": ["discard-before", "none"],
     // The grid that keeps a bare text fallback from taking space.
