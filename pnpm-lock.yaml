@@ -101,8 +101,8 @@ importers:
         specifier: 8.1.9
         version: 8.1.9
       '@varlock/cloudflare-integration':
-        specifier: 1.6.3
-        version: 1.6.3(varlock@1.25.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(wrangler@4.160.1(@cloudflare/workers-types@5.20261116.1)(@types/node@26.6.6))
+        specifier: 1.6.4
+        version: 1.6.4(varlock@1.25.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(wrangler@4.160.1(@cloudflare/workers-types@5.20261116.1)(@types/node@26.6.6))
       miniflare:
         specifier: 5.20260923.0-alpha
         version: 5.20260923.0-alpha(@types/node@26.6.6)
@@ -2237,13 +2237,13 @@ packages:
   '@upsetjs/venn.js@2.0.0':
     resolution: {integrity: sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw==}
 
-  '@varlock/cloudflare-integration@1.6.3':
-    resolution: {integrity: sha512-J9rnJJ6F6Evswj3kn1rjL5wEW0AmPXj+9glVCmZVHVggpOak2IOf0JidQNyuaBZEeLW7nonRO68ga7hKX7qx9w==}
+  '@varlock/cloudflare-integration@1.6.4':
+    resolution: {integrity: sha512-6zT8kjKwHu1r4rAH8qRoYdYuYAenfrrNcyA/DRuIXUb9Np6gLmMzS/PxqtTi2GGWEaknWPGm7DJU4eMkqiW85A==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
       '@cloudflare/vite-plugin': '>=1'
-      varlock: ^1.24.0
+      varlock: ^1.25.0
       vite: '>=5'
       wrangler: '>=3'
     peerDependenciesMeta:
@@ -5987,7 +5987,7 @@ snapshots:
       d3-selection: 3.0.1
       d3-transition: 3.0.2(d3-selection@3.0.1)
 
-  '@varlock/cloudflare-integration@1.6.3(varlock@1.25.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(wrangler@4.160.1(@cloudflare/workers-types@5.20261116.1)(@types/node@26.6.6))':
+  '@varlock/cloudflare-integration@1.6.4(varlock@1.25.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(wrangler@4.160.1(@cloudflare/workers-types@5.20261116.1)(@types/node@26.6.6))':
     dependencies:
       varlock: 1.25.0
     optionalDependencies:
