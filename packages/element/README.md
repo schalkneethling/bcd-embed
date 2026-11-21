@@ -349,8 +349,9 @@ one fast machine, so measure again on a slow phone before relying on them for ve
 
 The package ships an opt-in base stylesheet, `@bcd-embed/element/base.css`. It makes the table
 usable with no other CSS: borders, padding, a visible focus ring, the icons and their colours, the
-hidden sentences, and the rule that hides the fallback. It decides no fonts, sizes, or background,
-so the table takes those from the page. Load it from the document:
+hidden sentences, the rule that hides the fallback, and the layout in a narrow container and in
+print. It decides no fonts, sizes, or background, so the table takes those from the page. Load it
+from the document:
 
 ```html
 <link rel="stylesheet" href="/node_modules/@bcd-embed/element/dist/base.css" />
@@ -385,16 +386,20 @@ stylesheet picks one with `light-dark()` where the colour is used.
 | `--bcd-color-border-light`, `--bcd-color-border-dark`           | `<color>`  | `#818b98`       | `#656c76`      |
 | `--bcd-border-width`                                            | `<length>` | `1px`           | `1px`          |
 
-Three tokens are not registered, because their defaults are in `rem` or `em`, and an `@property`
-initial value cannot be: such a length is not computationally independent, and all three engines
-rejected one. The stylesheet reads each with a fallback, such as `var(--bcd-cell-padding, 0.5rem)`,
-so they behave like the others, except that a value of the wrong type is not rejected.
+Four tokens are not registered. Three have defaults in `rem` or `em`, and an `@property` initial
+value cannot be: such a length is not computationally independent, and all three engines rejected
+one. The fourth defaults to `Canvas`, the browser's page colour for the current `color-scheme`, and
+all three engines resolved a registered `Canvas` initial value to white, even under
+`color-scheme: dark`. The stylesheet reads each with a fallback, such as
+`var(--bcd-cell-padding, 0.5rem)`, so they behave like the others, except that a value of the wrong
+type is not rejected.
 
-| Token                | Type, unregistered | Default  | What it sets                                     |
-| -------------------- | ------------------ | -------- | ------------------------------------------------ |
-| `--bcd-cell-padding` | `<length>`         | `0.5rem` | The padding of every cell, and below the caption |
-| `--bcd-indent`       | `<length>`         | `1rem`   | One step of a nested row's indent                |
-| `--bcd-icon-size`    | `<length>`         | `1em`    | The width and height of an icon                  |
+| Token                           | Type, unregistered | Default  | What it sets                                                             |
+| ------------------------------- | ------------------ | -------- | ------------------------------------------------------------------------ |
+| `--bcd-cell-padding`            | `<length>`         | `0.5rem` | The padding of every cell, and below the caption                         |
+| `--bcd-indent`                  | `<length>`         | `1rem`   | One step of a nested row's indent                                        |
+| `--bcd-icon-size`               | `<length>`         | `1em`    | The width and height of an icon                                          |
+| `--bcd-color-sticky-background` | `<color>`          | `Canvas` | The background of the sticky feature column (below, "Narrow containers") |
 
 Layout and typography are not tokens. The table is light DOM, so ordinary CSS reaches every part of
 it, and the rendered class names (Document 3, "Styling surface") are the hooks.
@@ -466,6 +471,56 @@ reasons found in the screen reader CI walks of #200:
 An inline span adds no object, which matches the tree with no stylesheet. A page that has its own
 unlayered `.visually-hidden` rule replaces this one, and should keep the same two properties.
 
+### Narrow containers
+
+The table never changes shape: at every width the `<table>`, its rows, and its cells keep their
+table display values, so a screen reader reads the same table. What changes is how it scrolls.
+
+| Where                | What the stylesheet does                                                                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| On screen, any width | The region (`.bcd-scroller`) scrolls sideways when the table is wider than it. The page does not.                                                                                                                     |
+| On screen, any width | The feature column, its header included, is sticky: while the region scrolls, it stays at the inline start and the other columns pass beneath it. While the table fits, nothing scrolls and the column does not move. |
+| In print             | Nothing is sticky and the region does not clip the table. The header rows are in a `<thead>`.                                                                                                                         |
+
+In a 320 CSS pixel viewport the page scrolls only down and the region only sideways, so nothing needs
+scrolling in two directions. The keyboard reaches the region with Tab, and the arrow keys scroll it.
+
+**There is no breakpoint.** Issue #201 first made the column sticky only in a container narrower
+than 40em, with a container query. A query container applies style containment, and with it
+Chromium 159 took about 10 seconds to lay out a 2,000-row table instead of 0.6, a cost that grew with
+the square of the number of rows (Document 3, "Responsive behavior"). A sticky column at every width
+needs no query and costs nothing while the table fits, so the stylesheet uses that instead. Do not
+make an ancestor of the table a query container (`container-type`) for the same reason; a test
+checks that the stylesheet makes none.
+
+**The sticky column's background.** The sticky cells paint over the cells that scroll beneath them,
+so they need a background. It is `Canvas`, the browser's page colour for the inherited
+`color-scheme`, which matches a page that paints no background of its own. On a page with its own
+background, set the token to the same colour:
+
+```css
+bcd-compat-table {
+  --bcd-color-sticky-background: #fdf6e3;
+}
+```
+
+To keep the column in the flow instead, override both properties with an unlayered rule:
+
+```css
+.bcd-table thead tr:first-child > :first-child,
+.bcd-table .bcd-feature {
+  position: static;
+  background-color: transparent;
+}
+```
+
+**Borders.** The table uses `border-collapse: separate` with `border-spacing: 0`: each cell draws
+its block-end and inline-end border, the first header row adds the block-start side, and the feature
+column adds the inline-start side. With `border-collapse: collapse`, Chromium, Firefox, and WebKit
+all left the side borders of a scrolled sticky cell unpainted (Document 3, "Responsive behavior").
+If you restyle the borders, keep each line on one cell, or a sticky cell loses it while the table
+scrolls.
+
 ### Without the stylesheet
 
 A page that loads only the element gets a complete, accessible table: each cell reads as its full
@@ -509,10 +564,13 @@ that floor for the whole repository, but the recipe has not been applied yet, so
 `.stylelintrc.json` extends the root configuration and sets `available: 2025`. Delete it once the
 root configuration carries the floor. Stylelint reports nothing at that floor.
 
-Three tests guard the source files in `src/styles`: `tests/styles/logical-properties.test.ts`
+Four tests guard the source files in `src/styles`: `tests/styles/logical-properties.test.ts`
 rejects physical properties and values, `tests/styles/properties.test.ts` checks that every custom
-property is registered or listed with its reason in `properties.css`, and
-`tests/styles/contrast.test.ts` checks the palette.
+property is registered or listed with its reason in `properties.css`,
+`tests/styles/contrast.test.ts` checks the palette, and `tests/styles/containment.test.ts` checks
+that nothing makes a query container or applies style containment (above, "Narrow containers") and
+that no container query length unit such as `cqi` appears, which `stylelint-plugin-use-baseline`
+flags.
 
 ## Layout
 
@@ -532,10 +590,11 @@ property is registered or listed with its reason in `properties.css`, and
 | `tests/`                                   | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size. |
 | `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                          |
 | `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                         |
+| `playwright.visual.config.ts`              | The visual snapshots of the layout (`e2e/layout.visual.ts`), with one set of images per platform in `e2e/__snapshots__/` (below, "Browser tests").                 |
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                    |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
 | `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                    |
-| `.size-limit.json`                         | The size budgets with Brotli: 9.5 kB for `dist/index.js`, counted without `lit` and `@lit/task`, and 3 kB for `dist/base.css`.                                     |
+| `.size-limit.json`                         | The size budgets with Brotli: 9.5 kB for `dist/index.js`, counted without `lit` and `@lit/task`, and 3.5 kB for `dist/base.css`.                                   |
 | `.stylelintrc.json`                        | This package's Baseline floor for Stylelint (below, "Styling"), on top of the root configuration.                                                                  |
 | `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
@@ -673,7 +732,7 @@ bundle for the first time, and the total became 8.26 kB (8.07 kB before the revi
 own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
 growth, and the element's fetch logic for the rest. The icons of #200 add the rest: with both,
 `dist/index.js` measured 8.52 kB, 18 bytes over 8.5 kB, so the limit became 9 kB. Source mode (#205) adds the source reader and the parser wait: with fetch mode, source mode and the icons together, `dist/index.js` measures 8.97 kB, 30 bytes under 9 kB, so the limit is 9.5 kB. `dist/base.css`
-measures 2.94 kB with Brotli against a limit of 3 kB; it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
+measured 2.94 kB with Brotli against a limit of 3 kB. The sticky column and print rules of #201 brought it to 3.31 kB, so the limit is 3.5 kB. With the comments removed, the source files grew by 0.11 kB with Brotli; the rest of the growth is comments, which the file keeps because it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
 packaging issue (#206).
 
@@ -688,6 +747,16 @@ pull request that changes this package.
 | -------------------------------------------- | ------------------------- | --------------- | ----------------------------------------------------------------- |
 | Vitest browser project (`*.browser.test.ts`) | Chromium (headless shell) | `pnpm check`    | `pnpm exec vitest run --project browser` from the repository root |
 | Playwright Test with axe (`*.e2e.ts`)        | Chromium, Firefox, WebKit | Element browser | `pnpm --filter @bcd-embed/element test:e2e`                       |
+| Visual snapshots (`*.visual.ts`)             | Chromium, Firefox, WebKit | By hand         | `pnpm --filter @bcd-embed/element test:visual`                    |
+
+The visual snapshots show the table in a narrow container, scrolled so the sticky column covers the
+other columns, and in a wide one, each in light and dark. Fonts and antialiasing differ between
+operating systems, so an image matches only on the platform that recorded it, and
+`playwright.visual.config.ts` keeps one set per platform under `e2e/__snapshots__/`. The committed
+set was recorded on macOS by the implementer of #201 on 21 November 2026. The Element browser
+workflow runs on Linux and has no set to compare against, so it does not run them; the layout
+itself is asserted in `e2e/layout.e2e.ts`, which it does run. After a deliberate visual change,
+run `test:visual --update-snapshots` and review the new images before committing them.
 
 Install the browsers before the first run. Chromium's headless shell is enough for the Vitest
 project, and it is a smaller download than the full browser. Use the workspace's own Playwright,
@@ -730,7 +799,11 @@ gets. `e2e/base-stylesheet.e2e.ts` checks the stylesheet itself (below, "Styling
 `e2e/data-mode.e2e.ts` runs axe on
 the loaded table, with every disclosure open, after an error, and after `data = null`. It also
 checks the fallback rule's computed styles, the Tab key's stops, and that a note's markup never
-runs, and it records the render time of a 2,000-feature table. The page imports TypeScript source,
+runs, and it records the render time of a 2,000-feature table, in the page's width and in a 30em
+container, where the region scrolls. `e2e/layout.e2e.ts` checks the layout of "Narrow
+containers": sideways scrolling, the sticky column and its painted borders, display values at six
+widths, a 320 CSS pixel viewport, that no element around the table is a query container, print,
+the arrow keys, and axe. The page imports TypeScript source,
 so `playwright.e2e.config.ts` starts Vite's dev server on port 5198 through `webServer` and stops
 it afterwards. The run fails at once if that port is taken.
 
