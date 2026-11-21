@@ -154,7 +154,11 @@ bcd-compat-table[loaded] > .bcd-render-container {
   padding-inline-start: calc(var(--bcd-cell-padding, 0.5rem) + 4 * var(--bcd-indent, 1rem));
 }
 
+/* An open list takes no width of its own, so opening it cannot resize the table's columns (#204). */
 .bcd-history-list {
+  inline-size: 0;
+  min-inline-size: 100%;
+  box-sizing: border-box;
   margin-block: var(--bcd-cell-padding, 0.5rem) 0;
   padding-inline-start: 1.25rem;
 }
