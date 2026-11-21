@@ -1,0 +1,48 @@
+/*
+ * The introduction page's own styles. The table's styles come from @bcd-embed/element/base.css,
+ * which this page imports before this file.
+ *
+ * The base stylesheet picks each colour with light-dark(), which follows the inherited
+ * color-scheme. A page that declares a dark scheme must also paint a dark background, or the dark
+ * colours sit on white (packages/element/README.md, "Dark mode"), so the root sets both.
+ */
+:root {
+  color-scheme: light dark;
+  background-color: Canvas;
+  color: CanvasText;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+}
+
+main,
+footer {
+  max-inline-size: 60rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+/*
+ * The markup sample wraps instead of scrolling, so a narrow screen needs no scrolling region,
+ * which keyboard users could not reach.
+ */
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Panel switching, with no script. Each rule hides the panels that do not match the checked radio
+ * input. A browser that does not support :has() cannot parse the selector list, so it drops the
+ * whole rule, and every panel shows under its own heading. That is why there is no @supports
+ * block (#209).
+ */
+.examples:has([value="html"]:checked) .example-panel:not([data-example="html"]),
+.examples:has([value="css"]:checked) .example-panel:not([data-example="css"]),
+.examples:has([value="javascript"]:checked) .example-panel:not([data-example="javascript"]),
+.examples:has([value="api"]:checked) .example-panel:not([data-example="api"]) {
+  display: none;
+}
