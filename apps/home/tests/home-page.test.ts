@@ -22,6 +22,7 @@ import {
   EXAMPLES,
   LIVE_EXAMPLE,
   buildFeatureResponse,
+  findSubtree,
   toScriptJson,
 } from "../src/data/examples.js";
 import { HOSTILE_NOTE } from "./hostile-note.js";
@@ -125,6 +126,12 @@ const visiblePanels = (page: Page) =>
       .map((panel) => (panel as HTMLElement).dataset.example),
   );
 
+// How far the live table's top edge is below the bottom of the viewport, in CSS pixels.
+const liveTableDistance = (page: Page) =>
+  page
+    .locator(`.live bcd-compat-table[query="${LIVE_EXAMPLE.key}"]`)
+    .evaluate((element) => element.getBoundingClientRect().top - window.innerHeight);
+
 const waitForTables = (page: Page) =>
   page.waitForFunction(
     () => document.querySelectorAll(".example-panel bcd-compat-table[loaded]").length === 4,
@@ -133,9 +140,12 @@ const waitForTables = (page: Page) =>
 beforeAll(async () => {
   outDirectory = await mkdtemp(join(tmpdir(), "bcd-embed-home-"));
   // Vitest runs with `NODE_ENV=test`, which would make Vite select Lit's development build.
+  // `pnpm check` runs the tests before any workspace package is built, so the build reads the
+  // packages' source; the deployed page, built by `pnpm build`, reads their `dist/` instead
+  // (astro.config.ts).
   await run("pnpm", ["exec", "astro", "build", "--outDir", outDirectory], {
     cwd: homeDirectory,
-    env: { ...process.env, NODE_ENV: "production" },
+    env: { ...process.env, NODE_ENV: "production", BCD_EMBED_HOME_WORKSPACE_SOURCE: "1" },
   });
   builtHtml = await readFile(join(outDirectory, "index.html"), "utf8");
   site = await serve(outDirectory);
@@ -242,22 +252,25 @@ describe("switching panels", () => {
     }
   });
 
-  it("reaches the Web API panel with three right arrows in under a second, with no request", async () => {
-    // A short viewport keeps the lazy live table out of reach, so the page sends no request at all.
+  // The criterion's "within one second" rules out a page that waits or requests between presses.
+  // Timing the presses from Node would time Playwright's round trips, not the page, so the test
+  // checks the effect instead: each press switches the panel at once, and no request is sent.
+  it("reaches the Web API panel with three right arrows, with no request", async () => {
     const { context, page, apiRequests, foreignRequests } = await openPage({ height: 600 });
     try {
       await waitForTables(page);
-      const requestsBefore: string[] = [];
-      page.on("request", (request) => requestsBefore.push(request.url()));
+      // A request here could only come from the lazy live table, so the test is only meaningful
+      // while that table is further than its 400-pixel margin from the viewport.
+      expect(await liveTableDistance(page)).toBeGreaterThan(400);
+      const requestsDuringPresses: string[] = [];
+      page.on("request", (request) => requestsDuringPresses.push(request.url()));
       await page.locator("#example-html").focus();
-      const started = performance.now();
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
-      expect(performance.now() - started).toBeLessThan(1000);
-      expect(await visiblePanels(page)).toEqual(["api"]);
+      for (const expected of ["css", "javascript", "api"]) {
+        await page.keyboard.press("ArrowRight");
+        expect(await visiblePanels(page)).toEqual([expected]);
+      }
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("example-api");
-      expect(requestsBefore).toEqual([]);
+      expect(requestsDuringPresses).toEqual([]);
       expect(apiRequests).toEqual([]);
       expect(foreignRequests).toEqual([]);
     } finally {
@@ -292,6 +305,12 @@ describe("switching panels", () => {
         expect(await link.getAttribute("href")).toMatch(/#browser_compatibility$/);
         expect(await panel.locator(".bcd-table").count()).toBe(0);
       }
+      // The HTML feature has no page of its own, so its link goes to the <video> page and says so.
+      const videoLink = page.locator("#panel-html bcd-compat-table a");
+      expect(await videoLink.getAttribute("href")).toBe(
+        `${findSubtree(bcd, "html.elements.video").__compat?.mdn_url}#browser_compatibility`,
+      );
+      expect(await videoLink.textContent()).toMatch(/Browser compatibility for\s+<video>\s+on MDN/);
       // `visiblePanels` evaluates script in the page, which this context forbids, so each panel is
       // checked through Playwright's own visibility test instead.
       expect(await page.locator("#panel-api").isVisible()).toBe(true);
@@ -303,24 +322,46 @@ describe("switching panels", () => {
     }
   });
 
-  it("shows every panel under its own heading when the :has() rules are removed", async () => {
+  it("keeps the fieldset visible in a browser that supports :has()", async () => {
+    const { context, page } = await openPage();
+    try {
+      expect(await page.locator("fieldset").isVisible()).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Chromium supports :has(), so the test plays a browser that does not: it deletes the rules that
+  // use :has(), as such a browser drops them, and unwraps the `@supports not selector(:has(*))`
+  // block, whose condition is true there.
+  it("shows every panel under its own heading, and hides the radios, without :has()", async () => {
     const { context, page } = await openPage();
     try {
       expect(await visiblePanels(page)).toEqual(["html"]);
-      const removed = await page.evaluate(() => {
-        let count = 0;
+      const changed = await page.evaluate(() => {
+        let removed = 0;
+        let unwrapped = 0;
         for (const sheet of document.styleSheets) {
           for (let index = sheet.cssRules.length - 1; index >= 0; index -= 1) {
             const rule = sheet.cssRules[index];
             if (rule instanceof CSSStyleRule && rule.selectorText.includes(":has(")) {
               sheet.deleteRule(index);
-              count += 1;
+              removed += 1;
+            } else if (
+              rule instanceof CSSSupportsRule &&
+              rule.conditionText.replaceAll(" ", "") === "notselector(:has(*))"
+            ) {
+              const inner = [...rule.cssRules].map((child) => child.cssText);
+              sheet.deleteRule(index);
+              for (const text of inner.reverse()) sheet.insertRule(text, index);
+              unwrapped += 1;
             }
           }
         }
-        return count;
+        return { removed, unwrapped };
       });
-      expect(removed).toBeGreaterThan(0);
+      expect(changed).toEqual({ removed: 1, unwrapped: 1 });
+      expect(await page.locator("fieldset").isVisible()).toBe(false);
       expect(await visiblePanels(page)).toEqual(["html", "css", "javascript", "api"]);
       for (const example of EXAMPLES) {
         const heading = page.locator(`#panel-${example.id} > h3`);
@@ -361,9 +402,11 @@ describe("the inline data", () => {
     if (statement === undefined) throw new Error("The line-clamp payload has no Chrome statement.");
     statement.notes = [HOSTILE_NOTE];
     const id = "bcd-data-css-properties-line-clamp";
+    // A function replacer, because a string replacement would read a `$&` or `$1` in the payload
+    // as a pattern.
     const hostileHtml = builtHtml.replace(
       scriptPattern(id),
-      `<script type="application/json" id="${id}">${toScriptJson(payload)}</script>`,
+      () => `<script type="application/json" id="${id}">${toScriptJson(payload)}</script>`,
     );
     expect(hostileHtml).not.toBe(builtHtml);
     await mkdir(join(outDirectory, "hostile"));
@@ -395,10 +438,7 @@ describe("the live table", () => {
       const live = page.locator(`.live bcd-compat-table[query="${LIVE_EXAMPLE.key}"]`);
       // The element waits until it is within 400 pixels of the viewport, so the test is only
       // meaningful while the table starts further away than that.
-      const distance = await live.evaluate(
-        (element) => element.getBoundingClientRect().top - window.innerHeight,
-      );
-      expect(distance).toBeGreaterThan(400);
+      expect(await liveTableDistance(page)).toBeGreaterThan(400);
       await page.waitForTimeout(300);
       expect(apiRequests).toEqual([]);
 
@@ -443,6 +483,21 @@ describe("the built site", () => {
     await mkdir(join(outDirectory, "v1"));
     try {
       await expect(assertNoTopLevelV1(outDirectory)).rejects.toThrow(/top-level "v1" entry/);
+    } finally {
+      await rm(join(outDirectory, "v1"), { recursive: true, force: true });
+    }
+  });
+
+  // The build script runs the check from the command line, so its exit code is what fails the build.
+  it("exits non-zero from the command line when a top-level v1 entry is added", async () => {
+    const script = join(homeDirectory, "scripts", "assert-no-v1.mjs");
+    await expect(run(process.execPath, [script, outDirectory])).resolves.toBeDefined();
+    await mkdir(join(outDirectory, "v1"));
+    try {
+      await expect(run(process.execPath, [script, outDirectory])).rejects.toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining('top-level "v1" entry'),
+      });
     } finally {
       await rm(join(outDirectory, "v1"), { recursive: true, force: true });
     }

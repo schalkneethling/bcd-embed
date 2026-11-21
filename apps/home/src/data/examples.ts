@@ -71,18 +71,19 @@ const isNode = (value: unknown): value is Node =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * Walks from the root of BCD down the key's segments, calling `visit` with each node on the way.
- * `Object.hasOwn` keeps a segment such as `constructor` from reaching `Object.prototype`.
- * O(d) time for a key of d segments.
+ * Walks from the root of BCD down the key's segments, calling `visit` with each node on the way and
+ * the key that leads to it. `Object.hasOwn` keeps a segment such as `constructor` from reaching
+ * `Object.prototype`. O(d) time for a key of d segments.
  */
-const walk = (bcd: CompatData, key: string, visit: (node: Node) => void): Node => {
+const walk = (bcd: CompatData, key: string, visit: (node: Node, nodeKey: string) => void): Node => {
   let node: unknown = bcd;
-  for (const segment of key.split(".")) {
+  const segments = key.split(".");
+  for (const [index, segment] of segments.entries()) {
     if (!isNode(node) || !Object.hasOwn(node, segment)) {
       throw new HomeDataError(key, `BCD ${bcd.__meta.version} has no feature '${key}'.`);
     }
     node = node[segment];
-    if (isNode(node)) visit(node);
+    if (isNode(node)) visit(node, segments.slice(0, index + 1).join("."));
   }
   if (!isNode(node) || !isNode(node.__compat)) {
     throw new HomeDataError(key, `BCD ${bcd.__meta.version} has no feature '${key}'.`);
@@ -94,21 +95,57 @@ const walk = (bcd: CompatData, key: string, visit: (node: Node) => void): Node =
 export const findSubtree = (bcd: CompatData, key: string): Identifier =>
   walk(bcd, key, () => {}) as Identifier;
 
+/** Every page address the page links to must be on MDN Web Docs. */
+export const MDN_ORIGIN_PREFIX = "https://developer.mozilla.org/";
+
+/** The MDN Web Docs page a fallback link points at, and the name the link text gives it. */
+export type MdnPage = {
+  /** The page's compatibility section, with the `#browser_compatibility` fragment. */
+  readonly url: string;
+  /** The BCD key whose `mdn_url` this is: the feature's own, or its nearest ancestor's. */
+  readonly key: string;
+  /** What the page documents, as code: `featureName` for the feature's own page. */
+  readonly name: string;
+};
+
 /**
- * The address of the feature's compatibility section on MDN Web Docs. A feature without its own
- * page, such as `html.elements.video.loading`, links to the nearest ancestor that has one.
- * O(d) time for a key of d segments.
+ * How the link text names an ancestor's page. An HTML element's page documents the element, so
+ * `html.elements.video` reads `<video>`; any other key reads its last segment.
  */
-export const findMdnUrl = (bcd: CompatData, key: string): string => {
-  let url: string | undefined;
-  walk(bcd, key, (node) => {
+const ancestorName = (key: string): string => {
+  const segments = key.split(".");
+  const last = segments.at(-1) ?? key;
+  return segments.length === 3 && key.startsWith("html.elements.") ? `<${last}>` : last;
+};
+
+/**
+ * The MDN Web Docs page for the feature. A feature without its own page, such as
+ * `html.elements.video.loading`, links to the nearest ancestor that has one, and the link text
+ * then names that ancestor, so it says what it links to. Every `mdn_url` on the path must start
+ * with `https://developer.mozilla.org/`, or the build fails, so a bad address in a BCD release
+ * cannot become a link on the page. O(d) time for a key of d segments.
+ */
+export const findMdnPage = (bcd: CompatData, key: string, featureName: string): MdnPage => {
+  let page: { url: string; key: string } | undefined;
+  walk(bcd, key, (node, nodeKey) => {
     const compat = node.__compat;
-    if (isNode(compat) && typeof compat.mdn_url === "string") url = compat.mdn_url;
+    if (!isNode(compat) || compat.mdn_url === undefined) return;
+    if (typeof compat.mdn_url !== "string" || !compat.mdn_url.startsWith(MDN_ORIGIN_PREFIX)) {
+      throw new HomeDataError(
+        key,
+        `The mdn_url of '${nodeKey}' does not start with ${MDN_ORIGIN_PREFIX}: ${String(compat.mdn_url)}`,
+      );
+    }
+    page = { url: compat.mdn_url, key: nodeKey };
   });
-  if (url === undefined) {
+  if (page === undefined) {
     throw new HomeDataError(key, `No feature on the path to '${key}' has an MDN Web Docs page.`);
   }
-  return `${url}#browser_compatibility`;
+  return {
+    url: `${page.url}#browser_compatibility`,
+    key: page.key,
+    name: page.key === key ? featureName : ancestorName(page.key),
+  };
 };
 
 /**
@@ -127,7 +164,7 @@ export const buildFeatureResponse = (bcd: CompatData, key: string): FeatureRespo
 
 /**
  * The text of a `<script type="application/json">` that holds the payload. Every `<` becomes the
- * six characters `<`, which `JSON.parse` turns back into `<`. This is the page's one
+ * six characters `\u003c`, which `JSON.parse` turns back into `<`. This is the page's one
  * injection control: a note that contains `</script>` or `<!--<script>` would otherwise end the
  * script early or swallow the rest of the page (packages/element/README.md, "Source mode").
  * O(n) time and space for n characters of JSON.
@@ -141,13 +178,13 @@ export const dataScriptId = (key: string): string => `bcd-data-${key.replaceAll(
 export type ExamplePanel = ExampleDefinition & {
   readonly scriptId: string;
   readonly scriptJson: string;
-  readonly mdnUrl: string;
+  readonly mdnPage: MdnPage;
 };
 
 export type HomePageData = {
   readonly bcdVersion: string;
   readonly examples: readonly ExamplePanel[];
-  readonly live: typeof LIVE_EXAMPLE & { readonly mdnUrl: string };
+  readonly live: typeof LIVE_EXAMPLE & { readonly mdnPage: MdnPage };
 };
 
 /**
@@ -160,7 +197,7 @@ export const buildHomePageData = (bcd: CompatData): HomePageData => ({
     ...example,
     scriptId: dataScriptId(example.key),
     scriptJson: toScriptJson(buildFeatureResponse(bcd, example.key)),
-    mdnUrl: findMdnUrl(bcd, example.key),
+    mdnPage: findMdnPage(bcd, example.key, example.name),
   })),
-  live: { ...LIVE_EXAMPLE, mdnUrl: findMdnUrl(bcd, LIVE_EXAMPLE.key) },
+  live: { ...LIVE_EXAMPLE, mdnPage: findMdnPage(bcd, LIVE_EXAMPLE.key, LIVE_EXAMPLE.name) },
 });

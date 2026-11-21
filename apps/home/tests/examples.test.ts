@@ -11,7 +11,7 @@ import {
   buildFeatureResponse,
   buildHomePageData,
   dataScriptId,
-  findMdnUrl,
+  findMdnPage,
   findSubtree,
   toScriptJson,
 } from "../src/data/examples.js";
@@ -67,13 +67,42 @@ describe("the four examples", () => {
     );
   });
 
-  it("links a feature without its own MDN page to its nearest ancestor's page", () => {
+  it("links a feature without its own MDN page to its nearest ancestor's page, by name", () => {
     expect(findSubtree(bcd, "html.elements.video.loading").__compat?.mdn_url).toBeUndefined();
     const video = findSubtree(bcd, "html.elements.video").__compat?.mdn_url;
     expect(video).toBeDefined();
-    expect(findMdnUrl(bcd, "html.elements.video.loading")).toBe(`${video}#browser_compatibility`);
+    expect(findMdnPage(bcd, "html.elements.video.loading", "loading")).toEqual({
+      url: `${video}#browser_compatibility`,
+      key: "html.elements.video",
+      name: "<video>",
+    });
+  });
+
+  it("names the feature itself when it has its own MDN page", () => {
     const lineClamp = findSubtree(bcd, "css.properties.line-clamp").__compat?.mdn_url;
-    expect(findMdnUrl(bcd, "css.properties.line-clamp")).toBe(`${lineClamp}#browser_compatibility`);
+    expect(findMdnPage(bcd, "css.properties.line-clamp", "line-clamp")).toEqual({
+      url: `${lineClamp}#browser_compatibility`,
+      key: "css.properties.line-clamp",
+      name: "line-clamp",
+    });
+  });
+
+  it.each([
+    ["an http address", "http://developer.mozilla.org/docs/Web/CSS/line-clamp"],
+    ["another host", "https://developer.mozilla.org.example/docs/Web/CSS/line-clamp"],
+    ["a script address", "javascript:alert(1)"],
+  ])("fails the build when an mdn_url on the path is %s", (_case, badUrl) => {
+    // A shallow copy of the path down to the key, so the installed data stays untouched.
+    const lineClamp = findSubtree(bcd, "css.properties.line-clamp");
+    const properties = {
+      ...bcd.css.properties,
+      "line-clamp": { ...lineClamp, __compat: { ...lineClamp.__compat, mdn_url: badUrl } },
+    };
+    const withBadUrl = { ...bcd, css: { ...bcd.css, properties } } as unknown as CompatData;
+    expect(() => findMdnPage(withBadUrl, "css.properties.line-clamp", "line-clamp")).toThrow(
+      HomeDataError,
+    );
+    expect(() => buildHomePageData(withBadUrl)).toThrow(/does not start with https:\/\/developer/);
   });
 
   it("reads the BCD version and checks the live table's key", () => {
@@ -81,9 +110,10 @@ describe("the four examples", () => {
     expect(data.bcdVersion).toBe(bcd.__meta.version);
     expect(data.examples).toHaveLength(4);
     expect(data.live.key).toBe(LIVE_EXAMPLE.key);
-    expect(data.live.mdnUrl).toMatch(
+    expect(data.live.mdnPage.url).toMatch(
       /^https:\/\/developer\.mozilla\.org\/.+#browser_compatibility$/,
     );
+    expect(data.live.mdnPage.name).toBe("<dialog>");
   });
 });
 

@@ -37,12 +37,22 @@ pre {
 /*
  * Panel switching, with no script. Each rule hides the panels that do not match the checked radio
  * input. A browser that does not support :has() cannot parse the selector list, so it drops the
- * whole rule, and every panel shows under its own heading. That is why there is no @supports
- * block (#209).
+ * whole rule, and every panel shows under its own heading. These rules need no @supports block.
  */
 .examples:has([value="html"]:checked) .example-panel:not([data-example="html"]),
 .examples:has([value="css"]:checked) .example-panel:not([data-example="css"]),
 .examples:has([value="javascript"]:checked) .example-panel:not([data-example="javascript"]),
 .examples:has([value="api"]:checked) .example-panel:not([data-example="api"]) {
   display: none;
+}
+
+/*
+ * In that browser the radios would choose nothing, because every panel already shows, so the
+ * fieldset is hidden. A browser too old to know selector() in @supports also treats the condition
+ * as false, so `not` makes it true there too, and it lacks :has() as well.
+ */
+@supports not selector(:has(*)) {
+  .example-choices {
+    display: none;
+  }
 }

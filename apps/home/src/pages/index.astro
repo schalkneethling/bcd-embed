@@ -39,7 +39,7 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
       </p>
       <p>
         The four tables below were built into this page from BCD {bcdVersion}, so showing them sends
-        no request. Choose an example to see one.
+        no request.
       </p>
 
       <section class="examples" aria-labelledby="examples-heading">
@@ -82,8 +82,8 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
                 />
                 <bcd-compat-table source={example.scriptId}>
                   <p>
-                    <a href={example.mdnUrl}>
-                      Browser compatibility for <code>{example.name}</code> on MDN Web Docs
+                    <a href={example.mdnPage.url}>
+                      Browser compatibility for <code>{example.mdnPage.name}</code> on MDN Web Docs
                     </a>
                   </p>
                 </bcd-compat-table>
@@ -117,8 +117,8 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
         </p>
         <bcd-compat-table query={live.key}>
           <p>
-            <a href={live.mdnUrl}>
-              Browser compatibility for <code>{live.name}</code> on MDN Web Docs
+            <a href={live.mdnPage.url}>
+              Browser compatibility for <code>{live.mdnPage.name}</code> on MDN Web Docs
             </a>
           </p>
         </bcd-compat-table>

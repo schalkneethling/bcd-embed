@@ -5,15 +5,21 @@ import type { Plugin } from "vite";
 
 const source = (path: string) => fileURLToPath(new URL(`../../packages/${path}`, import.meta.url));
 
-// The workspace packages export their `dist/` folders, which do not exist until `pnpm build` has
-// built them, and `pnpm check` runs this workspace's build test before it builds anything. So the
-// page reads their source, as the root `vitest.config.ts` does.
+/** Set to "1" by `tests/home-page.test.ts`, and by nothing else. */
+const WORKSPACE_SOURCE_VARIABLE = "BCD_EMBED_HOME_WORKSPACE_SOURCE";
+
+// The deployed page is built by `pnpm build`, which builds the workspace packages first, because
+// pnpm runs a recursive build in dependency order. So by default the page imports each package
+// through its `exports`, as a consumer does: the element's `dist/index.js` (kept by its
+// `sideEffects`) and `dist/base.css`, and the `dist/` of `core` and `schema` at build time.
 //
-// The element needs more than an alias. Its `package.json` lists only `./dist/index.js` and
-// `./dist/*.css` under `sideEffects`, so the bundler treats `src/index.ts` as free of side effects
-// and drops `import "@bcd-embed/element";`, which then defines nothing. A `resolveId` result's
-// `moduleSideEffects` takes precedence over `package.json`, so this plugin keeps the entry, the
-// way the published `dist/index.js` is kept.
+// The page test runs before `pnpm build` in `pnpm check`, when no `dist/` exists, so it sets
+// WORKSPACE_SOURCE_VARIABLE and this plugin points each import at the package's source instead,
+// as the root `vitest.config.ts` does. The element needs more than an alias there: its
+// `sideEffects` lists only `dist/` files, so the bundler would treat `src/index.ts` as free of side
+// effects and drop `import "@bcd-embed/element";`. A `resolveId` result's `moduleSideEffects` takes
+// precedence over `package.json`, so the plugin keeps the entry, as `sideEffects` keeps
+// `dist/index.js`.
 const workspaceSource: Plugin = {
   name: "bcd-embed-workspace-source",
   enforce: "pre",
@@ -42,7 +48,7 @@ export default defineConfig({
     inlineStylesheets: "never",
   },
   vite: {
-    plugins: [workspaceSource],
+    plugins: process.env[WORKSPACE_SOURCE_VARIABLE] === "1" ? [workspaceSource] : [],
     build: {
       // Vite's default CSS minifier, lightningcss, drops the base stylesheet's
       // `@layer bcd-embed.base;` statement and rewrites each `light-dark()` into custom
