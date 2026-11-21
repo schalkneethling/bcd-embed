@@ -54,7 +54,9 @@ workspaces are:
 - `apps/home` — `@bcd-embed/home`, the introduction page for
   `https://browser-compat.dev`, built with [Astro](https://astro.build). Its
   four example tables are built into the page from the installed BCD, and one
-  more table loads from the API when it scrolls near. It is not deployed yet.
+  more table loads from the API when it scrolls near. It is deployed manually
+  with `pnpm --filter @bcd-embed/home run deploy` and answers on
+  `https://browser-compat.dev`, under an enforcing Content-Security-Policy.
 
 Each package and app has its own README with the details of its behavior.
 

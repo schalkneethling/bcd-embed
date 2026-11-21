@@ -2,8 +2,9 @@
 
 `@bcd-embed/home` is the introduction page for `https://browser-compat.dev`. It is built with
 [Astro](https://astro.build), without Starlight, and produces one static HTML page with one
-stylesheet and two scripts, the element's and the status region's. It is not deployed yet: the Wrangler configuration, the response headers,
-and the deploy belong to #211.
+stylesheet and two scripts, the element's and the status region's. It is served as static files by
+a Cloudflare Worker with no script, only on that address, under an enforcing Content-Security-Policy
+(see "Deploying" below).
 
 The page shows four example tables, one at a time, chosen with four radio inputs. Their data is
 built into the page, so showing them sends no request. One more table, lower on the page, asks the
@@ -13,12 +14,13 @@ hosted API for its data when it scrolls near.
 
 Run these from the repository root:
 
-| Command                                   | What it does                                                          |
-| ----------------------------------------- | --------------------------------------------------------------------- |
-| `pnpm dev:home`                           | Serves the page locally and reloads on every change (see below)       |
-| `pnpm --filter @bcd-embed/home build`     | Writes the page to `apps/home/dist`, then checks it has no `v1` entry |
-| `pnpm --filter @bcd-embed/home typecheck` | Generates Astro's types, then type-checks the TypeScript files        |
-| `pnpm exec vitest run apps/home`          | Runs this workspace's tests                                           |
+| Command                                            | What it does                                                                  |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `pnpm dev:home`                                    | Serves the page locally and reloads on every change (see below)               |
+| `pnpm --filter @bcd-embed/home build`              | Writes the page to `apps/home/dist`, then checks it has no `v1` entry         |
+| `pnpm --filter @bcd-embed/home typecheck`          | Generates Astro's types, then type-checks the TypeScript files                |
+| `pnpm exec vitest run apps/home`                   | Runs this workspace's tests                                                   |
+| `pnpm --filter @bcd-embed/home run deploy:dry-run` | Builds, then validates the deploy without uploading. The owner runs `deploy`. |
 
 `pnpm check` runs the tests, the type check, and the build with every other workspace. The tests
 load the page in Chromium's headless shell, so install it once with
@@ -30,6 +32,9 @@ load the page in Chromium's headless shell, so install it once with
 apps/home/
 ├─ .stylelintrc.json        the Baseline 2025 floor for this workspace's stylesheet
 ├─ astro.config.ts          site address, CSS and script settings, the test-only source plugin
+├─ public/_headers          the response headers, including the Content-Security-Policy
+├─ public/robots.txt        allows every crawler
+├─ wrangler.jsonc           the apex custom domain, static assets only
 ├─ scripts/assert-no-v1.mjs fails when the built site has a top-level v1 entry
 ├─ src/
 │  ├─ data/examples.ts      the four examples, and everything the page reads from BCD
@@ -40,7 +45,9 @@ apps/home/
    ├─ contrast.test.ts      the contrast formula, without a build
    ├─ contrast.ts           WCAG contrast ratios from computed colours
    ├─ examples.test.ts      the data module, without a build
-   └─ home-page.test.ts     builds the page and checks it in Chromium
+   ├─ home-deploy.test.ts   the configuration, the headers, and the policy in a browser
+   ├─ home-page.test.ts     builds the page and checks it in Chromium
+   └─ serve.ts              serves a built copy, with the headers of `_headers` if asked
 ```
 
 ## The examples
@@ -253,7 +260,7 @@ base stylesheet picks its colours with `light-dark()`, and its dark colours fail
 sends its one request when it comes within 400 pixels of the viewport, to
 `https://api.browser-compat.dev/v1/current/features/html.elements.dialog.json`. In a viewport about
 720 pixels tall the table is already that close when the page loads, so it requests at once; in a
-shorter one it waits until the reader scrolls. #211 must allow that origin in `connect-src`.
+shorter one it waits until the reader scrolls. The policy in `public/_headers` allows that origin, and only that origin, in `connect-src`.
 
 ## Tests
 
@@ -293,3 +300,23 @@ The zone's rate limiting rule matches `/v1/` on every hostname of `browser-compa
 top-level `v1` file or folder in the site would be answered by the rule instead of the site. The
 `build` script runs `scripts/assert-no-v1.mjs dist` after `astro build`, and the page test runs the
 same check on its own build, then adds a `v1` folder and shows the check failing.
+
+## Deploying
+
+The page is a Cloudflare Worker with no script: `wrangler.jsonc` serves the files in `dist/` and
+answers only on the apex custom domain `browser-compat.dev`, with `workers_dev` and `preview_urls`
+off. `public/_headers` sends `X-Content-Type-Options`, `Referrer-Policy`, and an enforcing
+Content-Security-Policy, and `public/robots.txt` allows every crawler. The owner deploys, with
+`pnpm --filter @bcd-embed/home run deploy`. The commands, the checks to run afterwards, the reason
+for each directive of the policy, and the rollback are in the
+[deployment page](../website/src/content/docs/deployment.md#deploying-the-introduction-page).
+
+`tests/home-deploy.test.ts` serves a build on `127.0.0.1` with the exact headers of `_headers`,
+listens for `securitypolicyviolation` events in the page and in any worker, and requires no
+violation and all five tables rendered. Three controls show the listener works: a policy of
+`default-src 'none'` alone, the policy without `connect-src`, and the policy with an inline script
+and a `style` attribute injected. `pnpm check` runs it in Chromium. Set
+`BCD_EMBED_HOME_CSP_ENGINES=chromium,firefox,webkit` to run it in all three (the engines Playwright
+installs with `pnpm exec playwright install`), and `BCD_EMBED_HOME_CSP_REPORT=1` to print each
+visit's violations. As in the page test, every request that leaves `127.0.0.1` is aborted, and the
+hosted API is answered from installed BCD.

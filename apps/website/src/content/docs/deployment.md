@@ -1,6 +1,6 @@
 ---
 title: Deploying the Worker and the site
-description: What must exist before a deploy, how Varlock supplies the Worker's configuration, what a deploy changes, and how the documentation site is deployed and rolled back.
+description: What must exist before a deploy, how Varlock supplies the Worker's configuration, what a deploy changes, and how the documentation site and the introduction page are deployed and rolled back.
 ---
 
 The Worker is the program on Cloudflare's network that answers API requests by
@@ -13,8 +13,9 @@ The Worker's code is in
 [`apps/worker`](https://github.com/schalkneethling/bcd-embed/tree/main/apps/worker).
 Its [README](https://github.com/schalkneethling/bcd-embed/blob/main/apps/worker/README.md)
 describes how it caches, negotiates compression, and reports errors. The last
-sections cover [deploying this documentation site](#deploying-the-documentation-site),
-which is a separate Cloudflare deploy with its own commands.
+sections cover [deploying this documentation site](#deploying-the-documentation-site)
+and [the introduction page](#deploying-the-introduction-page), which are separate
+Cloudflare deploys with their own commands.
 
 ## What must exist before a deploy
 
@@ -449,6 +450,213 @@ delete the certificate when you delete a Custom Domain. Check the zone's DNS
 page afterwards: the `docs` record should be gone. `wrangler delete` deletes
 the Worker itself, and this repository has not checked whether it also
 removes the Custom Domain, so prefer the dashboard.
+
+## Deploying the introduction page
+
+The introduction page is the third deploy, beside the Worker and the documentation
+site. Like the documentation site it has no script and reads no bucket:
+Cloudflare serves the files in `apps/home/dist`, which `astro build` writes. It
+answers only on `https://browser-compat.dev`, the apex of the zone, as a
+Workers Custom Domain. Its configuration is in
+[`apps/home`](https://github.com/schalkneethling/bcd-embed/tree/main/apps/home).
+
+| Site               | Address                           | Worker name         | Configuration                 |
+| ------------------ | --------------------------------- | ------------------- | ----------------------------- |
+| Introduction page  | `https://browser-compat.dev`      | `bcd-embed-home`    | `apps/home/wrangler.jsonc`    |
+| Documentation site | `https://docs.browser-compat.dev` | `bcd-embed-website` | `apps/website/wrangler.jsonc` |
+
+### Where the page answers
+
+`apps/home/wrangler.jsonc` sets the same three fields as the documentation
+site's configuration, with the same reasons (see
+[where the Worker answers](#where-the-worker-answers)), and the hostname
+`browser-compat.dev`. Every key comes from the installed Wrangler's
+`config-schema.json`.
+
+| Field                 | Value                                   |
+| --------------------- | --------------------------------------- |
+| `routes`              | `browser-compat.dev` as a Custom Domain |
+| `workers_dev: false`  | No `workers.dev` address                |
+| `preview_urls: false` | No preview or version addresses         |
+
+The zone's DNS page, which the owner read on 20 November 2026 for the
+[#189 spike](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md),
+had no record for the apex, so nothing blocks the Custom Domain. Cloudflare
+creates the record on the first deploy, so the apex must still have none then.
+The `assets` block sets only `directory`. The page has no `404.html`, so
+`not_found_handling` stays at its default, `none` (Cloudflare's
+[Wrangler configuration page](https://developers.cloudflare.com/workers/wrangler/configuration/)
+names the default but not the response), and check 3 below settles what a path
+that matches no file receives.
+
+The zone's rate limiting rule matches `/v1/` on every hostname. The build
+script runs `scripts/assert-no-v1.mjs dist` after `astro build`, so a build
+with a top-level `v1` entry fails before any deploy.
+
+Two things are owner changes in the Cloudflare dashboard, and this repository
+does not make them:
+
+- `www.browser-compat.dev` has no DNS record, so nothing answers it. Whether it
+  should redirect to the apex or stay unanswered is the owner's decision.
+- Always Use HTTPS has been on for the zone since 20 November 2026, so plain
+  HTTP to the apex redirects.
+
+### The page's headers file
+
+`apps/home/public/_headers` is copied into `dist/` by the build, and Cloudflare
+applies it as it does for the documentation site (one rule per header name,
+because Cloudflare joins a name set by two rules with a comma).
+
+| Path        | Header                    | Value                                                                                                                                                                                                 |
+| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/*`        | `X-Content-Type-Options`  | `nosniff`                                                                                                                                                                                             |
+| `/*`        | `Referrer-Policy`         | `strict-origin-when-cross-origin`                                                                                                                                                                     |
+| `/*`        | `Content-Security-Policy` | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.browser-compat.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` |
+| `/_astro/*` | `Cache-Control`           | `public, max-age=31536000, immutable`                                                                                                                                                                 |
+
+The policy is enforcing. The built page is one HTML file, one stylesheet and
+two scripts, with no inline script, no `<style>` element and no `style`
+attribute (tests in `apps/home/tests/home-page.test.ts` check this), so almost
+every directive is `'none'` or `'self'`. Each directive is here for a measured
+reason:
+
+| Directive                                                                              | Why                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `default-src 'none'`                                                                   | Anything the page does not name is denied. It also covers `font-src`, `media-src`, `frame-src`, `worker-src` and `manifest-src`, which the page never uses.                                                                                            |
+| `script-src 'self'`                                                                    | The element's script and the status region's script are files from the site. The four `application/json` data blocks are not executed, so the policy does not govern them.                                                                             |
+| `style-src 'self'`                                                                     | The page has one stylesheet file. In all three engines, the element and Lit raised no `style-src` violation while rendering and while a reader chose each example and opened a disclosure, so no style the policy blocks is set (see the measurement). |
+| `img-src 'self'`                                                                       | The page has no image. Firefox requests `/favicon.ico` when a page names no icon, and checks that request against `img-src`: with `default-src 'none'` alone, Firefox 159 reports it. Chromium and WebKit report nothing.                              |
+| `connect-src https://api.browser-compat.dev`                                           | The live table asks the hosted API for its data. The built page has one fetch-mode table, `<bcd-compat-table query="html.elements.dialog">`. The example tables read built-in data and send no request, so `'self'` is not needed.                     |
+| `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'` | `default-src` does not cover these four, so each is named. The page has no plugin, `<base>` element or form, and nothing should frame it.                                                                                                              |
+
+A test (`apps/home/tests/home-deploy.test.ts`) parses the file in `dist/`,
+requires the directives above, rejects `'unsafe-inline'`, `'unsafe-eval'`, a
+wildcard or a scheme source in any directive, allows `connect-src` only when
+the built page holds a fetch-mode table, and requires this page to print the
+policy exactly as sent.
+
+The test also serves the built page on `127.0.0.1` with the exact headers of
+the file and listens for `securitypolicyviolation` events in the page and in
+any worker. On 21 November 2026, in Chromium 159.0.8154.6, Firefox 159.0 and
+WebKit 27.2 (the builds Playwright 1.65.1 installs), every engine reported
+zero events and zero console messages about the policy, rendered the four
+built-in tables and the live table, and sent no request off `127.0.0.1` except
+the API request, which the test answered from a local fixture. The page has no
+worker, so the worker listener heard nothing to report. Each engine ran three
+controls to show the counter works:
+
+| Control                                                   | Chromium | Firefox  | WebKit   | What it shows                                                         |
+| --------------------------------------------------------- | -------- | -------- | -------- | --------------------------------------------------------------------- |
+| `default-src 'none'` alone                                | 3 events | 4 events | 3 events | The stylesheet and both scripts are blocked; Firefox adds the favicon |
+| The policy without `connect-src`                          | 1 event  | 1 event  | 1 event  | The live table's request is blocked and its table is empty            |
+| The policy, with an inline script and `style=""` injected | 2 events | 2 events | 2 events | Both are blocked, and the script does not run                         |
+
+Run the same test in three engines with
+`BCD_EMBED_HOME_CSP_ENGINES=chromium,firefox,webkit pnpm exec vitest run apps/home/tests/home-deploy.test.ts`.
+`pnpm check` runs it in Chromium only.
+
+The test does not cover what the deployed page receives from Cloudflare, only
+what the repository sends. In particular, Cloudflare Web Analytics inserts
+`<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/…">`
+into HTML sent to browsers when its automatic setup is on for the zone, and
+the setup covers "all pages (sub-domains) under the zone", as the
+[Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/) says
+(the same behaviour as on the documentation site, above). With an enforcing
+`script-src 'self'`, a browser blocks that script and logs one violation on the
+apex. **The owner decides before or at the deploy** between two options:
+
+- Allow the beacon. The FAQ asks for `https://static.cloudflareinsights.com/beacon.min.js`
+  in `script-src`, and for `'self'` in `connect-src` under automatic injection,
+  because the data goes to the page's own domain. That adds
+  `'self'` to `connect-src` here, and it also means changing the policy test,
+  which today allows only `'self'` in `script-src`.
+- Turn off automatic setup for the site in the Web Analytics settings, and
+  leave the policy as it is.
+
+This change allows neither, so the first load of the deployed page is expected
+to log that one violation until the owner chooses.
+
+### Running the page deploy
+
+Run these from the repository root, on an up-to-date `main`. The page imports
+the built `schema`, `core` and `element` packages, so build them first. The
+sign-in and the account check are the same as for the documentation site, so
+skip them if that deploy just ran.
+
+```sh
+pnpm install
+pnpm --filter "@bcd-embed/home^..." build
+pnpm --filter @bcd-embed/home exec wrangler login
+pnpm --filter @bcd-embed/home exec wrangler whoami
+pnpm --filter @bcd-embed/home run deploy:dry-run
+pnpm --filter @bcd-embed/home run deploy
+```
+
+`deploy:dry-run` runs `pnpm run build && wrangler deploy --dry-run`. It builds
+the page, which includes the `v1` check, and validates the configuration. In
+Wrangler 4.160.1's source a dry run skips the authentication step and the
+asset upload, and its output ends with "--dry-run: exiting now." It says nothing about the route, so
+only the real deploy attaches the hostname. Expected: the output lists
+`browser-compat.dev` as a Custom Domain, and no `workers.dev` address.
+
+### Checking the page deploy
+
+A certificate for a new hostname can take a minute, so retry a failed
+connection once before treating it as a fault.
+
+```sh
+# 1. The page: 200, and the headers.
+curl -sS -D - -o /dev/null https://browser-compat.dev/
+curl -sS https://browser-compat.dev/ | grep -o '<title>[^<]*'
+
+# 2. A hashed file: Cache-Control is public, max-age=31536000, immutable.
+ASSET=$(curl -sS https://browser-compat.dev/ | grep -o '/_astro/[^"]*\.js' | head -1)
+curl -sS -D - -o /dev/null "https://browser-compat.dev$ASSET"
+
+# 3. The robots file, a path with no file, and the /v1/ guard.
+curl -sS https://browser-compat.dev/robots.txt
+curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/no-such-page
+curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/v1/meta.json
+
+# 4. Plain HTTP redirects to HTTPS (Always Use HTTPS is on for the zone).
+curl -sS -D - -o /dev/null http://browser-compat.dev/
+```
+
+| Check | Expected                                                                                                                                                                                                                                                                                                                                   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | `HTTP/2 200`; `x-content-type-options: nosniff`; `referrer-policy: strict-origin-when-cross-origin`; a `content-security-policy:` line equal to the policy above; `cache-control: public, max-age=0, must-revalidate`; no `content-security-policy-report-only` line. The title is `bcd-embed: browser compatibility tables for any page`. |
+| 2     | `HTTP/2 200`, `cache-control: public, max-age=31536000, immutable`, and the same three security headers.                                                                                                                                                                                                                                   |
+| 3     | The robots file reads `User-agent: *` and `Allow: /`, with no `Sitemap` line. Both paths answer `404`, which the Cloudflare pages read for this change do not state, so this is the first observation of it. The `/v1/` answer is then the site's own `404`, which confirms nothing named `v1` is served.                                  |
+| 4     | A redirect (`3xx`) with a `location` of `https://browser-compat.dev/`.                                                                                                                                                                                                                                                                     |
+
+Then open `https://browser-compat.dev/` in a browser with the developer
+console open. The four example tables and the live table (scroll to "A table
+fetched from the API") should render, choosing each radio should switch the
+table, and the console should show no Content-Security-Policy report, except
+the one for the Web Analytics beacon that the owner's decision above covers. In
+the Cloudflare dashboard, the Worker's domain and route settings should list
+only `browser-compat.dev`, with `workers.dev` and preview URLs off.
+
+### Rolling the page back
+
+A second deploy creates a version that a rollback can return to. Run these from
+`apps/home` after choosing a version ID from the list:
+
+```sh
+pnpm exec wrangler versions list
+pnpm exec wrangler rollback <version-id> --message "<reason>"
+```
+
+The limits, the version retention and the version-skew caveat for hashed files
+are the same as for the documentation site (see
+[rolling back](#rolling-back) above), because both are Workers with static
+assets. The first deploy has no earlier version. To take the apex down after a
+first deploy that went wrong, remove the `browser-compat.dev` Custom Domain from
+the `bcd-embed-home` Worker in the dashboard, and also remove the Advanced
+Certificate Cloudflare issued for it, because Cloudflare does not delete the
+certificate when you delete a Custom Domain. Check the zone's DNS page
+afterwards: the apex record should be gone, so the zone is back to the state
+the #189 spike recorded.
 
 ## What is still open before a public launch
 
