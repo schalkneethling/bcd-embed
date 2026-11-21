@@ -19,6 +19,7 @@ import {
   markReady,
   payload,
   readOptions,
+  recordFirstRender,
 } from "../shared.js";
 
 const options = readOptions(window.location.search);
@@ -84,5 +85,6 @@ const root = createRoot(container);
 if (options.define === "before") await defineElement();
 // `flushSync` renders now, so "after" really does define the element once React has rendered it.
 flushSync(() => root.render(<App />));
+recordFirstRender(record);
 if (options.define === "after") await defineElement();
 markReady();

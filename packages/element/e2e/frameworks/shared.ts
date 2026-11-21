@@ -51,6 +51,12 @@ export type PageRecord = {
   readonly errors: BcdErrorDetail[];
   /** The object the page passes as `data`, for an identity check. */
   readonly payload: CompatTableData;
+  /**
+   * Whether `customElements.get("bcd-compat-table")` was `undefined` right after the framework's
+   * first render, so a test can tell a page that rendered before the definition from one that
+   * rendered after it. `null` until the first render.
+   */
+  undefinedAtFirstRender: boolean | null;
 };
 
 declare global {
@@ -66,7 +72,7 @@ export const payload: CompatTableData = v1NormalizedFixture;
 export const brokenPayload = {} as CompatTableData;
 
 export const createRecord = (): PageRecord => {
-  const record: PageRecord = { loads: [], errors: [], payload };
+  const record: PageRecord = { loads: [], errors: [], payload, undefinedAtFirstRender: null };
   window.bcdPage = record;
   return record;
 };
@@ -77,6 +83,11 @@ export const browsersFor = (revision: number): string =>
 
 /** The fallback sentence for a revision. */
 export const fallbackFor = (revision: number): string => `Fallback, revision ${revision}.`;
+
+/** Records whether the element was still undefined once the framework had rendered. */
+export const recordFirstRender = (record: PageRecord): void => {
+  record.undefinedAtFirstRender = customElements.get("bcd-compat-table") === undefined;
+};
 
 /** Defines the element, the way a page does with `import "@bcd-embed/element"`. */
 export const defineElement = async (): Promise<void> => {

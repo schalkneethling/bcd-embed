@@ -1,10 +1,16 @@
 import { flushSync, mount } from "svelte";
 
-import { createRecord, defineElement, markReady, readOptions } from "../shared.js";
+import {
+  createRecord,
+  defineElement,
+  markReady,
+  readOptions,
+  recordFirstRender,
+} from "../shared.js";
 import App from "./App.svelte";
 
 const options = readOptions(window.location.search);
-createRecord();
+const record = createRecord();
 
 const target = document.getElementById("app");
 if (target === null) throw new Error("The page has no #app.");
@@ -14,5 +20,6 @@ if (options.define === "before") await defineElement();
 // rendered it.
 mount(App, { target });
 flushSync();
+recordFirstRender(record);
 if (options.define === "after") await defineElement();
 markReady();

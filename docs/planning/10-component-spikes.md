@@ -1670,7 +1670,7 @@ Measured on 21 November 2026 with React 19.3.1, Vue 3.5.45, Svelte 5.57.3, Vite 
 
 Each framework has one page in `packages/element/e2e/frameworks/<name>/`, built with Vite. The query string selects a scenario (`define=before|after`, `binding=plain|robust`, `fallback=element|string`, `state=raw|deep`; `e2e/frameworks/shared.ts`). Each page has three buttons: "Re-render" changes the `browsers` prop and the fallback text, "Break data" passes an object the element rejects, and "Restore data" passes the payload again. The page records every event its framework's own listener syntax receives in `window.bcdPage`, so a passing test shows that the framework wired the listener.
 
-`e2e/frameworks.e2e.ts` runs each of 7 tests against each framework and each of two builds, plus one test for the two reactive-state proxies (Vue and Svelte) and one for the WebKit bug: 45 tests an engine, 135 in all.
+`e2e/frameworks.e2e.ts` runs 7 tests against each framework and each of two builds, except that Svelte skips the "robust binding" test, because its page has one binding and the "ordinary binding" test covers it. It adds one test for the two reactive-state proxies (Vue and Svelte) and one for the WebKit bug: 43 tests an engine, 129 in all. Each page records `customElements.get("bcd-compat-table") === undefined` right after its first render (`window.bcdPage.undefinedAtFirstRender`), and every define-after test asserts it is `true`, so a page that defined the element too early cannot pass as a define-after page. The first test asserts it is `false`.
 
 ```text
                          ┌── Vite dev server, port 5199 ───── element source, framework dev builds
@@ -1709,7 +1709,7 @@ For a bare string child, the test checks that the element ends with one containe
 
 ### 4. A WebKit bug that hides the element from `customElements.define`
 
-In WebKit 27.2 the Svelte production page with the element defined after the first render never showed the table: `element.matches(":defined")` stayed false, even after `customElements.upgrade(element)`. Chromium, Firefox, and the Svelte dev page in WebKit were fine. A bisection found the cause with no framework and no Lit:
+In WebKit 27.2 the Svelte production page with the element defined after the first render never showed the table: `element.matches(":defined")` stayed false, even after `customElements.upgrade(element)`. Chromium, Firefox, and the Svelte dev page in WebKit were fine. A bisection found the cause with no framework and no Lit (macOS WebKit 27.2; not checked on Linux):
 
 ```js
 const template = document.createElement("template");
@@ -1722,7 +1722,11 @@ copy.firstChild.matches(":defined"); // false in WebKit 27.2; true when anything
 
 Svelte 5 builds markup with `document.importNode` when a template holds a custom element (`needs_import_node` in `RegularElement.js`), and its production page reads `customElements` only after the markup exists. Svelte's dev server hides the bug, because Vite's client script reads `customElements` first. The page that defines the element first (the recommended order) works in WebKit, which fits the reproduction. `document.createElement` and an early read of `customElements` both avoid it. The cause inside WebKit is not traced.
 
-`e2e/frameworks.e2e.ts` marks the three tests that meet it with `test.fail` for WebKit: the plain reproduction, and the two Svelte production "defined after" tests. The run fails when WebKit fixes the bug, which is the moment to remove the markers. The README's "Frameworks" section tells authors to import the element first.
+The Svelte production test and the plain reproduction assert the bug instead of using `test.fail`, because `test.fail` passes on any failure and would hide an unrelated break in the same test. The Svelte test asserts that the element is not `:defined`, the fallback is visible, and no table exists; the plain test expects an upgrade everywhere except WebKit. Each test turns red when a WebKit release fixes the bug, which is the moment to remove the WebKit branch. A check that the Svelte test can fail: with the Svelte page changed to define the element before it renders, the WebKit production test failed on `undefinedAtFirstRender` (expected `true`, received `false`). The change was reverted.
+
+**The dev build depends on Vite's dev client.** The Svelte dev page passes in WebKit only because Vite's client script defines `vite-error-overlay` first, which reads `customElements` before Svelte mounts. A Vite change could remove that read. A future WebKit failure of the Svelte dev tests with an element that is not `:defined` points at this cause, not at the element. The comment above the tests says so.
+
+**Platform.** The bug was observed on macOS WebKit 27.2 (Playwright 1.65.1) only. The Element browser workflow runs Linux WebKit, so the first CI run may differ in either direction: a Linux build that upgrades the element turns the Svelte production test and the plain reproduction red.
 
 ### 5. Deeply reactive state
 

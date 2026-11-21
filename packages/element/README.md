@@ -396,11 +396,11 @@ removes the element's render container. The element puts the container back, and
 for React and Vue, but the form with an element child never relies on that. The events bubble and
 are not composed, so a listener on the element or on an ancestor in the same tree receives them.
 
-| Framework | Sets `data` as a property       | Listens for `bcd-load`   | Element defined after the first render                                                          |
-| --------- | ------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
-| React 19  | `<el data={x} />` or `ref`      | `<el onbcd-load={fn} />` | `data={x}` loses the payload; a `ref` callback keeps it                                         |
-| Vue 3     | `:data="x"` or `:data.prop="x"` | `@bcd-load="fn"`         | `:data="x"` loses the payload; `:data.prop="x"` keeps it                                        |
-| Svelte 5  | `data={x}`                      | `onbcd-load={fn}`        | `data={x}` keeps the payload, except in WebKit when nothing read `customElements` first (below) |
+| Framework | Sets `data` as a property                                                                            | Listens for `bcd-load`   | Element defined after the first render                                                          |
+| --------- | ---------------------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| React 19  | `ref` callback (any order); `<el data={x} />` only if the element is defined before the first render | `<el onbcd-load={fn} />` | `data={x}` loses the payload; a `ref` callback keeps it                                         |
+| Vue 3     | `:data.prop="x"` (any order); `:data="x"` only if the element is defined before the first render     | `@bcd-load="fn"`         | `:data="x"` loses the payload; `:data.prop="x"` keeps it                                        |
+| Svelte 5  | `data={x}` (any order, with the WebKit exception below)                                              | `onbcd-load={fn}`        | `data={x}` keeps the payload, except in WebKit when nothing read `customElements` first (below) |
 
 "Loses the payload" means the framework wrote the attribute `data="[object Object]"`, which the
 element never reads, so the table does not render. The framework then sets the property from its
@@ -489,7 +489,7 @@ builds its markup with `document.importNode`, and WebKit never upgrades an eleme
 `customElements.upgrade`. The page then shows the fallback forever. Importing the element first, as
 above, avoids it, because the definition reads `customElements` before the markup exists.
 `e2e/frameworks.e2e.ts` reproduces the bug without a framework and marks the affected tests with
-`test.fail`, so the run fails when a WebKit release fixes it and the marker can go.
+an assertion of the symptom (the element is not `:defined` and the fallback is still showing), so the tests turn red when a WebKit release fixes it, and also when something else breaks in the same page. It was observed on macOS WebKit 27.2 only; the CI runs Linux WebKit.
 
 ## Styling
 
