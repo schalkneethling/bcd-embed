@@ -136,11 +136,19 @@ const overrideFor = (property: string, current: string): string | null => {
     "text-wrap-mode": ["wrap", "nowrap"],
     cursor: ["text", "default"],
     "border-collapse": ["separate", "collapse"],
+    "border-spacing": ["7px 9px", "9px 7px"],
+    // Chromium and WebKit expand `border-spacing` into these two longhands.
+    "-webkit-border-horizontal-spacing": ["7px", "9px"],
+    "-webkit-border-vertical-spacing": ["7px", "9px"],
     "font-weight": ["100", "900"],
     "white-space-trim": ["discard-before", "none"],
     // The grid that keeps a bare text fallback from taking space.
     "grid-template-columns": ["7px", "9px"],
+    "grid-template-rows": ["7px", "9px"],
     "grid-auto-rows": ["7px", "9px"],
+    // The row headers' floor and the long names that wrap (#201).
+    "box-sizing": ["content-box", "border-box"],
+    "overflow-wrap": ["normal", "break-word"],
     "grid-row-start": ["2", "3"],
     "grid-row-end": ["span 2", "span 3"],
     "grid-column-start": ["2", "3"],
@@ -605,6 +613,32 @@ test.describe("the fallback rule, with the stylesheet", () => {
       expect(cleared.visibleText).not.toContain("Supported since Chrome 46");
     });
   }
+
+  // The grid that hides a bare text fallback must not collapse the row that holds the table:
+  // before #201 fixed it, the element and its container were 0 pixels tall in all three engines,
+  // so the page's next content was drawn over the table.
+  test("keeps the element as tall as its table, so the content after it starts below it", async ({
+    page,
+  }) => {
+    await open(page, STYLED_PAGE);
+    const boxes = await page.evaluate(() => {
+      const element = document.getElementById("table") as HTMLElement;
+      const after = document.createElement("p");
+      after.textContent = "After the table";
+      element.after(after);
+      const table = element.querySelector(".bcd-scroller") as Element;
+      return {
+        element: element.getBoundingClientRect().height,
+        table: table.getBoundingClientRect().height,
+        tableBottom: table.getBoundingClientRect().bottom,
+        afterTop: after.getBoundingClientRect().top,
+      };
+    });
+
+    expect(boxes.table).toBeGreaterThan(100);
+    expect(Math.abs(boxes.element - boxes.table)).toBeLessThanOrEqual(0.5);
+    expect(boxes.afterTop).toBeGreaterThanOrEqual(boxes.tableBottom - 0.5);
+  });
 
   test("keeps the author's font size for the table, and an em token follows it", async ({
     page,
