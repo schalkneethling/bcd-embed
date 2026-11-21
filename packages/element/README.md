@@ -519,14 +519,25 @@ table display values, so a screen reader reads the same table. What changes is h
 
 In a 320 CSS pixel viewport the page scrolls only down and the region only sideways, so nothing needs
 scrolling in two directions. The keyboard reaches the region with Tab, and the arrow keys scroll it.
+In right-to-left text the column sticks to the right, and the borders mirror.
+
+**Long feature names.** A feature name may break anywhere (`overflow-wrap: anywhere` on its
+`<code>`), and a row header is at least 10em wide, indent included (`min-inline-size: 10em` with
+`box-sizing: border-box`). So in a region too narrow for the table, the sticky column shrinks to
+10em and a long name wraps inside it, which leaves room for the other columns to scroll into view
+beside it, even at depth 5 in a 320 CSS pixel viewport. Where the table fits, the column keeps the
+name's full width.
 
 **There is no breakpoint.** Issue #201 first made the column sticky only in a container narrower
 than 40em, with a container query. A query container applies style containment, and with it
-Chromium 159 took about 10 seconds to lay out a 2,000-row table instead of 0.6, a cost that grew with
-the square of the number of rows (Document 3, "Responsive behavior"). A sticky column at every width
-needs no query and costs nothing while the table fits, so the stylesheet uses that instead. Do not
-make an ancestor of the table a query container (`container-type`) for the same reason; a test
-checks that the stylesheet makes none.
+Chromium 159 laid out the largest real table, 314 rows, in 249 ms instead of 51 ms: five times as
+long. The cost grows with the square of the number of rows, so a synthetic 2,000-row table took
+about 10 seconds instead of 0.6 (Document 3, "Responsive behavior"). Containment also made the
+region 0 pixels wide when the element was a flex item that did not grow and had no width. A sticky
+column at every width needs no query and costs nothing while the table fits, so the stylesheet uses
+that instead. Do not apply style containment to the table or an ancestor, with `container-type`,
+`contain: style`, or `content-visibility`, for the same reason; a test checks that the stylesheet
+applies none.
 
 **The sticky column's background.** The sticky cells paint over the cells that scroll beneath them,
 so they need a background. It is `Canvas`, the browser's page colour for the inherited
@@ -778,7 +789,7 @@ bundle for the first time, and the total became 8.26 kB (8.07 kB before the revi
 own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
 growth, and the element's fetch logic for the rest. The icons of #200 add the rest: with both,
 `dist/index.js` measured 8.52 kB, 18 bytes over 8.5 kB, so the limit became 9 kB. Source mode (#205) adds the source reader and the parser wait: with fetch mode, source mode and the icons together, `dist/index.js` measures 8.97 kB, 30 bytes under 9 kB, so the limit is 9.5 kB. `dist/base.css`
-measured 2.94 kB with Brotli against a limit of 3 kB. The sticky column and print rules of #201 brought it to 3.31 kB, so the limit is 3.5 kB. With the comments removed, the source files grew by 0.11 kB with Brotli; the rest of the growth is comments, which the file keeps because it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
+measured 2.94 kB with Brotli against a limit of 3 kB. The sticky column, long-name, height and print rules of #201 brought it to 3.36 kB, so the limit is 3.5 kB. With the comments removed, the source files grew by 0.15 kB with Brotli; the rest of the growth is comments, which the file keeps because it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against.
 
 The packaging issue (#206) added the two gzip entries. `size-limit` 14.3.0 measures with Brotli
@@ -805,7 +816,9 @@ pull request that changes this package.
 | Visual snapshots (`*.visual.ts`)             | Chromium, Firefox, WebKit | By hand         | `pnpm --filter @bcd-embed/element test:visual`                    |
 
 The visual snapshots show the table in a narrow container, scrolled so the sticky column covers the
-other columns, and in a wide one, each in light and dark. Fonts and antialiasing differ between
+other columns, and in a wide one, each in light and dark. They load
+`e2e/fixtures/layout-visual.html`, which nothing else uses, so a change to another fixture page
+cannot change them; a change to that page, to the fixture payload, or to the stylesheet does. Fonts and antialiasing differ between
 operating systems, so an image matches only on the platform that recorded it, and
 `playwright.visual.config.ts` keeps one set per platform under `e2e/__snapshots__/`. The committed
 set was recorded on macOS by the implementer of #201 on 21 November 2026. The Element browser
@@ -857,8 +870,9 @@ checks the fallback rule's computed styles, the Tab key's stops, and that a note
 runs, and it records the render time of a 2,000-feature table, in the page's width and in a 30em
 container, where the region scrolls. `e2e/layout.e2e.ts` checks the layout of "Narrow
 containers": sideways scrolling, the sticky column and its painted borders, display values at six
-widths, a 320 CSS pixel viewport, that no element around the table is a query container, print,
-the arrow keys, and axe. The page imports TypeScript source,
+widths, a 320 CSS pixel viewport, a long name at depth 5 at 320 CSS pixels, right-to-left text,
+forced colours where the engine really forces them, that no element around the table applies style
+containment, print, the arrow keys, and axe. The page imports TypeScript source,
 so `playwright.e2e.config.ts` starts Vite's dev server on port 5198 through `webServer` and stops
 it afterwards. The run fails at once if that port is taken.
 
