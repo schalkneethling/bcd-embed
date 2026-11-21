@@ -380,6 +380,117 @@ features; five subtrees have more than 200 and none has more than 500. So 2,000 
 six times the largest real table, and it rendered in under a second here. These numbers come from
 one fast machine, so measure again on a slow phone before relying on them for very large tables.
 
+## Frameworks
+
+The element works inside React 19.3.1, Vue 3.5.45, and Svelte 5.57.3. The package ships no wrapper
+and no framework typings. Each framework has a fixture page in `e2e/frameworks/`, built with Vite
+and run in Chromium, Firefox, and WebKit against Vite's dev server and a production build. The
+pages use the syntax below, and the tests show that `element.data` is the object the page passed,
+that the framework's own listener received `bcd-load` and `bcd-error`, and that a re-render with
+changed props leaves the table and the author's fallback in place with no console error.
+
+In every framework, import `@bcd-embed/element` before the framework renders the element, as the
+first import of the module that mounts the app. Put the fallback in an element such as `<p>`, not
+in a bare string: a framework that changes a single string child assigns `textContent`, which
+removes the element's render container. The element puts the container back, and the tests show it
+for React and Vue, but the form with an element child never relies on that. The events bubble and
+are not composed, so a listener on the element or on an ancestor in the same tree receives them.
+
+| Framework | Sets `data` as a property                                                                            | Listens for `bcd-load`   | Element defined after the first render                                                          |
+| --------- | ---------------------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| React 19  | `ref` callback (any order); `<el data={x} />` only if the element is defined before the first render | `<el onbcd-load={fn} />` | `data={x}` loses the payload; a `ref` callback keeps it                                         |
+| Vue 3     | `:data.prop="x"` (any order); `:data="x"` only if the element is defined before the first render     | `@bcd-load="fn"`         | `:data="x"` loses the payload; `:data.prop="x"` keeps it                                        |
+| Svelte 5  | `data={x}` (any order, with the WebKit exception below)                                              | `onbcd-load={fn}`        | `data={x}` keeps the payload, except in WebKit when nothing read `customElements` first (below) |
+
+"Loses the payload" means the framework wrote the attribute `data="[object Object]"`, which the
+element never reads, so the table does not render. The framework then sets the property from its
+next `data` value, because the property exists by then.
+
+**React.** React 19 sets a prop as a property when `prop in element` is true, so `data` works when
+the element is defined first. A `ref` callback assigns the property in every load order. The
+callback must read the current value, so declare it inline or depend on the value:
+
+```tsx
+import "@bcd-embed/element";
+import type { BcdCompatTableElement, BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+
+export const Table = ({ data }: { data: CompatTableData }) => (
+  <bcd-compat-table
+    browsers="chrome firefox safari"
+    ref={(element: BcdCompatTableElement | null) => {
+      if (element !== null) element.data = data;
+    }}
+    onbcd-load={(event: CustomEvent<BcdLoadDetail>) => console.log(event.detail)}
+  >
+    <p>Browser compatibility for this feature is on MDN Web Docs.</p>
+  </bcd-compat-table>
+);
+```
+
+React reads a prop that begins with `on` as a listener for the event named by the rest of the
+prop, so `onbcd-load` listens for `bcd-load`. TypeScript needs the tag declared;
+`e2e/frameworks/react/custom-element.d.ts` is a working declaration.
+
+**Vue.** Tell the template compiler that the tag is a custom element, or Vue warns that it cannot
+resolve a component. With `@vitejs/plugin-vue`:
+
+```ts
+vue({ template: { compilerOptions: { isCustomElement: (tag) => tag === "bcd-compat-table" } } });
+```
+
+```vue
+<script setup lang="ts">
+import "@bcd-embed/element";
+import { shallowRef } from "vue";
+
+const data = shallowRef(payload);
+</script>
+
+<template>
+  <bcd-compat-table
+    browsers="chrome firefox safari"
+    :data.prop="data"
+    @bcd-load="(event) => console.log(event.detail)"
+  >
+    <p>Browser compatibility for this feature is on MDN Web Docs.</p>
+  </bcd-compat-table>
+</template>
+```
+
+The `.prop` modifier always sets the property. Without it, Vue sets a property only when
+`key in el` is true, which has the same load-order limit as React. Keep the payload in
+`shallowRef` or `markRaw`: a `ref` makes the object deeply reactive, so the element receives a
+`Proxy` of the payload. The table still renders from the proxy, but `element.data` is then not the
+object you passed.
+
+**Svelte.** The ordinary binding works. While the element is not defined, Svelte sets an object as
+a property, and Lit keeps a property that was set before the upgrade. Use `$state.raw` for the
+payload, because `$state` makes an object deeply reactive and the element receives a proxy:
+
+```svelte
+<script lang="ts">
+  import "@bcd-embed/element";
+
+  let data = $state.raw(payload);
+</script>
+
+<bcd-compat-table
+  browsers="chrome firefox safari"
+  {data}
+  onbcd-load={(event) => console.log(event.detail)}
+>
+  <p>Browser compatibility for this feature is on MDN Web Docs.</p>
+</bcd-compat-table>
+```
+
+WebKit 27.2 has a bug that affects an element defined after a Svelte page rendered it. Svelte
+builds its markup with `document.importNode`, and WebKit never upgrades an element that
+`importNode` made before anything read `window.customElements`, not even through
+`customElements.upgrade`. The page then shows the fallback forever. Importing the element first, as
+above, avoids it, because the definition reads `customElements` before the markup exists.
+`e2e/frameworks.e2e.ts` reproduces the bug without a framework and marks the affected tests with
+an assertion of the symptom (the element is not `:defined` and the fallback is still showing), so the tests turn red when a WebKit release fixes it, and also when something else breaks in the same page. It was observed on macOS WebKit 27.2 only; the CI runs Linux WebKit.
+
 ## Styling
 
 The package ships an opt-in base stylesheet, `@bcd-embed/element/base.css`. It makes the table
@@ -864,7 +975,9 @@ fixture to `data`, and its only stylesheet is the built `dist/base.css`, which h
 rule. `e2e/fixtures/unstyled.html` is the same page with no stylesheet. `playwright.e2e.config.ts`
 runs `e2e/global-setup.ts` first, which builds the package, so the pages link the file a consumer
 gets. `e2e/base-stylesheet.e2e.ts` checks the stylesheet itself (below, "Styling").
-`e2e/data-mode.e2e.ts` runs axe on
+`e2e/frameworks.e2e.ts` runs the three framework pages (see "Frameworks") against two servers,
+Vite's dev server on port 5199 and a static server on port 5200 that serves the production build
+the global setup writes; `playwright.e2e.config.ts` starts both. `e2e/data-mode.e2e.ts` runs axe on
 the loaded table, with every disclosure open, after an error, and after `data = null`. It also
 checks the fallback rule's computed styles, the Tab key's stops, and that a note's markup never
 runs, and it records the render time of a 2,000-feature table, in the page's width and in a 30em
