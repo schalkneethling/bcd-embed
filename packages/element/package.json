@@ -5,7 +5,8 @@
   "description": "The bcd-compat-table web component and its message table.",
   "license": "MIT",
   "files": [
-    "dist"
+    "dist",
+    "custom-elements.json"
   ],
   "type": "module",
   "sideEffects": [
@@ -46,5 +47,6 @@
     "@size-limit/preset-small-lib": "14.3.0",
     "postcss": "8.5.32",
     "size-limit": "14.3.0"
-  }
+  },
+  "customElements": "custom-elements.json"
 }

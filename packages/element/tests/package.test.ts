@@ -26,7 +26,7 @@ describe("package.json", () => {
       "./base.css": "./dist/base.css",
       "./package.json": "./package.json",
     });
-    expect(manifest.files).toEqual(["dist"]);
+    expect(manifest.files).toEqual(["dist", "custom-elements.json"]);
     expect(manifest.sideEffects).toEqual(["./dist/index.js", "./dist/*.css"]);
     expect(manifest.scripts).toHaveProperty("build");
   });

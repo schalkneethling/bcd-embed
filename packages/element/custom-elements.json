@@ -1,0 +1,681 @@
+{
+  "schemaVersion": "1.0.0",
+  "readme": "",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "src/index.ts",
+      "declarations": [],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "BcdCompatTableElement",
+          "declaration": {
+            "name": "BcdCompatTableElement",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdErrorDetail",
+          "declaration": {
+            "name": "BcdErrorDetail",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdErrorReason",
+          "declaration": {
+            "name": "BcdErrorReason",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdLoadDetail",
+          "declaration": {
+            "name": "BcdLoadDetail",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdMode",
+          "declaration": {
+            "name": "BcdMode",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "CompatTableData",
+          "declaration": {
+            "name": "CompatTableData",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "CompatTableLoading",
+          "declaration": {
+            "name": "CompatTableLoading",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MessageId",
+          "declaration": {
+            "name": "MessageId",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MessageValues",
+          "declaration": {
+            "name": "MessageValues",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "StringTable",
+          "declaration": {
+            "name": "StringTable",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "en",
+          "declaration": {
+            "name": "en",
+            "module": "./strings/en.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "formatMessage",
+          "declaration": {
+            "name": "formatMessage",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MissingPlaceholderError",
+          "declaration": {
+            "name": "MissingPlaceholderError",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "selectStrings",
+          "declaration": {
+            "name": "selectStrings",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "custom-element-definition",
+          "name": "bcd-compat-table",
+          "declaration": {
+            "name": "BcdCompatTable",
+            "module": "/src/bcd-compat-table.js"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/bcd-compat-table.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "RENDER_CONTAINER_CLASS",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"bcd-render-container\"",
+          "description": "The class of the `<div>` the element renders into. It is a public class name."
+        },
+        {
+          "kind": "variable",
+          "name": "LOADED_ATTRIBUTE",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"loaded\"",
+          "description": "The attribute the element sets on itself while a table is rendered. The base stylesheet hides\nthe author's fallback children while it is present (Document 3 section 4, \"Fallback content\")."
+        },
+        {
+          "kind": "variable",
+          "name": "LAZY_ROOT_MARGIN",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"400px\"",
+          "description": "How far outside the viewport a lazy element starts its request, as an `IntersectionObserver`\n`rootMargin`. 400 pixels is about half a phone screen, enough for a cached answer to arrive and\nrender before a reader who scrolls at a normal pace reaches the table. The browser applies the\nmargin only when the element's document can reach the top-level page's origin; in a cross-origin\niframe it ignores the margin, and the request starts when the element enters the viewport."
+        },
+        {
+          "kind": "class",
+          "description": "A browser compatibility table for one BCD (`@mdn/browser-compat-data`) feature and the features\nnested under it.",
+          "name": "BcdCompatTable",
+          "members": [
+            {
+              "kind": "field",
+              "name": "#instanceCount",
+              "privacy": "private",
+              "type": {
+                "text": "number"
+              },
+              "static": true,
+              "default": "1"
+            },
+            {
+              "kind": "field",
+              "name": "data",
+              "privacy": "public",
+              "type": {
+                "text": "CompatTableData | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "query",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "query"
+            },
+            {
+              "kind": "field",
+              "name": "endpoint",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "endpoint"
+            },
+            {
+              "kind": "field",
+              "name": "source",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "source"
+            },
+            {
+              "kind": "field",
+              "name": "loading",
+              "privacy": "public",
+              "type": {
+                "text": "CompatTableLoading"
+              },
+              "default": "\"lazy\"",
+              "attribute": "loading"
+            },
+            {
+              "kind": "field",
+              "name": "browsers",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "browsers"
+            },
+            {
+              "kind": "field",
+              "name": "locale",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "locale"
+            },
+            {
+              "kind": "field",
+              "name": "#captionId",
+              "privacy": "private",
+              "type": {
+                "text": "string"
+              },
+              "readonly": true,
+              "default": "`bcd-compat-table-caption-${BcdCompatTable.#instanceCount}`"
+            },
+            {
+              "kind": "field",
+              "name": "#outcome",
+              "privacy": "private",
+              "type": {
+                "text": "Outcome"
+              },
+              "default": "{ status: \"empty\" }"
+            },
+            {
+              "kind": "field",
+              "name": "#announce",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "#task",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new Task<FetchArgs, FeatureResult>(this, { task: ([query, endpoint], { signal }) => { const request: FeatureRequest = endpoint === null ? { query, signal } : { query, endpoint, signal }; return getPageFeatureClient().requestFeature(request); }, autoRun: false, })"
+            },
+            {
+              "kind": "field",
+              "name": "#runArgs",
+              "privacy": "private",
+              "type": {
+                "text": "FetchArgs | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#nearViewport",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "#taskArgs",
+              "privacy": "private",
+              "type": {
+                "text": "FetchArgs | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#lastSuccess",
+              "privacy": "private",
+              "type": {
+                "text": "{ readonly args: FetchArgs; readonly result: FeatureSuccess } | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#ownsBusy",
+              "privacy": "private",
+              "type": {
+                "text": "boolean"
+              },
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "#viewportObserver",
+              "privacy": "private",
+              "type": {
+                "text": "IntersectionObserver | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#sourceState",
+              "privacy": "private",
+              "type": {
+                "text": "SourceState | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#sourceWait",
+              "privacy": "private",
+              "type": {
+                "text": "AbortController | null"
+              },
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "#containerGuard",
+              "privacy": "private",
+              "readonly": true,
+              "default": "new MutationObserver(() => { this.#guardContainer(); // The loading and error sentences show only while the author has no fallback content, so a // child that arrives or leaves in those states calls for another render. Rendering changes // the container's children, not this element's, so it does not call the observer again. const { status } = this.#outcome; if (status === \"error\" || status === \"pending\" || status === \"deferred\") this.requestUpdate(); })"
+            },
+            {
+              "kind": "method",
+              "name": "#guardContainer",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Removes any stale copy of a container, then appends this element's container again when it\nis no longer a child. It must be the same node, because Lit creates the render root once and\nkeeps rendering into it. Appending fires the observer once more, and that call finds the\ncontainer in place and does nothing."
+            },
+            {
+              "kind": "method",
+              "name": "#removeStaleContainers",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Removes every child with the render container's class that is not this element's container.\nIt reads the children only, never the table inside the container, so it costs O(n) for the\nelement's n children: the author's fallback and one container. The children are copied first,\nbecause removing one from the live collection while reading it would skip the next."
+            },
+            {
+              "kind": "method",
+              "name": "#fetchInputs",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "FetchArgs | null"
+                }
+              },
+              "description": "The query and endpoint the element is in fetch mode for, or `null` when it is not: `data` is\nset, `source` is present, or `query` is absent. The checks read property values, which a\nscript or a framework binding can set without the attribute converter, so `undefined` counts\nas absent, as it does for `data`. A `source` that is present, even one that failed, keeps the\nelement out of fetch mode, so a bad reference never turns into a request."
+            },
+            {
+              "kind": "method",
+              "name": "#cancelSourceWait",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Stops waiting for the parser, if the element is."
+            },
+            {
+              "kind": "method",
+              "name": "#syncSource",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "description": "Brings `#sourceState` in line with the `source` attribute, and returns whether it changed.\nIt reads the script only while the element is connected and `data` is unset, and it reads\neach id once:\n\n- `source` is absent: forget any read. A later `source` is read afresh.\n- The id is already read: nothing, so changing the script's text changes nothing.\n- The element is out of the document: nothing, because there is no tree to look in. The next\n  `connectedCallback` reads.\n- `data` is set: nothing. `data` wins, so the script is not parsed for nothing, and a broken\n  reference reports nothing. Clearing `data` reads it.\n- The script is not there yet and the parser is still running: wait. When the element is\n  defined before the parser reaches it, `connectedCallback` runs before the parser has read\n  anything after the element's start tag, so a script written after the element does not\n  exist yet (docs/planning/10-component-spikes.md, #187 section 1). The wait ends on the\n  document's `readystatechange`, which fires when the parser has finished.\n- Otherwise: read the script now.\n\nEvery branch is O(1) apart from the read, which `readSource` states."
+            },
+            {
+              "kind": "method",
+              "name": "#canSend",
+              "static": true,
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "[query, endpoint]",
+                  "type": {
+                    "text": "FetchArgs"
+                  }
+                }
+              ],
+              "description": "Whether a request could go out for these inputs. A query that fails the key pattern, or an\nendpoint that is not a base URL, never sends one, so there is nothing to hold back for it:\nits error arrives at once, and no observer waits. O(q + e) for a query of q characters and an\nendpoint of e."
+            },
+            {
+              "kind": "method",
+              "name": "#waitsForViewport",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "inputs",
+                  "type": {
+                    "text": "FetchArgs | null"
+                  }
+                }
+              ],
+              "description": "Whether the element holds its first request back until it nears the viewport. Any `loading`\nvalue other than `eager` counts as `lazy`, as the attribute does."
+            },
+            {
+              "kind": "method",
+              "name": "#fetchArgs",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "FetchArgs | null"
+                }
+              },
+              "description": "The arguments the element should request with now, or `null` when it should not request:\nit is not in fetch mode, or it is lazy and has not come near the viewport."
+            },
+            {
+              "kind": "method",
+              "name": "#syncRequest",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Starts a run when the fetch arguments changed, and aborts the pending run when there should\nbe none. It never starts a run while the element is out of the document; `connectedCallback`\nrequests an update that starts it on return."
+            },
+            {
+              "kind": "method",
+              "name": "#syncViewportObserver",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Observes the element while it waits for the viewport, and stops once it no longer waits:\nwhen it has come near, when `data` is set or `query` is absent, when `loading` is `eager`,\nwhen no request can be sent, or when it leaves the document. Each element owns one observer\nwith one target, so a call is O(1) apart from the O(q + e) check in `#canSend`.\n\nAn observer reports only on an element that has a box. A host with `display: none` or\n`display: contents` never intersects, so a lazy element there waits for good. And the\n`rootMargin` applies to the viewport, not to a scrolling ancestor, so inside an\n`overflow: auto` box the request starts only when the element is visible in that box."
+            },
+            {
+              "kind": "method",
+              "name": "#hasFallbackContent",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "boolean"
+                }
+              },
+              "description": "Whether the author gave fallback content: an element other than the render container, or\ntext that is not only white space. Comments and the line breaks between tags do not count.\nO(n) for the element's n child nodes."
+            },
+            {
+              "kind": "method",
+              "name": "#buildOutcome",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "Outcome"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "#buildSourceOutcome",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "Outcome"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "id",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ],
+              "description": "The outcome for a `source` attribute. Nothing shows while the element waits for the parser or\nfor a connection, and no event fires, because the state changes again when the read ends. A\nfailed read is the error in mode `source`, with no query in its sentence, as in data mode.\n`id` is the attribute's current value; a read held for another id is not its answer."
+            },
+            {
+              "kind": "method",
+              "name": "#buildTable",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "Outcome"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "payload",
+                  "type": {
+                    "text": "unknown"
+                  }
+                },
+                {
+                  "name": "detail",
+                  "type": {
+                    "text": "BcdLoadDetail"
+                  }
+                },
+                {
+                  "name": "query",
+                  "type": {
+                    "text": "string | null"
+                  }
+                }
+              ],
+              "description": "Builds the table for a payload. A payload the model cannot read is the error\n`invalid-payload`, in the mode the payload came from."
+            },
+            {
+              "kind": "method",
+              "name": "#dispatchPendingEvent",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Dispatches the event that the latest update owes, once, and only while the element is in a\ndocument. The events bubble so that one listener on the document hears every table, and an\nevent dispatched on a detached element would never reach it. The event reports the state at\nthe moment it fires: a payload assigned and then replaced while the element was detached\ngives one event, for the payload that is rendered."
+            }
+          ],
+          "events": [
+            {
+              "name": "bcd-load",
+              "type": {
+                "text": "CustomEvent"
+              },
+              "description": "A table has rendered. The detail is `{ mode, snapshot }`."
+            },
+            {
+              "name": "bcd-error",
+              "type": {
+                "text": "CustomEvent"
+              },
+              "description": "No table could be rendered. The detail is `{ mode, reason, status, code }`."
+            }
+          ],
+          "attributes": [
+            {
+              "name": "query",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "query"
+            },
+            {
+              "name": "endpoint",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "endpoint"
+            },
+            {
+              "name": "source",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "source"
+            },
+            {
+              "name": "loading",
+              "type": {
+                "text": "CompatTableLoading"
+              },
+              "default": "\"lazy\"",
+              "fieldName": "loading"
+            },
+            {
+              "name": "browsers",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "browsers"
+            },
+            {
+              "name": "locale",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "locale"
+            }
+          ],
+          "superclass": {
+            "name": "LitElement",
+            "package": "lit"
+          },
+          "tagName": "bcd-compat-table",
+          "customElement": true
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "RENDER_CONTAINER_CLASS",
+          "declaration": {
+            "name": "RENDER_CONTAINER_CLASS",
+            "module": "src/bcd-compat-table.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "LOADED_ATTRIBUTE",
+          "declaration": {
+            "name": "LOADED_ATTRIBUTE",
+            "module": "src/bcd-compat-table.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "LAZY_ROOT_MARGIN",
+          "declaration": {
+            "name": "LAZY_ROOT_MARGIN",
+            "module": "src/bcd-compat-table.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdCompatTable",
+          "declaration": {
+            "name": "BcdCompatTable",
+            "module": "src/bcd-compat-table.ts"
+          }
+        }
+      ]
+    }
+  ]
+}
