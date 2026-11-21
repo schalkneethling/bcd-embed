@@ -10,11 +10,14 @@ const CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
+  ".svg": "image/svg+xml",
 };
 
 export type ServeOptions = {
   /** The response headers to add for a request path, as Cloudflare adds those of `_headers`. */
   readonly headers?: (pathname: string) => Record<string, string>;
+  /** Scripts to answer at paths that name no file, as a map from path to script text. */
+  readonly scripts?: Readonly<Record<string, string>>;
   /** Rewrites a response body, to play a page that holds something the build does not write. */
   readonly transform?: (pathname: string, body: Buffer) => Buffer | string;
 };
@@ -27,6 +30,19 @@ export const serve = async (
   const server = createServer((request, response) => {
     const path = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
     const file = normalize(join(directory, path.endsWith("/") ? `${path}index.html` : path));
+    const script = options.scripts?.[path];
+    if (script !== undefined) {
+      // A module script from another origin is fetched with CORS, so the answer allows any origin,
+      // as the host of a real third-party module script does.
+      response
+        .writeHead(200, {
+          "content-type": CONTENT_TYPES[".js"] ?? "",
+          "access-control-allow-origin": "*",
+          ...options.headers?.(path),
+        })
+        .end(script);
+      return;
+    }
     if (!file.startsWith(directory + sep)) {
       response.writeHead(404).end();
       return;

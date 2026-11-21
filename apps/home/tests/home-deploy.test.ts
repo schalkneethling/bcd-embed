@@ -37,6 +37,20 @@ const bcd: CompatData = require("@mdn/browser-compat-data");
 
 const API_ORIGIN = "https://api.browser-compat.dev";
 
+/**
+ * Cloudflare Web Analytics inserts its beacon into the page at the edge, with an address of
+ * `https://static.cloudflareinsights.com/beacon.min.js/` followed by a token. The owner allowed it
+ * on 21 November 2026. The trailing slash makes the source a prefix. Without it, the source matches
+ * only the exact path, and the tokenised address is blocked (see the path tests below).
+ */
+const BEACON_SOURCE = "https://static.cloudflareinsights.com/beacon.min.js/";
+
+/** The origin of the same local address under the name `localhost`, which is a different origin. */
+const localhostAlias = (origin: string): string => origin.replace("127.0.0.1", "localhost");
+
+/** A path shaped like the one Cloudflare injects: the beacon's path, then a token of hex digits. */
+const BEACON_PATH = "/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092";
+
 /** Directives that the policy may name. Each one has a reason in the deployment page. */
 const ALLOWED_DIRECTIVES = new Set([
   "default-src",
@@ -117,7 +131,9 @@ describe("the Wrangler configuration", () => {
   it("serves the files in dist with no Worker script", async () => {
     const config = await read();
     expect(config.main).toBeUndefined();
-    expect((config.assets as { directory: string }).directory).toBe("./dist");
+    // Exactly the directory, so no `not_found_handling`, `html_handling` or `run_worker_first` can
+    // change which request gets a 404 or reaches a Worker, and none can let `/v1/` through.
+    expect(config.assets).toEqual({ directory: "./dist" });
   });
 
   it("names no account, zone, or binding, so nothing in it identifies an account", async () => {
@@ -143,12 +159,18 @@ describe("the workspace's scripts", () => {
       scripts: Record<string, string>;
     };
 
-  it("builds, checks for a v1 entry, and then deploys or dry-runs", async () => {
+  it("builds the packages, then the page with its v1 check, and then deploys or dry-runs", async () => {
     const { scripts } = await read();
     expect(scripts.build).toContain("scripts/assert-no-v1.mjs dist");
-    // Both deploy scripts run `build`, so a deploy never skips the v1 check.
-    expect(scripts.deploy).toBe("pnpm run build && wrangler deploy");
-    expect(scripts["deploy:dry-run"]).toBe("pnpm run build && wrangler deploy --dry-run");
+    // `build` reads the element's `dist/` and does not build it, so a deploy that skipped the
+    // packages could ship a stale element. Both deploy scripts build them first, with the selector
+    // for this workspace's dependencies and not the workspace itself (`<package>^...` on pnpm's
+    // filtering page).
+    expect(scripts["build:dependencies"]).toBe('pnpm --filter "@bcd-embed/home^..." build');
+    expect(scripts.deploy).toBe("pnpm run build:dependencies && pnpm run build && wrangler deploy");
+    expect(scripts["deploy:dry-run"]).toBe(
+      "pnpm run build:dependencies && pnpm run build && wrangler deploy --dry-run",
+    );
   });
 });
 
@@ -183,7 +205,8 @@ describe("the Content-Security-Policy", () => {
   });
 
   it("allows scripts, styles and images from the site's own files only", () => {
-    expect(policy().get("script-src")).toEqual(["'self'"]);
+    // The beacon is the one source beyond the site, which the owner allowed on 21 November 2026.
+    expect(policy().get("script-src")).toEqual(["'self'", BEACON_SOURCE]);
     expect(policy().get("style-src")).toEqual(["'self'"]);
     expect(policy().get("img-src")).toEqual(["'self'"]);
   });
@@ -202,11 +225,11 @@ describe("the Content-Security-Policy", () => {
     }
   });
 
-  // The tests below tie `connect-src` to the page: the API origin is allowed exactly when the built
-  // page has a table that fetches.
+  // The tests below tie the API origin in `connect-src` to the page: it is allowed exactly when the
+  // built page has a table that fetches. `'self'` stays for the beacon's reports to `/cdn-cgi/rum`.
   it("allows the API origin in connect-src when the built page has a fetch-mode table", () => {
     expect(hasFetchModeTable(builtHtml)).toBe(true);
-    expect(policy().get("connect-src")).toEqual([API_ORIGIN]);
+    expect(policy().get("connect-src")).toEqual(["'self'", API_ORIGIN]);
   });
 
   it("recognises a fetch-mode table by its query attribute, and a source-mode table by its source", () => {
@@ -263,10 +286,12 @@ type Visit = {
 };
 
 type VisitOptions = {
-  /** The policy to send instead of the one in `_headers`. */
-  readonly policy?: string;
+  /** The policy to send instead of the one in `_headers`, or a function of the server's origin. */
+  readonly policy?: string | ((origin: string) => string);
+  /** Scripts to answer at paths that name no file. */
+  readonly scripts?: Readonly<Record<string, string>>;
   /** Markup added to the end of `<body>`, to play a page that carries inline script or style. */
-  readonly injectBody?: string;
+  readonly injectBody?: string | ((origin: string) => string);
   /** What to wait for before reading the result. The default waits for every table to render. */
   readonly waitFor?: (violations: string[]) => boolean;
 };
@@ -288,22 +313,40 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
 
   const visit = async (options: VisitOptions = {}): Promise<Visit> => {
     if (browser === undefined) throw new Error("The browser did not launch.");
+    // The server's address is known only once it listens, and a policy that names the local origin
+    // is built from it. The headers function runs per request, after `origin` is set.
+    let origin = "";
     const { server, url } = await serve(outDirectory, {
+      scripts: options.scripts,
       headers: (pathname) => ({
         ...headersFor(pathname),
-        ...(options.policy === undefined ? {} : { "content-security-policy": options.policy }),
+        ...(options.policy === undefined
+          ? {}
+          : {
+              "content-security-policy":
+                typeof options.policy === "function" ? options.policy(origin) : options.policy,
+            }),
       }),
       transform: (pathname, body) =>
         options.injectBody !== undefined && pathname === "/"
-          ? body.toString("utf8").replace("</body>", `${options.injectBody}</body>`)
+          ? body
+              .toString("utf8")
+              .replace(
+                "</body>",
+                `${typeof options.injectBody === "function" ? options.injectBody(origin) : options.injectBody}</body>`,
+              )
           : body,
     });
     servers.push(server);
+    origin = new URL(url).origin;
     const context = await browser.newContext();
     try {
       const apiRequests: string[] = [];
       const foreignRequests: string[] = [];
       const local = new URL(url).origin;
+      // The same local server answers under the name `localhost` too, which the beacon tests use as
+      // a second origin (`'self'` does not match it). Both names reach only this machine.
+      const alias = localhostAlias(local);
       // A policy check happens before a request leaves the page, so a missing `connect-src` entry
       // is reported even though this route would have answered.
       await context.route("**/*", async (route) => {
@@ -316,7 +359,7 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
             headers: { "access-control-allow-origin": "*" },
             body: JSON.stringify(buildFeatureResponse(bcd, LIVE_EXAMPLE.key)),
           });
-        } else if (new URL(requested).origin === local) {
+        } else if ([local, alias].includes(new URL(requested).origin)) {
           await route.continue();
         } else {
           foreignRequests.push(requested);
@@ -451,20 +494,68 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
     expect(visited.liveTables).toBe(0);
   }, 60_000);
 
-  // The page has no image, but Firefox requests /favicon.ico when the page names no icon, and checks
-  // that request against `img-src`. This control shows why `img-src 'self'` is in the policy.
-  it.runIf(engineName === "firefox")(
-    "control: without img-src, Firefox reports its request for /favicon.ico",
-    async () => {
-      const policy = sentPolicy().replace(/;\s*img-src[^;]*/, "");
-      expect(policy).not.toContain("img-src");
-      const visited = await visit({ policy, waitFor: (violations) => violations.length > 0 });
-      expect(visited.violations.map((entry) => entry.replace(/:\d+/, ""))).toEqual([
-        "img-src http://127.0.0.1/favicon.ico",
-      ]);
-    },
-    60_000,
-  );
+  // The page names one icon, `/favicon.svg`, which the browser requests. Chromium and Firefox check
+  // that request against `img-src`, and WebKit does not (measured on 21 November 2026), so this
+  // control shows why `img-src 'self'` is in the policy.
+  const CHECKS_ICON_AGAINST_IMG_SRC: Record<string, boolean> = {
+    chromium: true,
+    firefox: true,
+    webkit: false,
+  };
+  it("control: without img-src, the engines that check the page's icon report it", async () => {
+    const policy = sentPolicy().replace(/;\s*img-src[^;]*/, "");
+    expect(policy).not.toContain("img-src");
+    const visited = await visit({ policy });
+    expect(visited.violations.map((entry) => entry.replace(/:\d+/, ""))).toEqual(
+      CHECKS_ICON_AGAINST_IMG_SRC[engineName] ? ["img-src http://127.0.0.1/favicon.svg"] : [],
+    );
+  }, 60_000);
+
+  // Cloudflare inserts the beacon at the edge, so no local build holds it. A stand-in module script
+  // at a path shaped like the injected one stands for it. It is served under the name `localhost`,
+  // a second origin that `'self'` does not match (a stand-in on the page's own origin would run
+  // because of `'self'`, whatever the beacon's source said). The policy is the shipped one with the
+  // beacon's origin rewritten to that second origin. The first test shows that the trailing slash
+  // lets a tokenised path run. The second removes the slash, which makes the source an exact path,
+  // and shows the same script blocked. Nobody should tidy the slash away.
+  const standIn = { [BEACON_PATH]: "window.injectedScriptRan = true;" };
+  const withBeacon = (origin: string) =>
+    `<script type="module" src="${localhostAlias(origin)}${BEACON_PATH}"></script>`;
+  const beaconPolicy = (slash: boolean) => (origin: string) =>
+    sentPolicy().replace(
+      BEACON_SOURCE,
+      `${localhostAlias(origin)}${new URL(BEACON_SOURCE).pathname.slice(0, slash ? undefined : -1)}`,
+    );
+
+  it("the beacon's tokenised path runs under the shipped source rule, with its trailing slash", async () => {
+    expect(beaconPolicy(true)("http://127.0.0.1:1")).toContain(
+      " http://localhost:1/beacon.min.js/;",
+    );
+    const visited = await visit({
+      policy: beaconPolicy(true),
+      scripts: standIn,
+      injectBody: withBeacon,
+    });
+    expect(visited.violations).toEqual([]);
+    expect(visited.injectedScriptRan).toBe(true);
+    // The rest of the page still rendered, so the rewritten policy kept `'self'`.
+    expect(visited.liveTables).toBe(1);
+  }, 60_000);
+
+  it("the beacon's tokenised path is blocked when the source loses its trailing slash", async () => {
+    expect(beaconPolicy(false)("http://127.0.0.1:1")).toContain(
+      " http://localhost:1/beacon.min.js;",
+    );
+    const visited = await visit({
+      policy: beaconPolicy(false),
+      scripts: standIn,
+      injectBody: withBeacon,
+    });
+    expect(visited.violations.map((entry) => entry.replace(/:\d+/, ""))).toEqual([
+      `script-src-elem http://localhost${BEACON_PATH}`,
+    ]);
+    expect(visited.injectedScriptRan).toBe(false);
+  }, 60_000);
 
   it("control: the policy blocks an inline script and a style attribute that markup adds", async () => {
     const visited = await visit({

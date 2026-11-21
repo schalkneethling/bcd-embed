@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "astro build && node scripts/assert-no-v1.mjs dist",
-    "deploy": "pnpm run build && wrangler deploy",
-    "deploy:dry-run": "pnpm run build && wrangler deploy --dry-run",
+    "build:dependencies": "pnpm --filter \"@bcd-embed/home^...\" build",
+    "deploy": "pnpm run build:dependencies && pnpm run build && wrangler deploy",
+    "deploy:dry-run": "pnpm run build:dependencies && pnpm run build && wrangler deploy --dry-run",
     "dev": "astro dev",
     "preview": "astro preview",
     "typecheck": "astro sync && tsc --noEmit"

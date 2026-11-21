@@ -10,8 +10,13 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
-/** A lock older than this was left by a run that ended without removing it. */
-const STALE_AFTER_MS = 5 * 60_000;
+/**
+ * A lock older than this was left by a run that ended without removing it. The shortest hook that
+ * waits for a build has a 120 second timeout, so a threshold above that would let a hook time out
+ * behind a dead lock before anyone stole it. A build takes a few seconds, so 90 seconds does not
+ * steal a live lock.
+ */
+const STALE_AFTER_MS = 90_000;
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
