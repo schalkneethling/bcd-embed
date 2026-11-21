@@ -1,0 +1,24 @@
+# Cloudflare reads this file from the assets directory and applies it to static
+# asset responses. It is not served itself. A request that matches several
+# rules receives the headers of all of them, and Cloudflare joins repeated
+# header names with a comma, so each header name appears under one rule only.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Enforcing. The page is one HTML file, one stylesheet, two scripts and one
+  # icon, with no inline script, no inline style, no font and no frame, so each
+  # directive below is `'none'` or `'self'` except two. `connect-src` names the
+  # hosted API that the live table asks for its data. `script-src` names the
+  # Cloudflare Web Analytics beacon, which Cloudflare inserts into the page at
+  # its edge; the trailing slash is required, because the beacon's address is
+  # `/beacon.min.js/` followed by a token and a source without the slash
+  # matches only the exact path. `connect-src 'self'` is for the beacon's
+  # reports to `/cdn-cgi/rum`. The reason for each directive is in
+  # apps/website/src/content/docs/deployment.md.
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://static.cloudflareinsights.com/beacon.min.js/; style-src 'self'; img-src 'self'; connect-src 'self' https://api.browser-compat.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+# Astro writes a content hash into the name of every file in `_astro/`, so a
+# file at one address never changes.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable

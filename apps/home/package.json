@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "astro build && node scripts/assert-no-v1.mjs dist",
+    "build:dependencies": "pnpm --filter \"@bcd-embed/home^...\" build",
+    "deploy": "pnpm run build:dependencies && pnpm run build && wrangler deploy",
+    "deploy:dry-run": "pnpm run build:dependencies && pnpm run build && wrangler deploy --dry-run",
     "dev": "astro dev",
     "preview": "astro preview",
     "typecheck": "astro sync && tsc --noEmit"
@@ -17,6 +20,7 @@
     "astro": "7.4.12"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.14.0"
+    "@axe-core/playwright": "4.14.0",
+    "wrangler": "4.160.1"
   }
 }

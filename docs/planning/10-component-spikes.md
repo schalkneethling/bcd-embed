@@ -1767,3 +1767,92 @@ The issue's pins for React, Vue, and Svelte were installed as written. Vue 3.5.4
 - `svelte` 5.57.3 `src/internal/client/dom/elements/attributes.js` (`set_custom_element_data`), `src/internal/client/dom/template.js` (`from_html`, `document.importNode`), and `src/compiler/phases/3-transform/client/visitors/shared/events.js` (`visit_event_attribute`), plus the compiler's output for the page.
 - `@vitejs/plugin-react` 6.3.0 `README.md` and peer metadata (`npm view`); `@sveltejs/vite-plugin-svelte` 7.3.1 `types/index.d.ts` (the `svelte` export).
 - pnpm.io, "Supply chain security", for the default of `minimumReleaseAge`.
+
+## Issue #211 — The apex page's enforcing Content-Security-Policy
+
+**Question.** Which directives does the built introduction page need under an enforcing policy, and does
+the policy hold in Chromium, Firefox and WebKit?
+
+**Answer.** Eight directives, listed below. The page needs `script-src 'self'`, `style-src 'self'`,
+`img-src 'self'` (for its icon) and `connect-src https://api.browser-compat.dev`. `default-src 'none'`
+covers the rest, and `object-src`, `base-uri`, `form-action` and `frame-ancestors` are named because
+`default-src` does not cover them. All three engines reported zero violations without the beacon present.
+On 21 November 2026 the owner allowed the Cloudflare Web Analytics beacon, which adds
+`https://static.cloudflareinsights.com/beacon.min.js/` (with the trailing slash) to `script-src` and `'self'`
+to `connect-src`. The final policy is the one in `apps/home/public/_headers`.
+
+### How it was measured
+
+`apps/home/tests/home-deploy.test.ts` builds the page (`NODE_ENV=production`), serves `dist/` on
+`127.0.0.1` with every header of the built `_headers` file, and counts `securitypolicyviolation` events in
+the page and in any worker, plus console messages that name the policy. Playwright 1.65.1 drove Chromium
+159.0.8154.6, Firefox 159.0 and WebKit 27.2 on 21 November 2026. The hosted API's request was answered from
+installed BCD by a route, and every other request that left `127.0.0.1` was aborted and recorded; none occurred.
+Each visit loaded the page, scrolled to the live table, chose each of the four examples and opened one history
+disclosure in each.
+
+| Engine   | Policy sent    | Violation events | Policy console messages | Tables rendered |
+| -------- | -------------- | ---------------- | ----------------------- | --------------- |
+| Chromium | `_headers`     | 0                | 0                       | 4 built in, 1 live |
+| Firefox  | `_headers`     | 0                | 0                       | 4 built in, 1 live |
+| WebKit   | `_headers`     | 0                | 0                       | 4 built in, 1 live |
+
+Controls, to show the counter works (events per engine, in the order Chromium, Firefox, WebKit):
+
+| Control                                                    | Events  | Names                                                                  |
+| ---------------------------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `default-src 'none'` alone                                 | 4, 4, 3 | `style-src-elem` for the stylesheet, `script-src-elem` for both scripts; Chromium and Firefox add `img-src` for `/favicon.svg` |
+| The policy without `connect-src`                           | 1, 1, 1 | `connect-src` for the API address, and the live table stays empty      |
+| The policy without `img-src`                               | 1, 1, 0 | `img-src` for `/favicon.svg` in Chromium and Firefox; WebKit does not check it |
+| The policy, with an inline script and a `style=""` added   | 2, 2, 2 | `script-src-elem inline` and `style-src-attr inline`; the script did not run |
+
+### Findings
+
+- **Lit and the element set no style the policy blocks.** `style-src 'self'` blocks `<style>` elements and
+  `style` attributes, not property writes from script. The element renders in the light DOM with no
+  `static styles`. No `style-src` event occurred
+  in any engine while the tables rendered or while a reader used the page.
+- **Chromium and Firefox check the page's icon request against `img-src`.** Before the page named an icon,
+  Firefox requested `/favicon.ico` and reported one `img-src` violation under `default-src 'none'` alone,
+  while Chromium and WebKit reported none. The page now names `/favicon.svg` (the project's icon, copied from
+  the documentation site), so that request finds a file. Chromium and Firefox then report the request
+  when `img-src` is missing, and WebKit does not. `img-src 'self'` stays.
+- **No `font-src`, `frame-src`, `worker-src` or `data:` source is needed.** The page has no web font, frame or
+  worker, and the element draws its icons as inline SVG (`packages/element/src/render/status.ts`), which no
+  directive governs.
+- **The beacon needs a trailing slash.** Cloudflare's Web Analytics FAQ says automatic setup injects its
+  script on all pages under the zone, and asks for `https://static.cloudflareinsights.com/beacon.min.js` in
+  `script-src` and `'self'` in `connect-src`. Cloudflare injects the script at the edge with a token after the
+  path (`/beacon.min.js/<token>`), and the CSP Level 3 specification matches a source path that ends in `/`
+  by prefix and any other source path exactly. The test serves a stand-in module script at
+  `/beacon.min.js/v<hex>` under a second origin (`localhost`, which `'self'` does not match), with the shipped
+  policy's beacon source rewritten to that origin. With the trailing slash it ran in Chromium 159, Firefox 159
+  and WebKit 27.2, and without it one `script-src-elem` violation blocked it in all three. The owner chose to
+  allow the beacon on 21 November 2026. The measurement of zero violations above is taken without the
+  beacon present, because only Cloudflare's edge adds it.
+
+### Wrangler dry run
+
+`pnpm run deploy:dry-run` in `apps/home` ran `build:dependencies` (3 of 11 workspace projects), `astro build`,
+the `v1` check and `wrangler deploy --dry-run` (Wrangler 4.160.1, with `WRANGLER_SEND_METRICS=false`) and
+exited 0. Wrangler read 8 files from the
+assets directory and ended with "--dry-run: exiting now." Wrangler's source (`cli.js`, the deploy command)
+skips the authentication step and the asset upload when `--dry-run` is set. I did not capture network
+traffic, so "no Cloudflare call" rests on that source reading and on the run needing no sign-in prompt.
+
+### Sources checked
+
+- `apps/home/node_modules/wrangler/config-schema.json` (Wrangler 4.160.1): `routes` with `custom_domain`,
+  `workers_dev`, `preview_urls`, and `assets.directory`, `assets.not_found_handling`.
+- `wrangler deploy --help` and `wrangler deployments --help`, and `wrangler-dist/cli.js` for `dryRun`.
+- Cloudflare, [Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/) and
+  [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/), fetched on
+  21 November 2026.
+- W3C, [Content Security Policy Level 3](https://www.w3.org/TR/CSP3/), "path-part matching".
+- pnpm, [Filtering](https://pnpm.io/filtering), for `<package>^...`.
+- `assets.worker.js` in miniflare 5.20261110.1-beta (the version Wrangler 4.160.1 depends on), for the
+  default `not_found_handling` of `none` and the `404` answer.
+- Cloudflare, [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/),
+  [URL forwarding](https://developers.cloudflare.com/rules/url-forwarding/) and
+  [Redirect from www to root](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-www-to-root/),
+  for the `www` redirect steps.
