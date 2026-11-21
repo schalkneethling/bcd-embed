@@ -1,0 +1,17 @@
+/*
+ * The opt-in base stylesheet for <bcd-compat-table>, published as @bcd-embed/element/base.css
+ * (Document 3 section 3, "Cascade layers"). The build flattens the imports into one file.
+ *
+ * The statement below fixes the layer's place in the cascade before any rule is read, so an
+ * author can order bcd-embed.base against their own layers by name. Any unlayered author rule
+ * beats every rule in this layer, whatever its specificity, so no author ever needs !important.
+ *
+ * properties.css holds the @property rules and is imported without layer(), so they stay at the
+ * top level (Document 10, #188 section 6). Load this file from the document, not from a shadow
+ * root: Chromium 159, Firefox 159 and WebKit 27.2 ignore an @property rule inside a shadow root.
+ */
+@layer bcd-embed.base;
+
+@import url("./properties.css");
+@import url("./tokens.css") layer(bcd-embed.base);
+@import url("./table.css") layer(bcd-embed.base);

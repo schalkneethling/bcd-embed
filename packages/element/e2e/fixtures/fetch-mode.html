@@ -4,15 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fetch mode fixture</title>
-    <link rel="stylesheet" href="./fallback.css" />
+    <link rel="stylesheet" href="/dist/base.css" />
     <script type="module" src="./fetch-mode.ts"></script>
   </head>
   <body>
     <!-- The element in fetch mode, holding each state still. Every element here asks the stand-in
          API in `fixture-api.ts` (endpoint https://fixture.test), so the page sends no request to
          a real server. The loading state lasts until the feature client's 20-second deadline.
-         Tests add their own elements to #lab. The only stylesheet is the rule that hides the
-         fallback once a table renders. -->
+         Tests add their own elements to #lab. The only stylesheet is the built base stylesheet,
+         which hides the fallback once a table renders. -->
     <main>
       <h1>Fetch mode fixture</h1>
 

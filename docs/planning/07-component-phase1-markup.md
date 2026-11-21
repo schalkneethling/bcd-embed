@@ -34,26 +34,30 @@ The data is `v1NormalizedFixture` from `@bcd-embed/schema`
 (`packages/schema/src/fixtures/v1.ts`). Its three support targets give a
 two-tier header: Desktop over Chrome and Opera, Server over Node.js.
 
-The glyphs (✓, ✕, ◐, ⚑, ?, —) are placeholders for the icons that Phase 3
-chooses. They are hidden from assistive technology. An asterisk after the
-version marks a cell whose support summary has notes, as in "✓ 20 \*" for
-`notes_only` and "✕ 11.1 – 12.1 \*" for `removed_partial`. Issue #198 added the
-second asterisk, which the page lacked although that cell has a note too, so
-the page agrees with what the element renders. The asterisk sits in the hidden
-glyph span, so no screen reader announces it.
+Each cell's compact span starts with an inline SVG icon for the support state.
+Phase 1 wrote glyphs here (✓, ✕, ◐, ⚑, ?, —) as placeholders, and issue #200
+replaced them with the icons the element renders, `<svg class="bcd-icon
+bcd-icon-{state}">` with one `<path>`, so the pages still match the element
+element for element (Document 3 §5 lists the icons). They are hidden from
+assistive technology. An asterisk after the version marks a cell whose support
+summary has notes, as in "20 \*" for `notes_only` and "11.1 – 12.1 \*" for
+`removed_partial`. Issue #198 added the second asterisk, which the page lacked
+although that cell has a note too, so the page agrees with what the element
+renders. The asterisk sits in the hidden span, so no screen reader announces
+it.
 
-Each glyph-and-version span carries both `aria-hidden="true"` and the `hidden`
+Each icon-and-version span carries both `aria-hidden="true"` and the `hidden`
 attribute. With no stylesheet, the browser's own `hidden` rule removes the span
 and the cell reads as the full sentence from the visually hidden span. The
 Phase 1 stylesheet turns the span back on (`display: inline`) so a sighted
-reader sees the glyph. The real stylesheet must do the same, or the glyph will
-never appear. The spans have no class in this markup.
+reader sees the icon, and the base stylesheet (#200) does the same. The spans
+themselves have no class in this markup.
 
 ## Decisions the markup encodes
 
 **A cell's accessible name states the whole fact, including the support
 target.** A cell reads "Supported since Chrome 46", not "46". The visible
-glyph and version are `aria-hidden` and `hidden`, and a visually hidden span
+icon and version are `aria-hidden` and `hidden`, and a visually hidden span
 carries the sentence. The name repeats the target because a screen reader
 announces the column header only when the column changes, so a reader moving
 down a column would otherwise hear versions with no browser.
@@ -263,7 +267,7 @@ person's judgment.
    visible label such as "History".
 4. Is "(part of Array)" in the row header enough to convey nesting, or do the
    ancestor headers of variant B work better?
-5. Do the visible glyph and version, hidden from assistive technology, cause
+5. Do the visible icon and version, hidden from assistive technology, cause
    any trouble with find-in-page or copy and paste?
 
 ## Results

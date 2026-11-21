@@ -180,9 +180,10 @@ that is not a contract 1.x feature response, and a payload in which two features
 
 **How the fallback is hidden.** While a table is rendered, the element carries the boolean
 attribute `loaded`, and the table sits in a child `<div class="bcd-render-container">`. The base
-stylesheet, which Phase 3 ships, hides every other child while `loaded` is present. Until then the
-rule lives in `e2e/fixtures/fallback.css`. A page that loads no stylesheet shows the fallback next
-to the table. If a script removes the container, which React does when it changes a single string
+stylesheet (below, "Styling") hides every other child while `loaded` is present, bare text
+included, and leaves no space for it: the element becomes a one-column grid with the container in
+the first row and any text in a row of zero height. A page that loads
+no stylesheet shows the fallback next to the table, which the owner accepted on 20 November 2026. If a script removes the container, which React does when it changes a single string
 child, the element puts the same container back. The class `bcd-render-container` belongs to the
 element: it removes any other child that carries it, because such a child is a copy of an earlier
 table, from `cloneNode(true)` or from saved HTML. That is the one case where it removes a child.
@@ -194,9 +195,8 @@ stays open on its own cell when `browsers` changes or a new payload has the same
 headers associated by `scope`), element for element and attribute for attribute, with one
 addition: each note sits in a `<bdi>` element, so a note that contains bidirectional control
 characters cannot reorder the words around it. A browser test compares the two. Each cell holds a
-glyph span with `aria-hidden="true"` and `hidden`, then a span with the full sentence, so a page
-with no stylesheet reads every cell as its sentence. The glyphs are Phase 1's placeholders until
-Phase 3 chooses icons.
+compact span with `aria-hidden="true"` and `hidden`, which holds the state's icon and the version,
+then a span with the full sentence, so a page with no stylesheet reads every cell as its sentence.
 
 **TypeScript.** `document.querySelector("bcd-compat-table")` returns `BcdCompatTableElement`, a
 hand-written interface, and `addEventListener("bcd-load", …)` types `event.detail`. No type from
@@ -310,24 +310,34 @@ notes, and C characters of text. The number of elements is bounded too. `src/ren
 derives the exact bound, and a browser test checks it on 2,000 features by four targets:
 
 ```text
-elements ≤ 14 × F × T + 9 × S + E + 10
+elements ≤ 16 × F × T + 9 × S + E + 10
 ```
 
 Here S counts each statement, flag, and note, and E counts the code, emphasis, and link elements
 inside notes. The short form holds for at least one feature and one target; the exact bound in
-`src/render/table.ts` holds always. The 2,000-feature test payload renders 61,618 elements, including the render
-container.
+`src/render/table.ts` holds always. The 2,000-feature test payload renders 77,618 elements, including the render
+container. Each cell's icon is an `<svg>` with one `<path>`, so it adds two elements to every cell;
+that is 16,000 of those elements.
 
 Render time for that payload, measured on 20 November 2026 on an Apple silicon Mac (Darwin 27.2.0,
-load average near 15, because other work ran beside it) with Playwright 1.65.1, one test at a time, three runs each. The page ran
-Lit's development build from the Vite dev server, which is slower than the production build. The
-times are recorded by `e2e/data-mode.e2e.ts`, which prints them and never asserts them.
+load average between 18 and 30, because other work ran beside it) with Playwright 1.65.1, one test
+at a time, three runs each, after fetch mode (#203) and the base stylesheet (#200) were both in. The page ran Lit's development build from the Vite dev server, which is
+slower than the production build, and linked the base stylesheet. The times are recorded by
+`e2e/data-mode.e2e.ts`, which prints them and never asserts them.
 
 | Engine (Playwright build) | Until `bcd-load` (model and markup) | Until two animation frames later (layout and paint) |
 | ------------------------- | ----------------------------------- | --------------------------------------------------- |
-| Chromium                  | 191 to 199 ms                       | 394 to 412 ms                                       |
-| Firefox                   | 365 to 572 ms                       | 598 to 903 ms                                       |
-| WebKit                    | 355 to 376 ms                       | 921 to 939 ms                                       |
+| Chromium                  | 207 to 214 ms                       | 507 to 519 ms                                       |
+| Firefox                   | 600 to 633 ms                       | 1,125 to 1,323 ms                                   |
+| WebKit                    | 379 to 385 ms                       | 2,313 to 2,324 ms                                   |
+
+The base stylesheet, not the icons, costs the extra layout time. #198 measured 394 to 939 ms until
+two frames later on a page with no stylesheet. In a separate run of issue #200, hiding every icon
+with `display: none` on the styled page saved 23 to 93 ms in each engine, while the same table on
+the page with no stylesheet painted in 390 to 397 ms in Chromium and 821 to 865 ms in WebKit.
+WebKit's layout grows most, to about 2.2 s. No single rule caused it when each was switched off in
+turn, and that run was too noisy to say more. The payload is more than six times the largest real
+table, but the owner has not yet accepted this cost, and nothing guards against it growing.
 
 A row cap does not need to become a follow-up now. A feature's table holds the feature and
 everything nested under it, and the largest such subtree in BCD 8.1.9 is `api.Element` with 314
@@ -335,13 +345,183 @@ features; five subtrees have more than 200 and none has more than 500. So 2,000 
 six times the largest real table, and it rendered in under a second here. These numbers come from
 one fast machine, so measure again on a slow phone before relying on them for very large tables.
 
+## Styling
+
+The package ships an opt-in base stylesheet, `@bcd-embed/element/base.css`. It makes the table
+usable with no other CSS: borders, padding, a visible focus ring, the icons and their colours, the
+hidden sentences, and the rule that hides the fallback. It decides no fonts, sizes, or background,
+so the table takes those from the page. Load it from the document:
+
+```html
+<link rel="stylesheet" href="/node_modules/@bcd-embed/element/dist/base.css" />
+```
+
+A bundler that resolves package exports can import `@bcd-embed/element/base.css` instead. Load it
+from the document, not from a shadow root, because Chromium 159, Firefox 159, and WebKit 27.2 ignore
+an `@property` rule inside a shadow root, and the tokens below would then stay unregistered.
+
+**Overriding it.** Every rule sits in the cascade layer `bcd-embed.base`, which the file declares
+first. Any rule of yours that is not in a layer beats every rule in it, whatever the specificity, so
+`.bcd-table td { padding: 0 }` is enough and `!important` is never needed. A page that uses layers
+itself can name `bcd-embed.base` in its own `@layer` order statement. A test reads the stylesheet
+and checks, for every selector and every property it sets, that a rule with one class selector
+wins in Chromium, Firefox, and WebKit.
+
+### Tokens
+
+The tokens are custom properties registered with `@property`. Each one inherits, so set it on the
+element, on any ancestor, or on `:root`. Each colour has a light and a dark token, and the
+stylesheet picks one with `light-dark()` where the colour is used.
+
+| Token                                                           | Type       | Default (light) | Default (dark) |
+| --------------------------------------------------------------- | ---------- | --------------- | -------------- |
+| `--bcd-color-supported-light`, `--bcd-color-supported-dark`     | `<color>`  | `#1a7f37`       | `#4ac26b`      |
+| `--bcd-color-partial-light`, `--bcd-color-partial-dark`         | `<color>`  | `#9a6700`       | `#d29922`      |
+| `--bcd-color-preview-light`, `--bcd-color-preview-dark`         | `<color>`  | `#0969da`       | `#4493f8`      |
+| `--bcd-color-flagged-light`, `--bcd-color-flagged-dark`         | `<color>`  | `#6639ba`       | `#ab7df8`      |
+| `--bcd-color-unsupported-light`, `--bcd-color-unsupported-dark` | `<color>`  | `#cf222e`       | `#ff7b72`      |
+| `--bcd-color-unknown-light`, `--bcd-color-unknown-dark`         | `<color>`  | `#59636e`       | `#9198a1`      |
+| `--bcd-color-no-data-light`, `--bcd-color-no-data-dark`         | `<color>`  | `#59636e`       | `#9198a1`      |
+| `--bcd-color-border-light`, `--bcd-color-border-dark`           | `<color>`  | `#818b98`       | `#656c76`      |
+| `--bcd-border-width`                                            | `<length>` | `1px`           | `1px`          |
+
+Three tokens are not registered, because their defaults are in `rem` or `em`, and an `@property`
+initial value cannot be: such a length is not computationally independent, and all three engines
+rejected one. The stylesheet reads each with a fallback, such as `var(--bcd-cell-padding, 0.5rem)`,
+so they behave like the others, except that a value of the wrong type is not rejected.
+
+| Token                | Type, unregistered | Default  | What it sets                                     |
+| -------------------- | ------------------ | -------- | ------------------------------------------------ |
+| `--bcd-cell-padding` | `<length>`         | `0.5rem` | The padding of every cell, and below the caption |
+| `--bcd-indent`       | `<length>`         | `1rem`   | One step of a nested row's indent                |
+| `--bcd-icon-size`    | `<length>`         | `1em`    | The width and height of an icon                  |
+
+Layout and typography are not tokens. The table is light DOM, so ordinary CSS reaches every part of
+it, and the rendered class names (Document 3, "Styling surface") are the hooks.
+
+### Icons and colours
+
+Each support state has its own icon, so colour never carries the state alone. The icons are inline
+SVG drawn for this project as strokes in `currentColor`, one `<path>` each, inside the cell's
+`aria-hidden` span, with no `<title>`. They carry the classes `bcd-icon` and `bcd-icon-{state}`.
+
+The stroke comes from SVG presentation attributes on each `<svg>`: `fill="none"`,
+`stroke="currentColor"`, `stroke-width="2"`, and round caps and joins. Any CSS rule beats a
+presentation attribute, so a common reset such as `svg { fill: currentColor }` fills the icons
+in, and the check, the cross, and the dash turn into blobs. The base stylesheet cannot prevent
+this, because an unlayered reset beats its layer too. A page with such a reset should exempt the
+icons, for example with `svg:not(.bcd-icon)` in the reset's selector, or restore them with
+`.bcd-icon { fill: none; stroke: currentColor; }`.
+
+| `bcd-icon-…`  | Shape                  | Shown for                                                                       |
+| ------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| `supported`   | A check mark           | `supported`                                                                     |
+| `partial`     | A circle split in half | `partial`, any partial implementation, and a partial preview even behind a flag |
+| `preview`     | A laboratory flask     | A full `preview`                                                                |
+| `flagged`     | A flag on a pole       | Support behind a flag, unless it is a partial preview                           |
+| `unsupported` | A cross                | `unsupported`                                                                   |
+| `unknown`     | A question mark        | `unknown`                                                                       |
+| `no-data`     | A dash                 | A target the payload has no data for                                            |
+
+The default state colours reach at least 4.87:1, and the border colours at least 3.14:1, against
+the default page background of each engine: white in light, and `#121212` (Chromium 159),
+`#1c1b22` (Firefox 159), or `#1e1e1e` (WebKit 27.2) in dark. WCAG asks 3:1 of an icon, and
+`tests/styles/contrast.test.ts` asserts that for each icon and for the border, in both schemes,
+from the token values. `e2e/base-stylesheet.e2e.ts` checks that each engine's Canvas colour is still
+the one the test assumes. The stylesheet colours no text, so text keeps the page's own
+colour and contrast. A page with its own background should check the tokens against it.
+
+**Dark mode.** The stylesheet never sets `color-scheme`, because the background behind the table is
+the page's. The dark colours apply when the table inherits a dark scheme: `color-scheme: dark` on
+any ancestor, or `color-scheme: light dark` on the page while the reader prefers dark. A page that
+declares no scheme gets the light colours. **The element that sets a dark scheme must also paint a
+dark background**, such as `background-color: Canvas`. `light-dark()` follows the inherited scheme
+whether or not anything dark is painted, and the dark colours on white reach only 2.28:1 to 3.10:1,
+so every state colour except preview's fails 3:1 there.
+
+**Forced colours.** The browser replaces the icon's colour with a system colour and the stroke
+follows it, so the shapes stay. Focus on the region and on each disclosure keeps a 2 px outline.
+Playwright's forced-colours emulation forced the colours in Firefox. In Chromium and WebKit it
+switched the `forced-colors` media query on but left the computed colours alone, so a real Windows
+High Contrast check is still a manual one.
+
+### The hidden sentences
+
+Each cell's sentence, and each row header's "(part of …)", sits in a `visually-hidden` span. The
+base stylesheet hides it from sight with `font-size: 0`, `clip-path: inset(50%)`, and
+`white-space: nowrap`, and leaves it an inline, unpositioned box, so it has no size and scrolls
+with its cell. It does not use the common technique of a positioned one-pixel box, for two
+reasons found in the screen reader CI walks of #200:
+
+- Positioned absolutely, the span left the line, so the space before a row header's
+  "(part of …)" became trailing white space and collapsed, and NVDA in Firefox read
+  "from(part of Array)".
+- Made an inline-block, the span became an accessible object of its own: Chromium's
+  accessibility tree shows a `generic` node for an inline-block span and none for an inline one.
+  NVDA then read an empty item in row headers. Firefox, which NVDA and Orca use, likely does the
+  same for an absolutely positioned span, because its frame becomes a block. With both variants,
+  Orca's Return stopped opening a disclosure it had reached by table navigation. The separate
+  object is the likely cause, which only the CI walk can confirm.
+
+An inline span adds no object, which matches the tree with no stylesheet. A page that has its own
+unlayered `.visually-hidden` rule replaces this one, and should keep the same two properties.
+
+### Without the stylesheet
+
+A page that loads only the element gets a complete, accessible table: each cell reads as its full
+sentence, because the compact span with the icon and version keeps its `hidden` attribute. The
+fallback content stays visible next to the table. axe reports no violation on that page in the
+three engines.
+
+### Building and linting it
+
+`vite.config.ts` builds `src/styles/base.css` as a second library entry into `dist/base.css`, with
+Vite's own CSS pipeline. The `@import` rules are inlined, `@layer bcd-embed.base;` stays first, the
+`@property` rules stay at the top level because `properties.css` is imported without `layer()`, and
+every other rule ends up in an `@layer bcd-embed.base { }` block. `build.cssMinify` is `false`,
+because the default minifier, lightningcss, drops the layer statement (Document 10, #188 section 6).
+
+**If your bundler minifies the stylesheet.** The published file is not minified, so a page can
+link it as it is. A consumer who imports it through a bundler that minifies CSS, as Vite does by
+default with lightningcss, gets a changed stylesheet. Issue #200 checked this by passing
+`dist/base.css` through a Vite 8.3.8 library build with `build.cssMinify` at its default:
+
+- The `@layer bcd-embed.base;` statement is dropped. Every rule is still in the layer, and the
+  layer still sits where the first rule puts it, so unlayered author rules still win. The order
+  only changes if the bundler places another layer's rules before this file's first rule, in
+  which case `bcd-embed.base` comes after that layer instead of where the statement put it.
+- The `@property` rules move inside the layer block. Chromium, Firefox, and WebKit still register
+  them there (Document 10, #188 section 6).
+- **The colours are lost.** lightningcss rewrote each `light-dark()` into
+  `var(--lightningcss-light, …) var(--lightningcss-dark, …)`, which depends on custom properties
+  it only defines next to a `color-scheme` declaration in the same CSS. This stylesheet sets no
+  `color-scheme`, so in Chromium 159, Firefox 159, and WebKit 27.2 every icon computed to the text
+  colour, `rgb(0, 0, 0)`, in light and in dark. The shapes stay, so no state is lost, but the
+  palette is.
+
+Link `dist/base.css` directly, or exclude it from minification, for example with
+`build.cssMinify: false` in Vite, which leaves the file as published.
+
+The stylesheet targets the Baseline 2025 floor (Document 3 section 1). `calavera.config.json` sets
+that floor for the whole repository, but the recipe has not been applied yet, so the root
+`.stylelintrc.json` still checks for widely available features, which flags `@property`,
+`light-dark()`, and `overflow-inline`. Until the recipe is applied, this package's
+`.stylelintrc.json` extends the root configuration and sets `available: 2025`. Delete it once the
+root configuration carries the floor. Stylelint reports nothing at that floor.
+
+Three tests guard the source files in `src/styles`: `tests/styles/logical-properties.test.ts`
+rejects physical properties and values, `tests/styles/properties.test.ts` checks that every custom
+property is registered or listed with its reason in `properties.css`, and
+`tests/styles/contrast.test.ts` checks the palette.
+
 ## Layout
 
 | Path                                       | Holds                                                                                                                                                              |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/index.ts`                             | The package entry. It defines the element, and everything the package exports passes through it.                                                                   |
 | `src/bcd-compat-table.ts`                  | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                     |
-| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the placeholder glyphs (`status.ts`), and the loading and error sentences (`error.ts`).          |
+| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the state icons (`status.ts`), and the loading and error sentences (`error.ts`).                 |
+| `src/styles/`                              | The opt-in base stylesheet: `base.css` imports `properties.css`, `tokens.css`, and `table.css` (below, "Styling").                                                 |
 | `src/model/table-model.ts`                 | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                    |
 | `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                                                                                             |
 | `src/strings/format.ts`                    | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                              |
@@ -355,11 +535,12 @@ one fast machine, so measure again on a slow phone before relying on them for ve
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                    |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
 | `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                    |
-| `.size-limit.json`                         | The size budget for `dist/index.js`, counted without `lit` and `@lit/task`: 8.5 kB with Brotli.                                                                    |
+| `.size-limit.json`                         | The size budgets with Brotli: 9.5 kB for `dist/index.js`, counted without `lit` and `@lit/task`, and 3 kB for `dist/base.css`.                                     |
+| `.stylelintrc.json`                        | This package's Baseline floor for Stylelint (below, "Styling"), on top of the root configuration.                                                                  |
 | `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
 `private` stays `true`, so nothing publishes yet. The package already has the shape a published one
-needs: `exports` for `.` and `./package.json`, `files` set to `dist`, and `sideEffects` in array
+needs: `exports` for `.`, `./base.css`, and `./package.json`, `files` set to `dist`, and `sideEffects` in array
 form (`["./dist/index.js", "./dist/*.css"]`), so a bundler keeps the entry and any stylesheet and
 drops the rest of an unused import. Before the package publishes, note that the emitted
 `dist/public-types.d.ts` imports types from `@bcd-embed/schema`, which is only a development
@@ -471,16 +652,16 @@ The client is not exported from `src/index.ts`; the element is its only caller.
 
 ## Build and tests
 
-| Command                                      | What it does                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
-| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                |
-| `pnpm --filter @bcd-embed/element test:live` | Runs the one test that calls the live, hosted API (`e2e/live-api.live.ts` with `playwright.live.config.ts`). It requests `css.properties.line-clamp` once, in Chromium, and is not part of `pnpm check` or of the Element browser workflow.                                                                                   |
-| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                |
-| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists the `bcd-compat-table` element with its `query`, `endpoint`, `loading`, `browsers`, and `locale` attributes and its two events.                                                                                                              |
+| Command                                      | What it does                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` and `dist/base.css` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
+| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                                    |
+| `pnpm --filter @bcd-embed/element test:live` | Runs the one test that calls the live, hosted API (`e2e/live-api.live.ts` with `playwright.live.config.ts`). It requests `css.properties.line-clamp` once, in Chromium, and is not part of `pnpm check` or of the Element browser workflow.                                                                                                       |
+| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                                    |
+| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists the `bcd-compat-table` element with its `query`, `endpoint`, `loading`, `browsers`, and `locale` attributes and its two events.                                                                                                                                  |
 
 The Vitest tests include a production build into a temporary directory, which checks that
-`dist/index.js` has no mention of `zod`. The element reads the schema package's types only, because
+`dist/index.js` has no mention of `zod` and that `dist/base.css` has the shape "Styling" describes. The element reads the schema package's types only, because
 Zod would roughly double the bundle. Another test emits the type declarations into a temporary
 directory under `node_modules/.cache` and follows every import from `index.d.ts`, to check that
 none of those files imports from `lit`.
@@ -488,9 +669,11 @@ none of those files imports from `lit`.
 The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
 element, the table model, and the note tokenizer measured 6.43 kB with Brotli, without Lit, so the
 limit became 7 kB. Fetch mode (#203) brings the feature client and the request cache into the
-bundle for the first time, and the total is now 8.26 kB (8.07 kB before the review fixes), so the limit is 8.5 kB. Measured on their
+bundle for the first time, and the total became 8.26 kB (8.07 kB before the review fixes), so the limit became 8.5 kB. Measured on their
 own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
-growth, and the element's fetch logic for the rest. The entry's `name` in `.size-limit.json` records that measurement, so the
+growth, and the element's fetch logic for the rest. The icons of #200 add the rest: with both,
+`dist/index.js` measured 8.52 kB, 18 bytes over 8.5 kB, so the limit became 9 kB. Source mode (#205) adds the source reader and the parser wait: with fetch mode, source mode and the icons together, `dist/index.js` measures 8.97 kB, 30 bytes under 9 kB, so the limit is 9.5 kB. `dist/base.css`
+measures 2.94 kB with Brotli against a limit of 3 kB; it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
 packaging issue (#206).
 
@@ -540,7 +723,11 @@ proves itself without the element. A violation fails the test with the rule's id
 elements it flags, for example `image-alt` with `img`.
 
 `e2e/fixtures/data-mode.html` is the element's fixture page. Its script assigns the adversarial
-fixture to `data`, and its only stylesheet is the fallback rule. `e2e/data-mode.e2e.ts` runs axe on
+fixture to `data`, and its only stylesheet is the built `dist/base.css`, which holds the fallback
+rule. `e2e/fixtures/unstyled.html` is the same page with no stylesheet. `playwright.e2e.config.ts`
+runs `e2e/global-setup.ts` first, which builds the package, so the pages link the file a consumer
+gets. `e2e/base-stylesheet.e2e.ts` checks the stylesheet itself (below, "Styling").
+`e2e/data-mode.e2e.ts` runs axe on
 the loaded table, with every disclosure open, after an error, and after `data = null`. It also
 checks the fallback rule's computed styles, the Tab key's stops, and that a note's markup never
 runs, and it records the render time of a 2,000-feature table. The page imports TypeScript source,
@@ -586,9 +773,12 @@ the static pages in `docs/planning/phase1-markup/`, which are a record of the Ph
 Because the element renders variant A only, the walks do not cover Document 7's steps 13 and 14,
 which compare variant B with variant A. Those stay with the manual pass (#186).
 
-The page carries the fallback rule from `e2e/fixtures/fallback.css`, which hides the fallback
-paragraph once the table has rendered. The base stylesheet will ship that rule, and the page
-will then use the base stylesheet instead.
+The page links the built base stylesheet, `dist/base.css`, so the walks hear the element as an
+author who opts into the stylesheet ships it, with the fallback paragraph hidden once the table
+has rendered. `vite.screen-reader.config.ts` copies the file unminified. With the stylesheet, each
+cell's icon-and-version span is displayed but keeps `aria-hidden="true"`, so no screen reader
+reads it, and the sentence span is clipped out of sight but stays in the accessibility tree. So
+#200 changed no check of any walk; the CI walks confirm the wording.
 
 **The build step.** Build the page before any walk:
 

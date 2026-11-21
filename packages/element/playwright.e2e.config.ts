@@ -14,6 +14,8 @@ export default defineConfig({
   testDir: "./e2e",
   // The `*.e2e.ts` name keeps these files out of `vitest run`, which collects `*.test.ts`.
   testMatch: "**/*.e2e.ts",
+  // Builds `dist/base.css`, which the fixture pages link (e2e/global-setup.ts).
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   reporter: "list",
   use: { baseURL: origin, trace: "retain-on-failure" },

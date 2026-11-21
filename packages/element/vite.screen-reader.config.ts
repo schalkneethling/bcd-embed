@@ -12,6 +12,10 @@ export default defineConfig({
     alias: { "@bcd-embed/element": fileURLToPath(new URL("./dist/index.js", import.meta.url)) },
   },
   build: {
+    // The page links the built `dist/base.css`, and Vite copies it into this build. Its default
+    // minifier, lightningcss, drops the `@layer bcd-embed.base;` statement, so the walks would
+    // hear a different stylesheet from the one the package publishes.
+    cssMinify: false,
     outDir: "dist-screen-reader",
     emptyOutDir: true,
     rolldownOptions: { input: "screen-reader/fixtures/component.html" },

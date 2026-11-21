@@ -1,0 +1,42 @@
+/*
+ * Applies the colour tokens from properties.css to the icon of each support state. base.css
+ * imports this file into the layer bcd-embed.base.
+ *
+ * light-dark() picks the light or the dark token from the color-scheme the icon inherits, so a
+ * page with color-scheme: dark on any ancestor gets the dark colours, and a page with
+ * color-scheme: light dark gets them when the reader prefers a dark scheme. The base stylesheet
+ * never sets color-scheme itself: the background behind the table is the page's, so the page's
+ * scheme decides which colours stay readable on it.
+ *
+ * The icon draws its stroke in currentColor, so colour is all a state needs here. Colour never
+ * carries the state alone: each state has its own icon shape (src/render/status.ts). In forced
+ * colours the browser replaces these colours with a system colour, and the shape remains.
+ */
+
+.bcd-icon-supported {
+  color: light-dark(var(--bcd-color-supported-light), var(--bcd-color-supported-dark));
+}
+
+.bcd-icon-partial {
+  color: light-dark(var(--bcd-color-partial-light), var(--bcd-color-partial-dark));
+}
+
+.bcd-icon-preview {
+  color: light-dark(var(--bcd-color-preview-light), var(--bcd-color-preview-dark));
+}
+
+.bcd-icon-flagged {
+  color: light-dark(var(--bcd-color-flagged-light), var(--bcd-color-flagged-dark));
+}
+
+.bcd-icon-unsupported {
+  color: light-dark(var(--bcd-color-unsupported-light), var(--bcd-color-unsupported-dark));
+}
+
+.bcd-icon-unknown {
+  color: light-dark(var(--bcd-color-unknown-light), var(--bcd-color-unknown-dark));
+}
+
+.bcd-icon-no-data {
+  color: light-dark(var(--bcd-color-no-data-light), var(--bcd-color-no-data-dark));
+}

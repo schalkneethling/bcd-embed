@@ -1,0 +1,130 @@
+/*
+ * The design tokens of the base stylesheet, registered with @property (Document 3 section 4,
+ * "Styling surface"). base.css imports this file without layer(), so these rules stay at the top
+ * level of the built file (Document 10, #188 section 6). An @property rule takes no part in the
+ * cascade, so a layer would change nothing about it.
+ *
+ * Each default lives in exactly one place: the rule's initial-value. A token is inherited, so an
+ * author can set it on the element, on any ancestor, or on :root, and an unlayered declaration
+ * anywhere always beats these defaults.
+ *
+ * Each colour has a light and a dark token, and tokens.css chooses between them with
+ * light-dark() where the colour is used. A single token with a light-dark() initial-value does
+ * not work: a registered colour is resolved to one colour where it is computed, and Chromium 159,
+ * Firefox 159 and WebKit 27.2 all resolved such an initial-value to its light colour, even inside
+ * an element with color-scheme: dark. Choosing at the point of use follows the color-scheme the
+ * table inherits from its page.
+ *
+ * Three tokens stay unregistered, each for the reason on its line below. The test
+ * tests/styles/properties.test.ts reads the lines that start with "@unregistered".
+ *
+ * @unregistered --bcd-cell-padding: its default is 0.5rem, and an initial-value cannot be in rem, because a length in rem is not computationally independent; Chromium, Firefox and WebKit reject one.
+ * @unregistered --bcd-indent: its default is 1rem, which an initial-value cannot be, for the same reason.
+ * @unregistered --bcd-icon-size: its default is 1em, so the icon follows the size of the text around it, and an initial-value cannot be in em.
+ */
+
+/* The colours of the support states, against the browser's default Canvas colour. */
+
+@property --bcd-color-supported-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1a7f37;
+}
+
+@property --bcd-color-supported-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #4ac26b;
+}
+
+@property --bcd-color-partial-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9a6700;
+}
+
+@property --bcd-color-partial-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #d29922;
+}
+
+@property --bcd-color-preview-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0969da;
+}
+
+@property --bcd-color-preview-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #4493f8;
+}
+
+@property --bcd-color-flagged-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6639ba;
+}
+
+@property --bcd-color-flagged-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ab7df8;
+}
+
+@property --bcd-color-unsupported-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #cf222e;
+}
+
+@property --bcd-color-unsupported-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ff7b72;
+}
+
+@property --bcd-color-unknown-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #59636e;
+}
+
+@property --bcd-color-unknown-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9198a1;
+}
+
+@property --bcd-color-no-data-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #59636e;
+}
+
+@property --bcd-color-no-data-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9198a1;
+}
+
+/* The border treatment of the table's cells. */
+
+@property --bcd-color-border-light {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #818b98;
+}
+
+@property --bcd-color-border-dark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #656c76;
+}
+
+@property --bcd-border-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}

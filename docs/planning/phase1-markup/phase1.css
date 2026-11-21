@@ -67,9 +67,10 @@ body {
 }
 
 /*
- * The glyph spans carry the `hidden` attribute so that, with no stylesheet, the browser removes
- * them and the cell reads as the full sentence. This stylesheet is the design, so it shows the
- * glyph again. The attribute selector keeps the rule off every other hidden element.
+ * The icon-and-version spans carry the `hidden` attribute so that, with no stylesheet, the
+ * browser removes them and the cell reads as the full sentence. This stylesheet is the design, so
+ * it shows the icon and version again. The attribute selector keeps the rule off every other
+ * hidden element.
  */
 .bcd-table [aria-hidden="true"][hidden] {
   display: inline;

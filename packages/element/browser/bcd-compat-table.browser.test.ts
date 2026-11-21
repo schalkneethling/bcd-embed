@@ -197,7 +197,7 @@ describe("the table for the Phase 1 fixture", () => {
     expect(element.querySelectorAll("[headers]")).toHaveLength(0);
   });
 
-  it("renders the fit-content cell in Chrome as a details whose summary holds the hidden glyph and the sentence", async () => {
+  it("renders the fit-content cell in Chrome as a details whose summary holds the hidden icon and the sentence", async () => {
     const element = await mountPhase1();
     const cell = cellOf(element, "fit-content", 1);
     const details = cell.querySelector(":scope > details");
@@ -207,7 +207,13 @@ describe("the table for the Phase 1 fixture", () => {
     expect(spans).toHaveLength(2);
     expect(spans[0]?.getAttribute("aria-hidden")).toBe("true");
     expect(spans[0]?.hasAttribute("hidden")).toBe(true);
-    expect(collapse(spans[0]?.textContent ?? null)).toBe("✓ 46");
+    expect(collapse(spans[0]?.textContent ?? null)).toBe("46");
+    // The icon is the span's first child, an inline SVG with no <title> of its own.
+    const icon = spans[0]?.firstElementChild;
+    expect(icon?.localName).toBe("svg");
+    expect(icon?.namespaceURI).toBe("http://www.w3.org/2000/svg");
+    expect(icon?.getAttribute("class")).toBe("bcd-icon bcd-icon-supported");
+    expect(icon?.querySelector("title")).toBeNull();
     expect(spans[1]?.hasAttribute("hidden")).toBe(false);
     expect(spans[1]?.textContent).toBe(
       "Supported since Chrome 46. History for fit-content in Chrome",
@@ -230,7 +236,7 @@ describe("the table for the Phase 1 fixture", () => {
     expect(cell.querySelector("details, summary")).toBeNull();
     expect(cell.querySelector("a, button, [tabindex]")).toBeNull();
     expect(cell.hasAttribute("tabindex")).toBe(false);
-    expect(collapse(cell.textContent)).toBe("✓ 1Supported since Chrome 1");
+    expect(collapse(cell.textContent)).toBe("1Supported since Chrome 1");
   });
 
   it("gives tab stops only to the region and the five disclosures", async () => {
@@ -261,7 +267,7 @@ describe("the table for the Phase 1 fixture", () => {
       // No rule styles the sentence, so nothing moves it out of view.
       expect(getComputedStyle(sentence as Element).position).toBe("static");
       expect(getComputedStyle(compact as Element).display).toBe("none");
-      // `innerText` is the text a reader sees: it leaves out the hidden glyph and a closed
+      // `innerText` is the text a reader sees: it leaves out the hidden icon and version and a closed
       // disclosure's history.
       expect(collapse(cell.innerText)).toBe(collapse(sentence?.textContent ?? null));
       expect(collapse(cell.innerText)).not.toBe("");
@@ -987,7 +993,8 @@ describe("the size of the rendered tree", () => {
     //                   thead, its two rows, the feature header, and tbody, then at most one
     //                   colgroup, one group header, and one target header for each target
     //   4F              tr, th, code, and the part-of span for each row
-    //   7 × F × T       td, two spans, the compact code, details, summary, and ul for each cell
+    //   9 × F × T       td, two spans, the icon's svg and path, the compact code, details,
+    //                   summary, and ul for each cell
     //   3L              li, and a bdi or at most two code elements, for each history line
     //   E               one element for each code, emphasis, or link segment in a note
     //
@@ -1004,23 +1011,29 @@ describe("the size of the rendered tree", () => {
       9 +
       3 * targetCount +
       4 * featureCount +
-      7 * featureCount * targetCount +
+      9 * featureCount * targetCount +
       3 * historyLines +
       noteElements;
 
     expect(element.querySelectorAll("tbody tr")).toHaveLength(featureCount);
     expect(element.querySelectorAll("tbody td")).toHaveLength(featureCount * targetCount);
     expect(elementCount).toBeLessThanOrEqual(bound);
-    // Because F × T is at least F and at least T, the bound is under 14 × F × T + 9 × S + E + 10
+    // Because F × T is at least F and at least T, the bound is under 16 × F × T + 9 × S + E + 10
     // when S also counts each flag and note. That is the multiple the README records.
     expect(bound).toBeLessThanOrEqual(
-      14 * featureCount * targetCount + 9 * (statements + flags + notes) + noteElements + 10,
+      16 * featureCount * targetCount + 9 * (statements + flags + notes) + noteElements + 10,
     );
     // The exact count for this payload, so a change to the markup shows up here: per feature,
-    // 4 cells, 2 disclosures, 5 history lines, 1 bdi, and 3 code elements in the history, and a
-    // part-of span on four rows of every five.
+    // 4 cells with an icon of two elements each, 2 disclosures, 5 history lines, 1 bdi, and 3
+    // code elements in the history, and a part-of span on four rows of every five.
     expect(elementCount).toBe(
-      1 + 9 + 2 + 2 + 4 + featureCount * (3 + 4 * 3 + 2 * 3 + 5 + 1 + 3) + (featureCount * 4) / 5,
+      1 +
+        9 +
+        2 +
+        2 +
+        4 +
+        featureCount * (3 + 4 * 3 + 4 * 2 + 2 * 3 + 5 + 1 + 3) +
+        (featureCount * 4) / 5,
     );
   }, 60_000);
 });

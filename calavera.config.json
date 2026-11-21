@@ -16,6 +16,12 @@
     "stylelint-standard",
     "stylelint-baseline"
   ],
+  "integrationOptions": {
+    "stylelint-baseline": {
+      "available": 2025,
+      "severity": "error"
+    }
+  },
   "scripts": {
     "lint": true,
     "lint:fix": true,
