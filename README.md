@@ -56,8 +56,8 @@ workspaces are:
   [Astro](https://astro.build). Its four example tables are built into the page
   from the installed BCD, and one more table loads from the API when it scrolls
   near. It is deployed manually with `pnpm --filter @bcd-embed/home run deploy`
-  to that address, under an enforcing Content-Security-Policy. It is not
-  deployed yet.
+  to that address, under an enforcing Content-Security-Policy. It has been
+  deployed since 21 November 2026.
 
 Each package and app has its own README with the details of its behavior.
 
