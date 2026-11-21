@@ -43,8 +43,9 @@ Each box is one step, and each step has one job.
    file, `v1/meta.json`, that names the current one.
 5. **The Worker** is a small program on Cloudflare's network. It turns a
    request URL into a file name, reads that file from R2, and streams it back.
-6. **The consumer** is whatever asked: today any HTTP client, and later the
-   bcd-embed web component, which is designed but not built yet.
+6. **The consumer** is whatever asked: any HTTP client, or the bcd-embed web
+   component, `<bcd-compat-table>`, which renders the answer as a table.
+   [Getting started](/component/getting-started/) shows it.
 
 Steps 1 to 3 happen once per BCD release. Steps 5 and 6 happen on every
 request. The split matters because BCD is large: BCD 8.1.8 has 20,933 features.

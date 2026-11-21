@@ -1,0 +1,132 @@
+---
+title: Getting started
+description: Embed a browser compatibility table in a page with the bcd-compat-table web component.
+---
+
+import LiveExample from "../../../components/LiveExample.astro";
+
+The `<bcd-compat-table>` web component renders the browser compatibility table
+of one feature, and of every feature nested under it, from MDN Browser
+Compatibility Data (BCD). By default it asks the hosted application programming
+interface (API) at `https://api.browser-compat.dev` for the data, so a page
+needs one element and one script import.
+
+## Status of the package
+
+The element is complete in this repository, but the package
+`@bcd-embed/element` is not published to npm yet: its `package.json` sets
+`private` to `true`. This page describes how a page will use it once it is
+published. The live example further down runs the element from the
+repository's source files, not from the package's built `dist` files. The
+site's bundler settings point `@bcd-embed/element` at the source and mark it
+as having side effects, which bypasses the package's `sideEffects` list, so the
+live example does not prove that the published `dist` files work. The
+package's own tests build a consumer against `dist` for that.
+
+Once the package is published, install it with your package manager. `lit`
+and `@lit/task`, the two libraries the element is built with, are installed
+with it.
+
+```sh
+pnpm add @bcd-embed/element
+```
+
+The package has two entry points, and no others:
+
+| Import                        | What it gives you                                                                                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@bcd-embed/element`          | Importing it defines `<bcd-compat-table>`. It also exports the TypeScript types, such as `BcdCompatTableElement`, and the English message table. It exports no class and no type from Lit.       |
+| `@bcd-embed/element/base.css` | The optional base stylesheet: borders, padding, focus rings, icon colours, and the rule that hides the fallback content once a table loads. [Styling and tokens](/component/styling/) covers it. |
+
+The package also ships `custom-elements.json`, a Custom Elements Manifest,
+which editors and documentation tools read to list the element's attributes,
+properties, and events.
+
+## Add a table
+
+Write the element where the table belongs, and name the feature in `query`
+with its BCD key, the dotted path such as `css.properties.display`. Put a link
+to the same table on MDN Web Docs (MDN) inside the element:
+
+{/* sample: packages/element/examples/fetch-mode.html */}
+
+```html
+<bcd-compat-table query="css.properties.display">
+  <p>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/display#browser_compatibility"
+      >Browser compatibility for <code>display</code> on MDN Web Docs</a
+    >
+  </p>
+</bcd-compat-table>
+```
+
+The element's children are its fallback content. A reader sees them before
+the element's script runs, while the table loads, after an error, and always
+when script is turned off. The element never moves or removes them. Once the
+table renders, the element sets the `loaded` attribute on itself, and the base
+stylesheet hides every child except the table. The element supplies no
+fallback of its own, so a page that wants readers without script to reach the
+data writes the link itself, as above.
+
+Write the fallback as an element, such as the `<p>` above, rather than as bare
+text. [Frameworks](/component/frameworks/) explains why that matters in React
+and Vue.
+
+## Load the element and the stylesheet
+
+Import the package once, with `import "@bcd-embed/element";`, before anything
+renders the element. The import itself is what defines the element, so it
+needs no name. [Events](/component/events/) and
+[Data modes](/component/data-modes/) show it at the top of complete scripts.
+
+Then load the base stylesheet from the document. Link
+`node_modules/@bcd-embed/element/dist/base.css` with a `<link>` element, or
+import `@bcd-embed/element/base.css` through a bundler that does not minify
+CSS. [Styling and tokens](/component/styling/) explains why a minifier can lose
+the stylesheet's colours, and why the file must not be loaded inside a shadow
+root.
+
+## The live example
+
+The table below is the markup above, running on this page with the base
+stylesheet.
+
+<LiveExample />
+
+This is what happened, step by step:
+
+1. The browser parsed the element and showed its fallback link.
+2. The element's script defined `<bcd-compat-table>`. The element waited until
+   it was within 400 pixels of the viewport, because `loading` defaults to
+   `lazy`.
+3. The element requested
+   `https://api.browser-compat.dev/v1/current/features/css.properties.display.json`
+   and set `aria-busy="true"` on itself while the request was in flight.
+4. The answer rendered as a table inside a `<div class="bcd-render-container">`
+   that the element appended to itself. The element removed `aria-busy`, set
+   `loaded`, and fired a `bcd-load` event. The stylesheet then hid the link.
+
+If you turn off script in your browser and reload this page, the table does
+not render and the link stays. If the request fails, the link comes back and
+the element fires `bcd-error` instead. [Events](/component/events/) shows how a
+page handles that.
+
+## Size
+
+The project's budget for the initial import, which is the element with Lit and
+`@lit/task`, is 25 kB compressed with gzip, and the package's build fails when
+the import grows past it. The data for each table is a separate request and is
+not part of the budget. The package's
+[README, section "Size"](https://github.com/schalkneethling/bcd-embed/blob/main/packages/element/README.md#size) records the latest measurements, and
+`.size-limit.json` in the package holds every limit.
+
+## Next steps
+
+- [Attributes and properties](/component/attributes-and-properties/) lists
+  every input the element reads.
+- [Data modes](/component/data-modes/) shows how to render a table with no
+  request, from data a build step saved.
+- [Styling and tokens](/component/styling/) shows how to change colours,
+  spacing, and layout.
+- [Self-hosting](/component/self-hosting/) shows how to point the element at
+  your own copy of the API.
