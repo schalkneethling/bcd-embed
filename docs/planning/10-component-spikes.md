@@ -1774,10 +1774,12 @@ The issue's pins for React, Vue, and Svelte were installed as written. Vue 3.5.4
 the policy hold in Chromium, Firefox and WebKit?
 
 **Answer.** Eight directives, listed below. The page needs `script-src 'self'`, `style-src 'self'`,
-`img-src 'self'` (for Firefox's favicon request only) and `connect-src https://api.browser-compat.dev`.
-`default-src 'none'` covers the rest, and `object-src`, `base-uri`, `form-action` and `frame-ancestors` are
-named because `default-src` does not cover them. All three engines reported zero violations. The
-Cloudflare Web Analytics beacon is not covered, and the owner decides what to do about it before the deploy.
+`img-src 'self'` (for its icon) and `connect-src https://api.browser-compat.dev`. `default-src 'none'`
+covers the rest, and `object-src`, `base-uri`, `form-action` and `frame-ancestors` are named because
+`default-src` does not cover them. All three engines reported zero violations without the beacon present.
+On 21 November 2026 the owner allowed the Cloudflare Web Analytics beacon, which adds
+`https://static.cloudflareinsights.com/beacon.min.js/` (with the trailing slash) to `script-src` and `'self'`
+to `connect-src`. The final policy is the one in `apps/home/public/_headers`.
 
 ### How it was measured
 
@@ -1799,8 +1801,9 @@ Controls, to show the counter works (events per engine, in the order Chromium, F
 
 | Control                                                    | Events  | Names                                                                  |
 | ---------------------------------------------------------- | ------- | ---------------------------------------------------------------------- |
-| `default-src 'none'` alone                                 | 3, 4, 3 | `style-src-elem` for the stylesheet, `script-src-elem` for both scripts; Firefox adds `img-src` for `/favicon.ico` |
+| `default-src 'none'` alone                                 | 4, 4, 3 | `style-src-elem` for the stylesheet, `script-src-elem` for both scripts; Chromium and Firefox add `img-src` for `/favicon.svg` |
 | The policy without `connect-src`                           | 1, 1, 1 | `connect-src` for the API address, and the live table stays empty      |
+| The policy without `img-src`                               | 1, 1, 0 | `img-src` for `/favicon.svg` in Chromium and Firefox; WebKit does not check it |
 | The policy, with an inline script and a `style=""` added   | 2, 2, 2 | `script-src-elem inline` and `style-src-attr inline`; the script did not run |
 
 ### Findings
@@ -1809,24 +1812,30 @@ Controls, to show the counter works (events per engine, in the order Chromium, F
   `style` attributes, not property writes from script. The element renders in the light DOM with no
   `static styles`. No `style-src` event occurred
   in any engine while the tables rendered or while a reader used the page.
-- **Firefox checks its favicon request against `img-src`.** The page names no icon, so Firefox requests
-  `/favicon.ico`. With `default-src 'none'` alone it reports one `img-src` violation, and Chromium and WebKit
-  report none. `img-src 'self'` removes it. The page ships no favicon, so that request finds no file,
-  which is a small gap this issue does not fix.
+- **Chromium and Firefox check the page's icon request against `img-src`.** Before the page named an icon,
+  Firefox requested `/favicon.ico` and reported one `img-src` violation under `default-src 'none'` alone,
+  while Chromium and WebKit reported none. The page now names `/favicon.svg` (the project's icon, copied from
+  the documentation site), so that request finds a file. Chromium and Firefox then report the request
+  when `img-src` is missing, and WebKit does not. `img-src 'self'` stays.
 - **No `font-src`, `frame-src`, `worker-src` or `data:` source is needed.** The page has no web font, frame or
   worker, and the element draws its icons as inline SVG (`packages/element/src/render/status.ts`), which no
   directive governs.
-- **The beacon is the one known difference from the live site.** Cloudflare's Web Analytics FAQ says
-  automatic setup injects its script on all pages under the zone, and asks for
-  `https://static.cloudflareinsights.com/beacon.min.js` in `script-src` and `'self'` in `connect-src`. The
-  local run cannot show it, because Cloudflare inserts the script at the edge. Under `script-src 'self'`, a
-  browser will block it on the apex and log one violation. Allowing it is the owner's decision, as is turning
-  automatic setup off for the site.
+- **The beacon needs a trailing slash.** Cloudflare's Web Analytics FAQ says automatic setup injects its
+  script on all pages under the zone, and asks for `https://static.cloudflareinsights.com/beacon.min.js` in
+  `script-src` and `'self'` in `connect-src`. Cloudflare injects the script at the edge with a token after the
+  path (`/beacon.min.js/<token>`), and the CSP Level 3 specification matches a source path that ends in `/`
+  by prefix and any other source path exactly. The test serves a stand-in module script at
+  `/beacon.min.js/v<hex>` under a second origin (`localhost`, which `'self'` does not match), with the shipped
+  policy's beacon source rewritten to that origin. With the trailing slash it ran in Chromium 159, Firefox 159
+  and WebKit 27.2, and without it one `script-src-elem` violation blocked it in all three. The owner chose to
+  allow the beacon on 21 November 2026. The measurement of zero violations above is taken without the
+  beacon present, because only Cloudflare's edge adds it.
 
 ### Wrangler dry run
 
-`pnpm run deploy:dry-run` in `apps/home` ran `astro build`, the `v1` check and `wrangler deploy --dry-run`
-(Wrangler 4.160.1, with `WRANGLER_SEND_METRICS=false`) and exited 0. Wrangler read 7 files from the
+`pnpm run deploy:dry-run` in `apps/home` ran `build:dependencies` (3 of 11 workspace projects), `astro build`,
+the `v1` check and `wrangler deploy --dry-run` (Wrangler 4.160.1, with `WRANGLER_SEND_METRICS=false`) and
+exited 0. Wrangler read 8 files from the
 assets directory and ended with "--dry-run: exiting now." Wrangler's source (`cli.js`, the deploy command)
 skips the authentication step and the asset upload when `--dry-run` is set. I did not capture network
 traffic, so "no Cloudflare call" rests on that source reading and on the run needing no sign-in prompt.
@@ -1839,3 +1848,11 @@ traffic, so "no Cloudflare call" rests on that source reading and on the run nee
 - Cloudflare, [Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/) and
   [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/), fetched on
   21 November 2026.
+- W3C, [Content Security Policy Level 3](https://www.w3.org/TR/CSP3/), "path-part matching".
+- pnpm, [Filtering](https://pnpm.io/filtering), for `<package>^...`.
+- `assets.worker.js` in miniflare 5.20261110.1-beta (the version Wrangler 4.160.1 depends on), for the
+  default `not_found_handling` of `none` and the `404` answer.
+- Cloudflare, [Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/),
+  [URL forwarding](https://developers.cloudflare.com/rules/url-forwarding/) and
+  [Redirect from www to root](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-www-to-root/),
+  for the `www` redirect steps.

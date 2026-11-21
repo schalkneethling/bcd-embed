@@ -50,13 +50,14 @@ workspaces are:
   [Starlight](https://starlight.astro.build). Its pages are the Markdown files
   in `apps/website/src/content/docs`. It is deployed manually with
   `pnpm --filter @bcd-embed/website run deploy` and answers on
-  `https://docs.browser-compat.dev`.
+  [`https://docs.browser-compat.dev`](https://docs.browser-compat.dev).
 - `apps/home` — `@bcd-embed/home`, the introduction page for
-  `https://browser-compat.dev`, built with [Astro](https://astro.build). Its
-  four example tables are built into the page from the installed BCD, and one
-  more table loads from the API when it scrolls near. It is deployed manually
-  with `pnpm --filter @bcd-embed/home run deploy` and answers on
-  `https://browser-compat.dev`, under an enforcing Content-Security-Policy.
+  [`https://browser-compat.dev`](https://browser-compat.dev), built with
+  [Astro](https://astro.build). Its four example tables are built into the page
+  from the installed BCD, and one more table loads from the API when it scrolls
+  near. It is deployed manually with `pnpm --filter @bcd-embed/home run deploy`
+  to that address, under an enforcing Content-Security-Policy. It is not
+  deployed yet.
 
 Each package and app has its own README with the details of its behavior.
 

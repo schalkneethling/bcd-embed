@@ -460,6 +460,9 @@ answers only on `https://browser-compat.dev`, the apex of the zone, as a
 Workers Custom Domain. Its configuration is in
 [`apps/home`](https://github.com/schalkneethling/bcd-embed/tree/main/apps/home).
 
+As of 21 November 2026 the page is not deployed. The sections below are what the
+owner runs, and what to expect.
+
 | Site               | Address                           | Worker name         | Configuration                 |
 | ------------------ | --------------------------------- | ------------------- | ----------------------------- |
 | Introduction page  | `https://browser-compat.dev`      | `bcd-embed-home`    | `apps/home/wrangler.jsonc`    |
@@ -483,23 +486,27 @@ The zone's DNS page, which the owner read on 20 November 2026 for the
 [#189 spike](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md),
 had no record for the apex, so nothing blocks the Custom Domain. Cloudflare
 creates the record on the first deploy, so the apex must still have none then.
-The `assets` block sets only `directory`. The page has no `404.html`, so
-`not_found_handling` stays at its default, `none` (Cloudflare's
+
+The `assets` block sets only `directory`, and a test pins it to exactly that,
+so no `not_found_handling`, `html_handling` or `run_worker_first` setting can
+change which request gets a `404` or let `/v1/` through. The page has no
+`404.html`. `not_found_handling` is therefore at its default, `none`, which
+Cloudflare's
 [Wrangler configuration page](https://developers.cloudflare.com/workers/wrangler/configuration/)
-names the default but not the response), and check 3 below settles what a path
-that matches no file receives.
+names without saying what a path with no file receives. The local mirror of
+Cloudflare's asset handling does say. The `assets.worker.js` file in
+miniflare 5.20261110.1-beta, the version Wrangler 4.160.1 depends on, defaults
+`not_found_handling` to `none` and answers a request that matches no asset with
+a `404` (its `NotFoundResponse`). Whether the deployed `404` carries the headers
+of `_headers` has not been observed in production, and check 3 below settles it.
 
 The zone's rate limiting rule matches `/v1/` on every hostname. The build
 script runs `scripts/assert-no-v1.mjs dist` after `astro build`, so a build
 with a top-level `v1` entry fails before any deploy.
 
-Two things are owner changes in the Cloudflare dashboard, and this repository
-does not make them:
-
-- `www.browser-compat.dev` has no DNS record, so nothing answers it. Whether it
-  should redirect to the apex or stay unanswered is the owner's decision.
-- Always Use HTTPS has been on for the zone since 20 November 2026, so plain
-  HTTP to the apex redirects.
+Always Use HTTPS has been on for the zone since 20 November 2026, so plain HTTP
+to the apex redirects. Redirecting `www` is a separate owner step after the
+deploy (see [Redirecting www to the apex](#redirecting-www-to-the-apex)).
 
 ### The page's headers file
 
@@ -507,97 +514,132 @@ does not make them:
 applies it as it does for the documentation site (one rule per header name,
 because Cloudflare joins a name set by two rules with a comma).
 
-| Path        | Header                    | Value                                                                                                                                                                                                 |
-| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/*`        | `X-Content-Type-Options`  | `nosniff`                                                                                                                                                                                             |
-| `/*`        | `Referrer-Policy`         | `strict-origin-when-cross-origin`                                                                                                                                                                     |
-| `/*`        | `Content-Security-Policy` | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.browser-compat.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` |
-| `/_astro/*` | `Cache-Control`           | `public, max-age=31536000, immutable`                                                                                                                                                                 |
+| Path        | Header                    | Value                                                                                                                                                                                                                                                             |
+| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/*`        | `X-Content-Type-Options`  | `nosniff`                                                                                                                                                                                                                                                         |
+| `/*`        | `Referrer-Policy`         | `strict-origin-when-cross-origin`                                                                                                                                                                                                                                 |
+| `/*`        | `Content-Security-Policy` | `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com/beacon.min.js/; style-src 'self'; img-src 'self'; connect-src 'self' https://api.browser-compat.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` |
+| `/_astro/*` | `Cache-Control`           | `public, max-age=31536000, immutable`                                                                                                                                                                                                                             |
 
-The policy is enforcing. The built page is one HTML file, one stylesheet and
-two scripts, with no inline script, no `<style>` element and no `style`
-attribute (tests in `apps/home/tests/home-page.test.ts` check this), so almost
-every directive is `'none'` or `'self'`. Each directive is here for a measured
+The `Cache-Control` rule goes beyond the three headers that issue #211 lists.
+Astro puts a content hash in the name of every file under `_astro/`, so a file
+at one address never changes, and a year-long lifetime saves a returning reader
+a request for each of them. It is the documentation site's rule, and a test
+pins that HTML does not inherit it. HTML keeps Cloudflare's default.
+
+The policy is enforcing. The built page is one HTML file, one stylesheet, two
+scripts and one icon, with no inline script, no `<style>` element and no
+`style` attribute (tests in `apps/home/tests/home-page.test.ts` check this), so
+most directives are `'none'` or `'self'`. Each directive is here for a measured
 reason:
 
 | Directive                                                                              | Why                                                                                                                                                                                                                                                    |
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `default-src 'none'`                                                                   | Anything the page does not name is denied. It also covers `font-src`, `media-src`, `frame-src`, `worker-src` and `manifest-src`, which the page never uses.                                                                                            |
 | `script-src 'self'`                                                                    | The element's script and the status region's script are files from the site. The four `application/json` data blocks are not executed, so the policy does not govern them.                                                                             |
+| `script-src https://static.cloudflareinsights.com/beacon.min.js/`                      | The Cloudflare Web Analytics beacon, which Cloudflare inserts at its edge. The owner allowed it on 21 November 2026. The trailing slash is required (see below).                                                                                       |
 | `style-src 'self'`                                                                     | The page has one stylesheet file. In all three engines, the element and Lit raised no `style-src` violation while rendering and while a reader chose each example and opened a disclosure, so no style the policy blocks is set (see the measurement). |
-| `img-src 'self'`                                                                       | The page has no image. Firefox requests `/favicon.ico` when a page names no icon, and checks that request against `img-src`: with `default-src 'none'` alone, Firefox 159 reports it. Chromium and WebKit report nothing.                              |
-| `connect-src https://api.browser-compat.dev`                                           | The live table asks the hosted API for its data. The built page has one fetch-mode table, `<bcd-compat-table query="html.elements.dialog">`. The example tables read built-in data and send no request, so `'self'` is not needed.                     |
+| `img-src 'self'`                                                                       | The page's icon, `/favicon.svg` (the project's icon, copied from the documentation site). With `default-src 'none'` alone, Chromium 159 and Firefox 159 report the request for it, and WebKit 27.2 does not. The page has no other image.              |
+| `connect-src https://api.browser-compat.dev`                                           | The live table asks the hosted API for its data. The built page has one fetch-mode table, `<bcd-compat-table query="html.elements.dialog">`. The example tables read built-in data and send no request.                                                |
+| `connect-src 'self'`                                                                   | The beacon's reports. Under automatic setup the data goes to the page's own domain, at `/cdn-cgi/rum`, as the Web Analytics FAQ says. Nothing on the page itself fetches from its own origin.                                                          |
 | `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'` | `default-src` does not cover these four, so each is named. The page has no plugin, `<base>` element or form, and nothing should frame it.                                                                                                              |
 
-A test (`apps/home/tests/home-deploy.test.ts`) parses the file in `dist/`,
-requires the directives above, rejects `'unsafe-inline'`, `'unsafe-eval'`, a
-wildcard or a scheme source in any directive, allows `connect-src` only when
-the built page holds a fetch-mode table, and requires this page to print the
-policy exactly as sent.
+A test (`apps/home/tests/home-deploy.test.ts`) parses the file in `dist/` and
+pins `script-src` to exactly `'self'` and the beacon's source, and `connect-src`
+to exactly `'self'` and the API's origin. It also requires the other directives
+above, rejects `'unsafe-inline'`, `'unsafe-eval'`, a wildcard or a scheme source
+in any directive, requires the API origin only because the built page holds a
+fetch-mode table, and requires this page to print the policy exactly as sent.
 
 The test also serves the built page on `127.0.0.1` with the exact headers of
 the file and listens for `securitypolicyviolation` events in the page and in
-any worker. On 21 November 2026, in Chromium 159.0.8154.6, Firefox 159.0 and
-WebKit 27.2 (the builds Playwright 1.65.1 installs), every engine reported
-zero events and zero console messages about the policy, rendered the four
-built-in tables and the live table, and sent no request off `127.0.0.1` except
-the API request, which the test answered from a local fixture. The page has no
-worker, so the worker listener heard nothing to report. Each engine ran three
+any worker. In the run of 21 November 2026, in Chromium 159.0.8154.6, Firefox
+159.0 and WebKit 27.2 (the builds Playwright 1.65.1 installs), every engine
+reported zero events and zero console messages about the policy, rendered the
+four built-in tables and the live table, and sent no request off `127.0.0.1`
+except the API request, which the test answered from a local fixture. The beacon
+is not on the page in that run, so zero is the count without it. The page has no
+worker, so the worker listener heard nothing to report. Each engine ran
 controls to show the counter works:
 
-| Control                                                   | Chromium | Firefox  | WebKit   | What it shows                                                         |
-| --------------------------------------------------------- | -------- | -------- | -------- | --------------------------------------------------------------------- |
-| `default-src 'none'` alone                                | 3 events | 4 events | 3 events | The stylesheet and both scripts are blocked; Firefox adds the favicon |
-| The policy without `connect-src`                          | 1 event  | 1 event  | 1 event  | The live table's request is blocked and its table is empty            |
-| The policy, with an inline script and `style=""` injected | 2 events | 2 events | 2 events | Both are blocked, and the script does not run                         |
+| Control                                                   | Chromium | Firefox  | WebKit   | What it shows                                                                  |
+| --------------------------------------------------------- | -------- | -------- | -------- | ------------------------------------------------------------------------------ |
+| `default-src 'none'` alone                                | 4 events | 4 events | 3 events | The stylesheet and both scripts are blocked; Chromium and Firefox add the icon |
+| The policy without `connect-src`                          | 1 event  | 1 event  | 1 event  | The live table's request is blocked and its table is empty                     |
+| The policy without `img-src`                              | 1 event  | 1 event  | 0 events | Chromium and Firefox report the icon, and WebKit does not                      |
+| The policy, with an inline script and `style=""` injected | 2 events | 2 events | 2 events | Both are blocked, and the script does not run                                  |
 
 Run the same test in three engines with
 `BCD_EMBED_HOME_CSP_ENGINES=chromium,firefox,webkit pnpm exec vitest run apps/home/tests/home-deploy.test.ts`.
 `pnpm check` runs it in Chromium only.
 
-The test does not cover what the deployed page receives from Cloudflare, only
-what the repository sends. In particular, Cloudflare Web Analytics inserts
+#### The beacon and its trailing slash
+
+Cloudflare Web Analytics inserts
 `<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/…">`
-into HTML sent to browsers when its automatic setup is on for the zone, and
-the setup covers "all pages (sub-domains) under the zone", as the
+into HTML sent to browsers when its automatic setup is on for the zone, and the
+setup covers "all pages (sub-domains) under the zone", as the
 [Web Analytics FAQ](https://developers.cloudflare.com/web-analytics/faq/) says
-(the same behaviour as on the documentation site, above). With an enforcing
-`script-src 'self'`, a browser blocks that script and logs one violation on the
-apex. **The owner decides before or at the deploy** between two options:
+(the same behaviour as on the documentation site, above). The owner decided on
+21 November 2026 to allow it. The FAQ asks for `https://static.cloudflareinsights.com/beacon.min.js`
+in `script-src`, and for `'self'` in `connect-src` under automatic injection.
 
-- Allow the beacon. The FAQ asks for `https://static.cloudflareinsights.com/beacon.min.js`
-  in `script-src`, and for `'self'` in `connect-src` under automatic injection,
-  because the data goes to the page's own domain. That adds
-  `'self'` to `connect-src` here, and it also means changing the policy test,
-  which today allows only `'self'` in `script-src`.
-- Turn off automatic setup for the site in the Web Analytics settings, and
-  leave the policy as it is.
+The policy writes the beacon's source with a trailing slash, which the FAQ's
+address does not have, and the slash is the reason the beacon runs. Cloudflare
+puts a token after the path, as in `/beacon.min.js/<token>`. The CSP Level 3
+specification (the "path-part matching" algorithm, in
+[W3C CSP3](https://www.w3.org/TR/CSP3/)) matches a source path that ends in `/`
+by prefix, so `/subdirectory/` matches `/subdirectory/file`, and requires any other
+source path to equal the request's path. So
+`…/beacon.min.js` would not match `…/beacon.min.js/<token>`.
 
-This change allows neither, so the first load of the deployed page is expected
-to log that one violation until the owner chooses.
+The test measures this in a browser, because Cloudflare adds the beacon at the
+edge and no local build holds it. A stand-in module script is served at
+`/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092` (a path shaped
+like the one Cloudflare injects on the documentation site) under a second
+origin, `localhost`, so that `'self'` does not cover it. The policy is the
+shipped one, with the beacon's origin rewritten to that second origin:
+
+| Source in `script-src`                 | Chromium 159 | Firefox 159 | WebKit 27.2 |
+| -------------------------------------- | ------------ | ----------- | ----------- |
+| `http://localhost:PORT/beacon.min.js/` | Ran          | Ran         | Ran         |
+| `http://localhost:PORT/beacon.min.js`  | Blocked      | Blocked     | Blocked     |
+
+The blocked run reported one `script-src-elem` violation naming the path in each
+engine, and the stand-in did not run. The coordinator measured the same by hand
+before the test existed. Do not remove the slash to match the FAQ.
 
 ### Running the page deploy
 
-Run these from the repository root, on an up-to-date `main`. The page imports
-the built `schema`, `core` and `element` packages, so build them first. The
-sign-in and the account check are the same as for the documentation site, so
-skip them if that deploy just ran.
+Run these from the repository root, on an up-to-date `main`. The sign-in and the
+account check are the same as for the documentation site, so skip them if that
+deploy just ran.
 
 ```sh
 pnpm install
-pnpm --filter "@bcd-embed/home^..." build
 pnpm --filter @bcd-embed/home exec wrangler login
 pnpm --filter @bcd-embed/home exec wrangler whoami
 pnpm --filter @bcd-embed/home run deploy:dry-run
 pnpm --filter @bcd-embed/home run deploy
 ```
 
-`deploy:dry-run` runs `pnpm run build && wrangler deploy --dry-run`. It builds
-the page, which includes the `v1` check, and validates the configuration. In
-Wrangler 4.160.1's source a dry run skips the authentication step and the
-asset upload, and its output ends with "--dry-run: exiting now." It says nothing about the route, so
-only the real deploy attaches the hostname. Expected: the output lists
-`browser-compat.dev` as a Custom Domain, and no `workers.dev` address.
+Both `deploy:dry-run` and `deploy` first run `build:dependencies`, which is
+`pnpm --filter "@bcd-embed/home^..." build`. The page imports the built
+`schema`, `core` and `element` packages, and the page's own `build` reads their
+`dist/` folders without building them, so a deploy that skipped this step could
+ship an old element. The selector `<package>^...` means the package's
+dependencies without the package itself, as pnpm's
+[filtering page](https://pnpm.io/filtering) says. Run from `apps/home` in a
+script, it selected 3 of the 11 workspace projects. Then the scripts run the
+page's `build`, which includes the `v1` check.
+
+The dry run validates the configuration. In Wrangler 4.160.1's source a dry run
+skips the authentication step and the asset upload, and its output ends with
+"--dry-run: exiting now." It says nothing about the route, so only the real
+deploy attaches the hostname.
+
+The real deploy's output should list `browser-compat.dev` as a Custom Domain,
+and no `workers.dev` address.
 
 ### Checking the page deploy
 
@@ -613,27 +655,28 @@ curl -sS https://browser-compat.dev/ | grep -o '<title>[^<]*'
 ASSET=$(curl -sS https://browser-compat.dev/ | grep -o '/_astro/[^"]*\.js' | head -1)
 curl -sS -D - -o /dev/null "https://browser-compat.dev$ASSET"
 
-# 3. The robots file, a path with no file, and the /v1/ guard.
+# 3. The robots file, the icon, a path with no file, and the /v1/ guard.
 curl -sS https://browser-compat.dev/robots.txt
-curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/no-such-page
+curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/favicon.svg
+curl -sS -D - -o /dev/null https://browser-compat.dev/no-such-page
 curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/v1/meta.json
 
 # 4. Plain HTTP redirects to HTTPS (Always Use HTTPS is on for the zone).
 curl -sS -D - -o /dev/null http://browser-compat.dev/
 ```
 
-| Check | Expected                                                                                                                                                                                                                                                                                                                                   |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | `HTTP/2 200`; `x-content-type-options: nosniff`; `referrer-policy: strict-origin-when-cross-origin`; a `content-security-policy:` line equal to the policy above; `cache-control: public, max-age=0, must-revalidate`; no `content-security-policy-report-only` line. The title is `bcd-embed: browser compatibility tables for any page`. |
-| 2     | `HTTP/2 200`, `cache-control: public, max-age=31536000, immutable`, and the same three security headers.                                                                                                                                                                                                                                   |
-| 3     | The robots file reads `User-agent: *` and `Allow: /`, with no `Sitemap` line. Both paths answer `404`, which the Cloudflare pages read for this change do not state, so this is the first observation of it. The `/v1/` answer is then the site's own `404`, which confirms nothing named `v1` is served.                                  |
-| 4     | A redirect (`3xx`) with a `location` of `https://browser-compat.dev/`.                                                                                                                                                                                                                                                                     |
+| Check | Expected                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `HTTP/2 200`; `x-content-type-options: nosniff`; `referrer-policy: strict-origin-when-cross-origin`; a `content-security-policy:` line equal to the policy above; `cache-control: public, max-age=0, must-revalidate`; no `content-security-policy-report-only` line. The title is `bcd-embed: browser compatibility tables for any page`.                                                                                                                             |
+| 2     | `HTTP/2 200`, `cache-control: public, max-age=31536000, immutable`, and the same three security headers.                                                                                                                                                                                                                                                                                                                                                               |
+| 3     | The robots file reads `User-agent: *` and `Allow: /`, with no `Sitemap` line. The icon answers `200`. The missing page and `/v1/meta.json` answer `404`, as the local mirror of Cloudflare's asset handling does (see "Where the page answers"). The `/v1/` answer is then the site's own `404`, which confirms nothing named `v1` is served. Not yet observed in production: whether the `404` carries the headers of `_headers`, so read the missing page's headers. |
+| 4     | A redirect (`3xx`) with a `location` of `https://browser-compat.dev/`.                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Then open `https://browser-compat.dev/` in a browser with the developer
 console open. The four example tables and the live table (scroll to "A table
 fetched from the API") should render, choosing each radio should switch the
-table, and the console should show no Content-Security-Policy report, except
-the one for the Web Analytics beacon that the owner's decision above covers. In
+table, and the console should show no Content-Security-Policy report. The
+beacon, if Web Analytics inserts it, runs under the policy above. In
 the Cloudflare dashboard, the Worker's domain and route settings should list
 only `browser-compat.dev`, with `workers.dev` and preview URLs off.
 
@@ -657,6 +700,43 @@ Certificate Cloudflare issued for it, because Cloudflare does not delete the
 certificate when you delete a Custom Domain. Check the zone's DNS page
 afterwards: the apex record should be gone, so the zone is back to the state
 the #189 spike recorded.
+
+### Redirecting www to the apex
+
+`www.browser-compat.dev` has no DNS record, so nothing answers it. Redirecting
+it to the apex is an owner step in the Cloudflare dashboard, after the deploy.
+This repository does not do it, and `wrangler.jsonc` does not name `www`. It
+takes a redirect rule and a proxied DNS record, because Cloudflare's
+[Custom Domains page](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
+(section "Redirect between www and root domain") says a Worker attached to the
+apex does not receive requests for `www`, and that "you also need a proxied DNS
+record for the hostname you are redirecting from."
+
+1. **The DNS record.** The same page gives the record for `www` to the root: a
+   proxied `A` record for `www` pointing to `192.0.2.0`, or a proxied `AAAA`
+   record pointing to `100::`. It calls these "reserved placeholder addresses
+   for originless setups", and says that because the record is proxied,
+   requests never reach the address. Cloudflare intercepts them and applies the
+   redirect. Create it in the zone's DNS page with the proxy on.
+2. **The redirect rule.** Cloudflare's example
+   [Redirect from www to root](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-www-to-root/)
+   sets a Single Redirect with the wildcard pattern request URL
+   `https://www.*`, the target URL `https://${1}`, status `301`, and
+   "Preserve query string" on. The
+   [URL forwarding page](https://developers.cloudflare.com/rules/url-forwarding/)
+   says Single Redirects are available on all plans, with wildcard support on
+   Free, and puts the dashboard path at the Rules Overview page, then
+   Templates. That page names no template for `www` to root, and the example
+   page gives no dashboard path, so this page does not document the dashboard
+   steps beyond those two sources.
+
+Check it after both exist:
+
+```sh
+curl -sS -D - -o /dev/null 'https://www.browser-compat.dev/some/path?x=1'
+```
+
+Expected: `HTTP/2 301` and `location: https://browser-compat.dev/some/path?x=1`.
 
 ## What is still open before a public launch
 
