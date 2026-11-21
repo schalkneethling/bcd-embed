@@ -535,7 +535,7 @@ property is registered or listed with its reason in `properties.css`, and
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                    |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
 | `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                    |
-| `.size-limit.json`                         | The size budgets with Brotli: 9 kB for `dist/index.js`, counted without `lit` and `@lit/task`, and 3 kB for `dist/base.css`.                                       |
+| `.size-limit.json`                         | The size budgets with Brotli: 9.5 kB for `dist/index.js`, counted without `lit` and `@lit/task`, and 3 kB for `dist/base.css`.                                     |
 | `.stylelintrc.json`                        | This package's Baseline floor for Stylelint (below, "Styling"), on top of the root configuration.                                                                  |
 | `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
 
@@ -672,7 +672,7 @@ limit became 7 kB. Fetch mode (#203) brings the feature client and the request c
 bundle for the first time, and the total became 8.26 kB (8.07 kB before the review fixes), so the limit became 8.5 kB. Measured on their
 own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
 growth, and the element's fetch logic for the rest. The icons of #200 add the rest: with both,
-`dist/index.js` measures 8.52 kB, 18 bytes over 8.5 kB, so the limit is 9 kB. `dist/base.css`
+`dist/index.js` measured 8.52 kB, 18 bytes over 8.5 kB, so the limit became 9 kB. Source mode (#205) adds the source reader and the parser wait: with fetch mode, source mode and the icons together, `dist/index.js` measures 8.97 kB, 30 bytes under 9 kB, so the limit is 9.5 kB. `dist/base.css`
 measures 2.94 kB with Brotli against a limit of 3 kB; it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
 packaging issue (#206).
