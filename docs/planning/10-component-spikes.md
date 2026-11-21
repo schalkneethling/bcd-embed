@@ -1518,3 +1518,134 @@ state it needs.
   on `Document` and `DocumentFragment`, `NonElementParentNode`, `Node.getRootNode`,
   `Document.readyState` and `DocumentReadyState`.
 - MDN, `Document.readyState`, for what `loading` and `interactive` mean and the order of `readystatechange`, deferred scripts, and `DOMContentLoaded`.
+
+---
+
+## Issue #206 — Packaging verification: side effects, size budget, and manifest
+
+Measured on 21 November 2026 with Vite 8.3.8, `size-limit` 14.3.0 (`@size-limit/preset-small-lib`), `@custom-elements-manifest/analyzer` 0.11.0, and Playwright 1.65.1 (Chromium) on macOS. Every command ran in `packages/element` unless it names a path from the repository root.
+
+### Summary
+
+| Question                                            | Answer                                                                                   |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Does a consumer build keep the element registered?  | Yes. `customElements.get("bcd-compat-table")` is defined in the built page.              |
+| Does a type-only consumer ship Lit?                 | No. The built output holds none of Lit's version markers.                                |
+| Does `sideEffects: false` break the consumer?       | Yes. The element stays undefined and the consumer test fails.                            |
+| Size of the initial import with Lit, gzip           | 16,676 B (16.68 kB) against 25,000 B.                                                    |
+| Size of the renderer alone, gzip, without Lit       | 1,736 B against the 8,000 B threshold. With Lit counted it is 8,098 B (see below).       |
+| Decision on a lazy renderer chunk                   | None. The renderer stays a static import.                                                |
+| Is the manifest committed and checked?              | Yes. `packages/element/custom-elements.json`, compared with a fresh run by a Vitest test. |
+
+### Size, with the measures side by side
+
+| Entry (`.size-limit.json` options)                            | Bytes  | Reading                                           |
+| ------------------------------------------------------------- | ------ | ------------------------------------------------- |
+| `dist/index.js`, `gzip: true`                                 | 16,676 | The budget measure: Lit and `@lit/task` counted.  |
+| `dist/index.js`, Brotli                                       | 15,100 | The same entry with the preset's default.         |
+| `dist/index.js`, `gzip: true`, `ignore: ["lit", "@lit/task"]` | 9,917  | The element's own code with gzip.                 |
+| `src/render/table.ts`, `gzip: true`, no `ignore`              | 8,098  | The renderer with Lit counted.                    |
+| `src/render/table.ts`, `gzip: true`, `ignore: ["lit"]`        | 1,736  | The renderer alone, the figure for the 8 KB rule. |
+
+`"gzip": true` works as `size-limit/index.d.ts` says: the number changes from the Brotli figure, and the output line reads "minified and gzipped". `size-limit` reads `kB` as 1,000 bytes, so the 25 KB budget is 25,000 B.
+
+**Which figure the renderer rule uses.** Document 3 section 6 says to propose a lazy chunk only if the renderer alone measures more than 8 KB. `src/render/table.ts` imports `lit` for `html` and the `repeat` directive, and its other imports are `render/status.ts` and the message formatter (`render/error.ts` is imported by the shell, not by `table.ts`, so it is not in this measure). "Alone" can therefore mean two things. With Lit counted the renderer measures 8,098 B, which is 98 B over 8,000 B and 94 B under 8,192 B (8 KiB), so a binary reading of "8 KB" puts it under the threshold too. Without Lit it measures 1,736 B. This section uses 1,736 B, for one reason: a lazy chunk moves only code that the shell does not already load, and the shell's `LitElement` base class loads `lit-html` itself. The 6.4 kB difference is shared code, so splitting the renderer out could save about 1.7 kB of the 16.68 kB. The owner can overrule this reading. The decision, the numbers, the 8 KiB point, and the reason that the check fails the build instead of proposing an issue are in Document 3 section 6.
+
+### What is in the bundle
+
+This is a one-off Vite build of the entry with `lit` and `@lit/task` bundled (not external), with a plugin that reads each module's `renderedLength` from the output chunk, which is the data that `rollup-plugin-visualizer` draws. No visualizer package was added, so the repository gained no dependency. The script is not committed.
+
+```text
+chunk index.js: 60680 bytes minified, 77330 bytes rendered before minify
+  element src        51570 B  66.7%
+  lit-html           13200 B  17.1%
+  @lit/reactive-element    9146 B  11.8%
+  @lit/task           2446 B  3.2%
+  lit-element          968 B  1.3%
+  element src modules (bytes rendered):
+    bcd-compat-table.ts 10371   model/cell.ts 9778          model/note.ts 7444
+    strings/en.ts 4921          data/feature-client.ts 3976 render/table.ts 3066
+    model/payload-guard.ts 2161 model/table-model.ts 2066   strings/format.ts 1673
+    model/targets.ts 1625       render/status.ts 1541       data/request-cache.ts 1433
+    data/source-reader.ts 875   render/error.ts 510         index.ts 130
+```
+
+The output is one chunk. It holds no `zod` and no `@bcd-embed/schema` code. The three renderer files (`render/table.ts`, `render/status.ts`, `render/error.ts`) add 5.1 kB of the 77.3 kB before minification, and the table model (`model/cell.ts` and `model/note.ts`) is larger than the renderer. If the budget ever needs trimming, the model and the English message table are the larger targets.
+
+### The consumer build test
+
+`packages/element/tests/consumer-build.test.ts` builds the package into `node_modules/@bcd-embed/element/dist` of a temporary project, copies `package.json` there, and links `lit` and `@lit/task` from the package's own `node_modules`. It then builds the project with Vite in `production` mode, serves the result over HTTP, and loads it in Chromium. The consumer therefore follows the package's `exports` and `sideEffects`, and not a path alias.
+
+| Consumer's `main.ts`                                     | Result                                                                                                                                                   |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import "@bcd-embed/element";`                           | `customElements.get("bcd-compat-table")` is defined; the output holds `litHtmlVersions`, `reactiveElementVersions`, and `litElementVersions`; no page error. |
+| `import type { BcdCompatTableElement } from "…";`        | The element is undefined; the output holds none of those three markers; no page error.                                                                  |
+| `import { en } from "@bcd-embed/element";`               | The element is defined and the output holds the Lit markers (see "What the type-only test can and cannot show").                                          |
+| `import "@bcd-embed/element/base.css";`                  | The built CSS holds `@layer bcd-embed.base{` and the package's rules (see "base.css through exports").                                                  |
+| `import "@bcd-embed/element";` with `sideEffects: false` | The element is undefined.                                                                                                                                |
+
+Changing `sideEffects` to `false` in the real `packages/element/package.json` and running the test:
+
+```text
+$ pnpm exec vitest run --project node packages/element/tests/consumer-build.test.ts
+ × defines bcd-compat-table when the built page runs
+AssertionError: expected { defined: false, errors: [] } to deeply equal { defined: true, errors: [] }
+Tests  1 failed | 2 passed (3)
+exit=1
+```
+
+After reverting the change: `Tests  3 passed (3)`, exit 0.
+
+### What the consumer test does about three gaps
+
+**`NODE_ENV`.** Vitest sets `NODE_ENV=test`, and Vite fills `NODE_ENV` in only when it is unset, so a build started from a test chose Lit's development build through the `development` export condition. The first version of the test therefore did not build in production. `buildConsumer` now sets `process.env.NODE_ENV = "production"` around the consumer's build and restores it afterwards. Lit's development build logs "Lit is in dev mode. Not recommended for production!" when it loads, and the production build does not contain that text. The first test asserts that the text is absent, and a second test builds with `NODE_ENV=development` and asserts that the text is present, so the first assertion can fail. With the line that sets the variable disabled, the first test failed with `expected '(function(){let e=document.createElem…' not to contain 'Lit is in dev mode'`, exit 1.
+
+**What the type-only test can and cannot show.** `import type` is erased before the bundler resolves anything, so a build of `import type { … } from "@bcd-embed/element"` cannot fail on account of the package; it shows only that a type-only consumer ships no Lit. Two tests make the claim real. One installs the emitted `.d.ts` files beside `dist/index.js`, runs `tsc --noEmit` on a consumer that imports the types through `exports` (with `moduleResolution: "bundler"`), and checks that `document.querySelector("bcd-compat-table")` is typed through `HTMLElementTagNameMap` (a `@ts-expect-error` line fails the compile if the type were `any`). A second compile imports a name that the package does not export and must fail: `error TS2305: Module '"@bcd-embed/element"' has no exported member 'NotExported'`, exit 1. The other test imports a value, `en`: the element is then defined and the output holds the Lit markers, because every value of the entry is in `dist/index.js`, a side-effect file that holds the `customElements.define` call. **No value import of the package avoids Lit**, so the only Lit-free consumer is one that imports types.
+
+**`base.css` through `exports`.** A consumer that imports `@bcd-embed/element/base.css` builds, and the built CSS holds the package's rules. Vite's default CSS minifier, lightningcss, changed the file as issue #246 describes: the output starts with `@layer bcd-embed.base{.bcd-icon-supported{color:var(--lightningcss-light,var(--bcd-color-supported-light))var(--lightningcss-dark,var(--bcd-color-supported-dark))}…`, so the `@layer bcd-embed.base;` statement is gone and each `light-dark()` is lowered. The test therefore asserts on text that survives, `@layer bcd-embed.base{` and `.bcd-render-container`, and not on the statement. This does not contradict #246, which tracks the change.
+
+### Proof that the size check fails
+
+A 30 kB constant of random base64 text (incompressible, so gzip cannot shrink it) was appended to `src/index.ts` as `export const BLOB = "…"`, then `vite build --mode lib` and `size-limit` ran:
+
+```text
+$ pnpm exec size-limit
+  The initial import with lit and @lit/task, gzip: the 25 kB budget of Document 3 section 6 (…)
+  Package size limit has exceeded by 15.07 kB
+  Size limit: 25 kB
+  Size:       40.07 kB with all dependencies, minified and gzipped
+exit=1
+```
+
+After `git checkout src/index.ts` and a rebuild: `Size: 16.68 kB`, exit 0. The change was made in the working tree and not committed, so the history holds no commit that adds the constant.
+
+### Custom Elements Manifest
+
+- **Where.** `custom-elements.json` sits beside `package.json` (`outdir: "."` in `custom-elements-manifest.config.mjs`), not in `dist/`, which is not committed. `package.json` lists it in `files` and names it in `customElements`. `packagejson: false` stays, so the analyzer never edits `package.json`. The field is written by hand with the value the analyzer would write (`path.posix.join(outdir, "custom-elements.json")` in `src/utils/cli-helpers.js`).
+- **What it holds.** `globs` is now `src/index.ts`, `src/bcd-compat-table.ts`, and `src/public-types.ts`, the last only so that a plugin can read the interface's documentation. The element has six attributes (`query`, `endpoint`, `source`, `loading`, `browsers`, `locale`), seven public properties (those six and `data`, which has `attribute: false`), and two events (`bcd-load` and `bcd-error`, from the `@fires` tags). `src/index.ts` carries the `custom-element-definition` export. With the glob `src/**/*.ts`, which this issue's first commit replaced, the manifest listed 49 declarations from the 15 other modules (counted with `cem analyze --globs "src/**/*.ts"`), such as `buildTableModel` and `createFeatureClient`.
+- **Public surface only.** The analyzer 0.11.0 has no option for private members: `exclude` takes file globs, and `@internal` or `@ignore` (read by `hasIgnoreJSDoc` in `src/utils/ast-helpers.js`) would have to tag each private member. A plugin in `custom-elements-manifest.config.mjs` removes the class's members with `privacy: "private"` in `packageLinkPhase`, so an internal refactor no longer changes the manifest: the 29 private members and their initializer source are gone, and the file shrank from 24.6 kB to 13.5 kB. The same plugin copies each description from the JSDoc of the `BcdCompatTableElement` interface in `src/public-types.ts` onto the matching field and attribute, and replaces a type that is exactly an alias name with the alias's definition, so `loading` reads `"lazy" | "eager"` (the order in the source) and not `CompatTableLoading`. Adding a private field `#probe` to the element left `custom-elements-manifest.test.ts` passing (5 of 5).
+- **The check.** `tests/custom-elements-manifest.test.ts` runs `cem analyze --outdir <directory> --quiet` and compares the parsed result with the committed file. The analyzer joins `outdir` onto the working directory (`cli.js`, `path.join(cwd, mergedOptions.outdir)`), so the path must be relative to the package. The directory is a new one under the package's own `node_modules/.cache`, which Git ignores, so the relative path stays inside the package and on one drive on every platform. The test runs in `pnpm test`, so `pnpm check` and the CI `check` job run it.
+- **Exit code.** A `theme` property was added to `static properties` in `src/bcd-compat-table.ts` without regenerating the manifest:
+
+```text
+$ pnpm exec vitest run --project node packages/element/tests/custom-elements-manifest.test.ts
+ × equals a fresh run of the analyzer
+-               "attribute": "theme",
+Tests  1 failed | 3 passed (4)
+exit=1
+```
+
+After `git checkout src/bcd-compat-table.ts`: exit 0.
+
+### Not verified
+
+- The CI run itself. The checks ran locally. The CI `check` job installs only Chromium's headless shell, which `chromium.launch()` in the consumer test uses by default.
+- The consumer test with a bundler other than Vite. Framework fixture pages are #207.
+- The contents of `npm pack`. The package is private, and publishing is out of scope.
+
+### Sources checked
+
+- `size-limit/index.d.ts` (14.3.0): the `gzip`, `ignore`, `entry`, and `limit` entry options.
+- `@custom-elements-manifest/analyzer/src/utils/cli-helpers.js` (0.11.0): the flag list (`outdir`, `globs`, `litelement`, `packagejson`, `quiet`), the config keys read by `getUserConfig`, and `addCustomElementsPropertyToPackageJson`. `cli.js` for how `outdir` is joined.
+- `vite/dist/node/index.d.ts` (8.3.8): the `configFile?: string | false` option of `InlineConfig`, with `root`, `mode`, and `logLevel` as the existing `e2e/global-setup.ts` uses them.
+- `playwright-core` 1.65.1 `types/types.d.ts`: the `pageerror` event on `Page`.

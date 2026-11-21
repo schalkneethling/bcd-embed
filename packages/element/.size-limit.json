@@ -1,5 +1,18 @@
 [
   {
+    "name": "The initial import with lit and @lit/task, gzip: the 25 kB budget of Document 3 section 6 (measured 16.68 kB on 21 November 2026)",
+    "path": "dist/index.js",
+    "gzip": true,
+    "limit": "25 kB"
+  },
+  {
+    "name": "The renderer alone without lit, gzip: the 8 kB rule for a lazy chunk (measured 1.74 kB on 21 November 2026)",
+    "path": "src/render/table.ts",
+    "gzip": true,
+    "ignore": ["lit"],
+    "limit": "8 kB"
+  },
+  {
     "name": "dist/index.js without lit (measured 8.97 kB with Brotli on 20 November 2026, with fetch mode, source mode and the icons)",
     "path": "dist/index.js",
     "ignore": ["lit", "@lit/task"],

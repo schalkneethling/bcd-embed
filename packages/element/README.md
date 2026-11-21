@@ -8,6 +8,41 @@ element renders the table with no request. In source mode the `source` attribute
 request and no script of the page's own (see "Source mode"). The package also holds the message table, the note tokenizer, the table model, the feature client,
 and the screen reader tests, which walk the element's own table.
 
+## Installation and entry points
+
+The package is private and not published yet, so nothing installs it from the registry today. Once it
+is published, `lit` and `@lit/task` arrive with it, because they are listed under `dependencies`:
+
+```sh
+pnpm add @bcd-embed/element
+```
+
+The package has two entry points, and `exports` in `package.json` lists no others.
+
+| Import                        | What it gives you                                                                                                                                                                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@bcd-embed/element`          | Defines `<bcd-compat-table>`. The import itself is the effect, so write `import "@bcd-embed/element";`. It also exports the message table and the types, such as `BcdCompatTableElement`. It exports no class and no type from Lit. |
+| `@bcd-embed/element/base.css` | The opt-in base stylesheet, one file in the layer `bcd-embed.base` (see "Styling"). Link it, or import it through a bundler that does not minify CSS (see "If your bundler minifies the stylesheet").                               |
+
+`package.json` lists `./dist/index.js` and `./dist/*.css` under `sideEffects`, never a bare `false`.
+A bundler that reads `false` drops `import "@bcd-embed/element";`, because the page uses nothing
+from the import, and the element is never defined. `tests/consumer-build.test.ts` builds a
+throwaway consumer with Vite in production mode to check this: the built page defines
+`bcd-compat-table`, a consumer that imports only a type ships no Lit code, and with `sideEffects`
+set to `false` the element stays undefined.
+
+The package also ships `custom-elements.json`, the Custom Elements Manifest, and names it in the
+`customElements` field of `package.json`, so editors and documentation tools find the element's
+attributes, properties, and events.
+
+### Size
+
+The initial import, which is `dist/index.js` with Lit and `@lit/task`, measures 16.68 kB with gzip
+on 21 November 2026, against the budget of 25 kB (Document 3 section 6). The renderer alone,
+without Lit, measures 1.74 kB with gzip, so it stays a static import in the same file. `pnpm build`
+checks both with `size-limit` and fails when either goes over its limit. "Build and tests" lists the
+measurements that `.size-limit.json` holds.
+
 ## Usage
 
 The package is not published yet (`private` is `true`), so this is how a page will use it once it
@@ -516,31 +551,32 @@ property is registered or listed with its reason in `properties.css`, and
 
 ## Layout
 
-| Path                                       | Holds                                                                                                                                                              |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/index.ts`                             | The package entry. It defines the element, and everything the package exports passes through it.                                                                   |
-| `src/bcd-compat-table.ts`                  | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                     |
-| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the state icons (`status.ts`), and the loading and error sentences (`error.ts`).                 |
-| `src/styles/`                              | The opt-in base stylesheet: `base.css` imports `properties.css`, `tokens.css`, and `table.css` (below, "Styling").                                                 |
-| `src/model/table-model.ts`                 | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                    |
-| `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                                                                                             |
-| `src/strings/format.ts`                    | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                              |
-| `src/data/request-cache.ts`                | The request cache: one entry per URL, shared in-flight requests, and per-result retention.                                                                         |
-| `src/data/feature-client.ts`               | The feature client: builds the URL, calls `fetch`, and classifies the answer.                                                                                      |
-| `src/public-types.ts`                      | The public types, including the hand-written `BcdCompatTableElement`. `@bcd-embed/schema` is imported with `import type` only.                                     |
-| `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.                                                                           |
-| `tests/`                                   | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size. |
-| `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                          |
-| `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                         |
-| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                    |
-| `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                       |
-| `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                    |
-| `.size-limit.json`                         | The size budgets with Brotli: 9.5 kB for `dist/index.js`, counted without `lit` and `@lit/task`, and 3 kB for `dist/base.css`.                                     |
-| `.stylelintrc.json`                        | This package's Baseline floor for Stylelint (below, "Styling"), on top of the root configuration.                                                                  |
-| `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                  |
+| Path                                       | Holds                                                                                                                                                                                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`                             | The package entry. It defines the element, and everything the package exports passes through it.                                                                                                                |
+| `src/bcd-compat-table.ts`                  | The element's class: its properties, the render container, the `loaded` attribute, the events.                                                                                                                  |
+| `src/render/`                              | The Lit templates that map the table model to the Phase 1 markup, the state icons (`status.ts`), and the loading and error sentences (`error.ts`).                                                              |
+| `src/styles/`                              | The opt-in base stylesheet: `base.css` imports `properties.css`, `tokens.css`, and `table.css` (below, "Styling").                                                                                              |
+| `src/model/table-model.ts`                 | `buildTableModel`, which turns a payload into columns, rows, cells, and sentences, with no DOM.                                                                                                                 |
+| `src/strings/en.ts`                        | The English message table, keyed by message id, with `{placeholders}`.                                                                                                                                          |
+| `src/strings/format.ts`                    | `formatMessage`, `formatMessageToParts`, `MissingPlaceholderError`, and `selectStrings`, which falls back to English.                                                                                           |
+| `src/data/request-cache.ts`                | The request cache: one entry per URL, shared in-flight requests, and per-result retention.                                                                                                                      |
+| `src/data/feature-client.ts`               | The feature client: builds the URL, calls `fetch`, and classifies the answer.                                                                                                                                   |
+| `src/public-types.ts`                      | The public types, including the hand-written `BcdCompatTableElement`. `@bcd-embed/schema` is imported with `import type` only.                                                                                  |
+| `src/model/note.ts`                        | `parseNote`, which turns a BCD note string into text, code, emphasis, and link segments.                                                                                                                        |
+| `tests/`                                   | Vitest tests, `tests/fixtures/message-cases.ts`, the fixtures the schema package lacks, and `tests/fixtures/large-payload.ts`, which builds a payload of any size.                                              |
+| `browser/`                                 | Browser tests for the Chromium Vitest project, named `*.browser.test.ts`.                                                                                                                                       |
+| `e2e/`, `playwright.e2e.config.ts`         | Playwright Test files named `*.e2e.ts`, run in three engines with axe, and their fixtures.                                                                                                                      |
+| `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                                                                 |
+| `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                                                                    |
+| `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                                                                 |
+| `.size-limit.json`                         | The size budgets: 25 kB with gzip for `dist/index.js` with Lit, 8 kB with gzip for the renderer alone, and, with Brotli, 9.5 kB for `dist/index.js` without `lit` and `@lit/task` and 3 kB for `dist/base.css`. |
+| `custom-elements.json`                     | The Custom Elements Manifest. It is committed and published, and `tests/custom-elements-manifest.test.ts` fails when it differs from a fresh run.                                                               |
+| `.stylelintrc.json`                        | This package's Baseline floor for Stylelint (below, "Styling"), on top of the root configuration.                                                                                                               |
+| `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                                                               |
 
 `private` stays `true`, so nothing publishes yet. The package already has the shape a published one
-needs: `exports` for `.`, `./base.css`, and `./package.json`, `files` set to `dist`, and `sideEffects` in array
+needs: `exports` for `.`, `./base.css`, and `./package.json`, `files` set to `dist` and `custom-elements.json`, and `sideEffects` in array
 form (`["./dist/index.js", "./dist/*.css"]`), so a bundler keeps the entry and any stylesheet and
 drops the rest of an unused import. Before the package publishes, note that the emitted
 `dist/public-types.d.ts` imports types from `@bcd-embed/schema`, which is only a development
@@ -652,19 +688,29 @@ The client is not exported from `src/index.ts`; the element is its only caller.
 
 ## Build and tests
 
-| Command                                      | What it does                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` and `dist/base.css` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything. |
-| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                                    |
-| `pnpm --filter @bcd-embed/element test:live` | Runs the one test that calls the live, hosted API (`e2e/live-api.live.ts` with `playwright.live.config.ts`). It requests `css.properties.line-clamp` once, in Chromium, and is not part of `pnpm check` or of the Element browser workflow.                                                                                                       |
-| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                                    |
-| `pnpm --filter @bcd-embed/element cem`       | Writes `dist/custom-elements.json`. It leaves `package.json` unchanged. It lists the `bcd-compat-table` element with its `query`, `endpoint`, `loading`, `browsers`, and `locale` attributes and its two events.                                                                                                                                  |
+| Command                                      | What it does                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @bcd-embed/element build`     | Builds `dist/index.js` and `dist/base.css` with Vite, emits the type declarations with `tsc`, then checks the size budget. It needs `@bcd-embed/schema` built first, because the declarations import its types. `pnpm --filter @bcd-embed/element... build` builds the package and its dependencies in order, and `pnpm build` builds everything.                    |
+| `pnpm --filter @bcd-embed/element typecheck` | Type-checks the source, the tests and the screen reader tests.                                                                                                                                                                                                                                                                                                       |
+| `pnpm --filter @bcd-embed/element test:live` | Runs the one test that calls the live, hosted API (`e2e/live-api.live.ts` with `playwright.live.config.ts`). It requests `css.properties.line-clamp` once, in Chromium, and is not part of `pnpm check` or of the Element browser workflow.                                                                                                                          |
+| `pnpm exec vitest run packages/element`      | Runs this package's Vitest tests from the repository root. `pnpm test` runs them with every other workspace's.                                                                                                                                                                                                                                                       |
+| `pnpm --filter @bcd-embed/element cem`       | Rewrites `custom-elements.json` beside `package.json`, and leaves `package.json` unchanged. Run it and commit the result whenever the element's attributes, properties, or events change. It lists the `bcd-compat-table` element with its six attributes (`query`, `endpoint`, `source`, `loading`, `browsers`, `locale`), its `data` property, and its two events. |
 
 The Vitest tests include a production build into a temporary directory, which checks that
 `dist/index.js` has no mention of `zod` and that `dist/base.css` has the shape "Styling" describes. The element reads the schema package's types only, because
 Zod would roughly double the bundle. Another test emits the type declarations into a temporary
 directory under `node_modules/.cache` and follows every import from `index.d.ts`, to check that
 none of those files imports from `lit`.
+
+`tests/consumer-build.test.ts` builds the package and then a throwaway consumer project with Vite
+in production mode, and loads the built page in Chromium (the `playwright` package at the
+repository root, using the Chromium headless shell that CI installs with
+`pnpm exec playwright install --with-deps --only-shell chromium`). It also type-checks a consumer
+against the emitted declarations and builds one that imports `base.css`.
+`tests/custom-elements-manifest.test.ts` runs the analyzer into a directory under
+`node_modules/.cache` and compares the result with the committed `custom-elements.json`. The
+manifest lists the public surface only: a plugin in `custom-elements-manifest.config.mjs` removes
+private members, so an internal refactor does not change it.
 
 The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
 element, the table model, and the note tokenizer measured 6.43 kB with Brotli, without Lit, so the
@@ -674,8 +720,17 @@ own with Vite's minifier, the client and the cache account for about 1.4 kB of t
 growth, and the element's fetch logic for the rest. The icons of #200 add the rest: with both,
 `dist/index.js` measured 8.52 kB, 18 bytes over 8.5 kB, so the limit became 9 kB. Source mode (#205) adds the source reader and the parser wait: with fetch mode, source mode and the icons together, `dist/index.js` measures 8.97 kB, 30 bytes under 9 kB, so the limit is 9.5 kB. `dist/base.css`
 measures 2.94 kB with Brotli against a limit of 3 kB; it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
-next person to raise the limit sees what it was set against. The overall budget of 25 kB with gzip, Lit included, is set and checked by the
-packaging issue (#206).
+next person to raise the limit sees what it was set against.
+
+The packaging issue (#206) added the two gzip entries. `size-limit` 14.3.0 measures with Brotli
+unless an entry sets `"gzip": true`, and it counts `lit` unless an entry sets `ignore`. The first
+new entry, `dist/index.js` with `"gzip": true` and no `ignore`, is the overall budget of Document 3
+section 6: 16.68 kB against 25 kB, Lit and `@lit/task` included. The second measures
+`src/render/table.ts`, which imports only `render/status.ts` and the message formatter, with
+`"ignore": ["lit"]`: 1.74 kB against 8 kB, the threshold above which Document 3 proposes a lazy
+renderer chunk. The same file bundled with Lit counts 8.10 kB, but the shell's `LitElement` base
+class already brings in `lit-html`, the template engine that the renderer's templates run on, so a
+lazy renderer chunk could move only the 1.74 kB (Document 3 section 6 records the reading). `size-limit` reads `kB` as 1,000 bytes.
 
 ## Browser tests
 

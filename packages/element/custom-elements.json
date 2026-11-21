@@ -1,0 +1,392 @@
+{
+  "schemaVersion": "1.0.0",
+  "readme": "",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "src/index.ts",
+      "declarations": [],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "BcdCompatTableElement",
+          "declaration": {
+            "name": "BcdCompatTableElement",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdErrorDetail",
+          "declaration": {
+            "name": "BcdErrorDetail",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdErrorReason",
+          "declaration": {
+            "name": "BcdErrorReason",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdLoadDetail",
+          "declaration": {
+            "name": "BcdLoadDetail",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdMode",
+          "declaration": {
+            "name": "BcdMode",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "CompatTableData",
+          "declaration": {
+            "name": "CompatTableData",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "CompatTableLoading",
+          "declaration": {
+            "name": "CompatTableLoading",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MessageId",
+          "declaration": {
+            "name": "MessageId",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MessageValues",
+          "declaration": {
+            "name": "MessageValues",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "StringTable",
+          "declaration": {
+            "name": "StringTable",
+            "module": "./public-types.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "en",
+          "declaration": {
+            "name": "en",
+            "module": "./strings/en.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "formatMessage",
+          "declaration": {
+            "name": "formatMessage",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MissingPlaceholderError",
+          "declaration": {
+            "name": "MissingPlaceholderError",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "selectStrings",
+          "declaration": {
+            "name": "selectStrings",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "custom-element-definition",
+          "name": "bcd-compat-table",
+          "declaration": {
+            "name": "BcdCompatTable",
+            "module": "/src/bcd-compat-table.js"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/bcd-compat-table.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "RENDER_CONTAINER_CLASS",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"bcd-render-container\"",
+          "description": "The class of the `<div>` the element renders into. It is a public class name."
+        },
+        {
+          "kind": "variable",
+          "name": "LOADED_ATTRIBUTE",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"loaded\"",
+          "description": "The attribute the element sets on itself while a table is rendered. The base stylesheet hides\nthe author's fallback children while it is present (Document 3 section 4, \"Fallback content\")."
+        },
+        {
+          "kind": "variable",
+          "name": "LAZY_ROOT_MARGIN",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"400px\"",
+          "description": "How far outside the viewport a lazy element starts its request, as an `IntersectionObserver`\n`rootMargin`. 400 pixels is about half a phone screen, enough for a cached answer to arrive and\nrender before a reader who scrolls at a normal pace reaches the table. The browser applies the\nmargin only when the element's document can reach the top-level page's origin; in a cross-origin\niframe it ignores the margin, and the request starts when the element enters the viewport."
+        },
+        {
+          "kind": "class",
+          "description": "A browser compatibility table for one BCD (`@mdn/browser-compat-data`) feature and the features\nnested under it.",
+          "name": "BcdCompatTable",
+          "members": [
+            {
+              "kind": "field",
+              "name": "data",
+              "privacy": "public",
+              "type": {
+                "text": "CompatTableData | null"
+              },
+              "default": "null",
+              "description": "A contract-conformant payload. The element renders it without a request. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data; a change made inside the same object is not seen."
+            },
+            {
+              "kind": "field",
+              "name": "query",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "query",
+              "description": "The `query` attribute: the BCD dotted key to request, such as `css.properties.display`, or `null` when it is absent. The element requests it only while `data` is `null`."
+            },
+            {
+              "kind": "field",
+              "name": "endpoint",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "endpoint",
+              "description": "The `endpoint` attribute: the base URL of the API, or `null` for the hosted API, `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query string, fragment, or credentials; any other value gives the error `invalid-endpoint`."
+            },
+            {
+              "kind": "field",
+              "name": "source",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "source",
+              "description": "The `source` attribute: the `id` of a `<script type=\"application/json\">` that holds a payload, or `null` when it is absent. The element reads the script once for each id, so changing the script's text afterwards changes nothing. A `source` that is set keeps the element out of fetch mode, even when the read fails. `data` wins over `source`."
+            },
+            {
+              "kind": "field",
+              "name": "loading",
+              "privacy": "public",
+              "type": {
+                "text": "\"lazy\" | \"eager\""
+              },
+              "default": "\"lazy\"",
+              "attribute": "loading",
+              "description": "The `loading` attribute. `lazy`, the default, holds the first request back until the element nears the viewport; `eager` requests on connection. A missing or unknown value reads as `lazy`, and the property does not write the attribute back."
+            },
+            {
+              "kind": "field",
+              "name": "browsers",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "browsers",
+              "description": "The `browsers` attribute: space-separated support target ids, or `null` for the default."
+            },
+            {
+              "kind": "field",
+              "name": "locale",
+              "privacy": "public",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "attribute": "locale",
+              "description": "The `locale` attribute. An unknown locale, and `null`, select English."
+            }
+          ],
+          "events": [
+            {
+              "name": "bcd-load",
+              "type": {
+                "text": "CustomEvent"
+              },
+              "description": "A table has rendered. The detail is `{ mode, snapshot }`."
+            },
+            {
+              "name": "bcd-error",
+              "type": {
+                "text": "CustomEvent"
+              },
+              "description": "No table could be rendered. The detail is `{ mode, reason, status, code }`."
+            }
+          ],
+          "attributes": [
+            {
+              "name": "query",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "query",
+              "description": "The `query` attribute: the BCD dotted key to request, such as `css.properties.display`, or `null` when it is absent. The element requests it only while `data` is `null`."
+            },
+            {
+              "name": "endpoint",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "endpoint",
+              "description": "The `endpoint` attribute: the base URL of the API, or `null` for the hosted API, `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query string, fragment, or credentials; any other value gives the error `invalid-endpoint`."
+            },
+            {
+              "name": "source",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "source",
+              "description": "The `source` attribute: the `id` of a `<script type=\"application/json\">` that holds a payload, or `null` when it is absent. The element reads the script once for each id, so changing the script's text afterwards changes nothing. A `source` that is set keeps the element out of fetch mode, even when the read fails. `data` wins over `source`."
+            },
+            {
+              "name": "loading",
+              "type": {
+                "text": "\"lazy\" | \"eager\""
+              },
+              "default": "\"lazy\"",
+              "fieldName": "loading",
+              "description": "The `loading` attribute. `lazy`, the default, holds the first request back until the element nears the viewport; `eager` requests on connection. A missing or unknown value reads as `lazy`, and the property does not write the attribute back."
+            },
+            {
+              "name": "browsers",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "browsers",
+              "description": "The `browsers` attribute: space-separated support target ids, or `null` for the default."
+            },
+            {
+              "name": "locale",
+              "type": {
+                "text": "string | null"
+              },
+              "default": "null",
+              "fieldName": "locale",
+              "description": "The `locale` attribute. An unknown locale, and `null`, select English."
+            }
+          ],
+          "superclass": {
+            "name": "LitElement",
+            "package": "lit"
+          },
+          "tagName": "bcd-compat-table",
+          "customElement": true
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "RENDER_CONTAINER_CLASS",
+          "declaration": {
+            "name": "RENDER_CONTAINER_CLASS",
+            "module": "src/bcd-compat-table.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "LOADED_ATTRIBUTE",
+          "declaration": {
+            "name": "LOADED_ATTRIBUTE",
+            "module": "src/bcd-compat-table.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "LAZY_ROOT_MARGIN",
+          "declaration": {
+            "name": "LAZY_ROOT_MARGIN",
+            "module": "src/bcd-compat-table.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "BcdCompatTable",
+          "declaration": {
+            "name": "BcdCompatTable",
+            "module": "src/bcd-compat-table.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/public-types.ts",
+      "declarations": [],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "MessageId",
+          "declaration": {
+            "name": "MessageId",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MessageValues",
+          "declaration": {
+            "name": "MessageValues",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "StringTable",
+          "declaration": {
+            "name": "StringTable",
+            "module": "./strings/format.js"
+          }
+        }
+      ]
+    }
+  ]
+}
