@@ -10,9 +10,11 @@ BCD releases. The API Worker has been deployed to Cloudflare since 15 November
 2026, answers on `https://api.browser-compat.dev`, and serves BCD 8.1.9, behind a Cloudflare rate limiting rule and with Sentry alerting. One launch
 requirement remains open, a test under sustained load, which the
 [deployment page](./apps/website/src/content/docs/deployment.md#what-is-still-open-before-a-public-launch)
-lists. The web component (`packages/element`) renders in fetch, data, and source modes, and is
-not published yet. The design and sequencing
-decisions live in [`docs/planning`](./docs/planning/).
+lists. The web component, `<bcd-compat-table>` in `packages/element`, renders a
+table from the API, from a `data` property, or from inline JSON; it is built and
+tested but not published to npm yet. The documentation site documents it, starting at
+[Getting started](./apps/website/src/content/docs/component/getting-started.mdx).
+The design and sequencing decisions live in [`docs/planning`](./docs/planning/).
 
 ## Repository layout
 
@@ -35,8 +37,9 @@ workspaces are:
   explicitly opts in, uploads it to an R2 bucket and switches the current
   snapshot.
 - `packages/element` — `@bcd-embed/element`, the `<bcd-compat-table>` web
-  component, its opt-in base stylesheet, and its screen reader tests. It is
-  private until it is published.
+  component, its optional base stylesheet, its browser and screen reader tests,
+  and the examples that the documentation site shows. The package is private
+  and not published yet.
 - `apps/worker` — `@bcd-embed/worker`, the Cloudflare Worker that runs the
   server handler against an R2 bucket binding and adds edge caching and error
   reporting. It is deployed manually with `pnpm --filter @bcd-embed/worker run
@@ -116,7 +119,7 @@ The design documents in [`docs/planning`](./docs/planning/) are:
 - [`02-api-server-architecture.md`](./docs/planning/02-api-server-architecture.md)
   — the static-serving architecture and the implementation phases.
 - [`03-web-component-architecture.md`](./docs/planning/03-web-component-architecture.md)
-  — the design of the web component, which is not built yet.
+  — the design of the web component, amended as each part was built.
 - [`07-component-phase1-markup.md`](./docs/planning/07-component-phase1-markup.md)
   — the Phase 1 static markup for the table, and the screen reader validation
   that is still pending.

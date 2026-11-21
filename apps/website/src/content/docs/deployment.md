@@ -271,12 +271,12 @@ responses; it does not serve the file itself. A request that matches several
 rules gets the headers of all of them, and a header name set by two rules is
 joined with a comma. So each header name appears under one rule only.
 
-| Path        | Header                                | Value                                                                                                           |
-| ----------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `/*`        | `X-Content-Type-Options`              | `nosniff`                                                                                                       |
-| `/*`        | `Referrer-Policy`                     | `strict-origin-when-cross-origin`                                                                               |
-| `/*`        | `Content-Security-Policy-Report-Only` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:` |
-| `/_astro/*` | `Cache-Control`                       | `public, max-age=31536000, immutable`                                                                           |
+| Path        | Header                                | Value                                                                                                                                                              |
+| ----------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/*`        | `X-Content-Type-Options`              | `nosniff`                                                                                                                                                          |
+| `/*`        | `Referrer-Policy`                     | `strict-origin-when-cross-origin`                                                                                                                                  |
+| `/*`        | `Content-Security-Policy-Report-Only` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.browser-compat.dev` |
+| `/_astro/*` | `Cache-Control`                       | `public, max-age=31536000, immutable`                                                                                                                              |
 
 Astro puts a content hash in the name of every file under `_astro/`, so a file
 at one address never changes and can be cached for a year. HTML keeps
@@ -298,7 +298,31 @@ of the built site reported no `securitypolicyviolation` event on the home page,
 the page with diagrams, or the search dialog with a query typed, in Chromium
 159.0.8154.6, Firefox 159.0 and WebKit 27.2 (all through Playwright 1.65.1).
 WebKit logged one console message per page load saying the policy has no
-reporting directive; that is not a violation. The
+reporting directive; that is not a violation.
+
+The `connect-src` directive came with the web component's pages (#208). The
+live example on [Getting started](/component/getting-started/) requests its
+table from `https://api.browser-compat.dev`, which the earlier policy did not
+allow, so each engine reported the request: Chromium 159 with two
+`connect-src` events, Firefox 159 and WebKit 27.2 with one each. With
+`connect-src 'self' https://api.browser-compat.dev`, the same local run
+reported no event on the document of the home page, the page with diagrams,
+the search dialog, or the getting-started page, in all three engines.
+
+`'self'` stays in the directive because `default-src` no longer covers
+requests once `connect-src` is set, and the search dialog's index is fetched
+from the site. Pagefind, the search library, fetches its index from a
+dedicated worker, and a violation in a worker is reported to the worker, not
+to the document, so the runs above, and #193's, did not hear it.
+`tests/website-component-docs.test.ts` listens in the worker too, in Chromium
+only, on every `pnpm check`. With `'self'` left out of `connect-src`, it hears
+the worker's requests for the index reported. With the policy above, it hears
+one report that predates the component's pages: the worker compiles
+WebAssembly, which `script-src` reports as `wasm-eval`, because the policy has
+no `'wasm-unsafe-eval'`. An enforcing policy would need that source, or search
+would stop working. The test names that one report and fails on any other.
+
+The
 [measurement](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/10-component-spikes.md)
 lists each engine's counts. The policy allows `'unsafe-inline'` for
 scripts and styles, so it would not stop injected inline script. An enforcing
