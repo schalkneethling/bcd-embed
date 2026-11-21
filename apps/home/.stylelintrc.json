@@ -1,0 +1,7 @@
+{
+  "extends": ["../../.stylelintrc.json"],
+  "ignoreFiles": ["dist/**", "node_modules/**"],
+  "rules": {
+    "plugin/use-baseline": [true, { "available": 2025 }]
+  }
+}

@@ -12,12 +12,14 @@ import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import AxeBuilder from "@axe-core/playwright";
 import type { CompatData } from "@mdn/browser-compat-data/types";
 import { featureResponseSchema, type FeatureResponse } from "@bcd-embed/schema";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { assertNoTopLevelV1 } from "../scripts/assert-no-v1.mjs";
+import { contrastRatio, parseRgb, type Rgb } from "./contrast.js";
 import {
   EXAMPLES,
   LIVE_EXAMPLE,
@@ -80,12 +82,25 @@ type PageSession = {
 // Opens a page in a new context. The hosted API is answered from installed BCD with the CORS header
 // the real API sends; any other foreign request is aborted and recorded.
 const openPage = async (
-  options: { javaScriptEnabled?: boolean; height?: number; path?: string } = {},
+  options: {
+    javaScriptEnabled?: boolean;
+    width?: number;
+    height?: number;
+    path?: string;
+    colorScheme?: "light" | "dark";
+    forcedColors?: "active" | "none";
+    reducedMotion?: "reduce" | "no-preference";
+    /** Rewrites each stylesheet before the page receives it, to play a browser that lacks a feature. */
+    transformCss?: (css: string) => string;
+  } = {},
 ): Promise<PageSession> => {
   if (browser === undefined || site === undefined) throw new Error("The test setup did not run.");
   const context = await browser.newContext({
     javaScriptEnabled: options.javaScriptEnabled ?? true,
-    viewport: { width: 1280, height: options.height ?? 720 },
+    viewport: { width: options.width ?? 1280, height: options.height ?? 720 },
+    colorScheme: options.colorScheme,
+    forcedColors: options.forcedColors,
+    reducedMotion: options.reducedMotion,
   });
   const apiRequests: string[] = [];
   const foreignRequests: string[] = [];
@@ -104,6 +119,11 @@ const openPage = async (
       return;
     }
     if (new URL(url).origin === local) {
+      if (options.transformCss !== undefined && new URL(url).pathname.endsWith(".css")) {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: options.transformCss(await response.text()) });
+        return;
+      }
       await route.continue();
       return;
     }
@@ -282,8 +302,9 @@ describe("switching panels", () => {
     const { context, page } = await openPage();
     try {
       await waitForTables(page);
+      // The radio is clipped away, so a reader clicks its label, which moves focus to the radio.
       for (const example of EXAMPLES) {
-        await page.locator(`#example-${example.id}`).click();
+        await page.locator(`label[for="example-${example.id}"]`).click();
         expect(await page.evaluate(() => document.activeElement?.id)).toBe(`example-${example.id}`);
       }
       await page.keyboard.press("ArrowLeft");
@@ -417,8 +438,9 @@ describe("the inline data", () => {
       await waitForTables(page);
       expect(await page.locator(`script#${id}`).count()).toBe(1);
       expect(await page.locator('script[type="application/json"]').count()).toBe(4);
-      // The four data scripts and the element's module. No script came from the note.
-      expect(await page.locator("script").count()).toBe(5);
+      // The four data scripts, the element's module, and the status module. No script came from
+      // the note.
+      expect(await page.locator("script").count()).toBe(6);
       const note = await page.locator("#panel-css bcd-compat-table").textContent();
       expect(note).toContain("</script><script>alert(1)</script>");
       expect(dialogs).toEqual([]);
@@ -502,4 +524,548 @@ describe("the built site", () => {
       await rm(join(outDirectory, "v1"), { recursive: true, force: true });
     }
   });
+});
+
+// The status region (issue #210). A script creates it, so it exists only where script runs.
+describe("the status region", () => {
+  it("is not in the built HTML, because a script creates it", () => {
+    expect(builtHtml).not.toMatch(/role=["']?status/);
+    expect(builtHtml).not.toContain("aria-live");
+  });
+
+  it("is not in the page when script is turned off", async () => {
+    const { context, page } = await openPage({ javaScriptEnabled: false });
+    try {
+      expect(await page.locator('[role="status"]').count()).toBe(0);
+      expect(await page.locator("[aria-live]").count()).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("exists and is empty once the page has loaded, outside the panels", async () => {
+    const { context, page } = await openPage();
+    try {
+      await waitForTables(page);
+      const status = page.locator('[role="status"]');
+      expect(await status.count()).toBe(1);
+      expect(await status.textContent()).toBe("");
+      expect(await status.evaluate((element) => element.closest(".example-panel"))).toBeNull();
+      expect(await status.evaluate((element) => element.parentElement?.className)).toBe("examples");
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("holds one sentence that names the example after each selection, by mouse or keyboard", async () => {
+    const { context, page } = await openPage();
+    try {
+      await waitForTables(page);
+      const status = page.locator('[role="status"]');
+      // The HTML radio starts checked, so choosing it first would change nothing. It goes last.
+      for (const example of [...EXAMPLES.slice(1), ...EXAMPLES.slice(0, 1)]) {
+        await page.locator(`label[for="example-${example.id}"]`).click();
+        const text = (await status.textContent()) ?? "";
+        expect(text).toBe(example.announcement);
+        expect(text).toMatch(/^Showing the [^\n]+ example: [^\n]+$/);
+        expect(text).toContain(example.name);
+      }
+      // The keyboard path changes the sentence too, and focus stays on the radio.
+      await page.keyboard.press("ArrowRight");
+      expect(await status.textContent()).toBe(EXAMPLES[1]?.announcement);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("example-css");
+    } finally {
+      await context.close();
+    }
+  });
+
+  // A note or a name could hold markup, and the region must show it as text, never parse it.
+  it("sets the sentence as text, so markup in it stays literal", async () => {
+    const { context, page } = await openPage();
+    try {
+      await waitForTables(page);
+      const literal = "<b>x</b>";
+      await page.locator("#example-css").evaluate((radio, text) => {
+        (radio as HTMLInputElement).dataset.announcement = text;
+      }, literal);
+      await labelFor(page, "css").click();
+      const status = page.locator('[role="status"]');
+      expect(await status.evaluate((element) => element.childElementCount)).toBe(0);
+      expect(await status.textContent()).toBe(literal);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("is not visible, and takes no room", async () => {
+    const { context, page } = await openPage();
+    try {
+      const status = page.locator('[role="status"]');
+      const box = await status.boundingBox();
+      expect(box === null || (box.width <= 1 && box.height <= 1)).toBe(true);
+      expect(await status.evaluate((element) => getComputedStyle(element).display)).not.toBe(
+        "none",
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  // A strict policy (#211) serves `script-src 'self'` and `style-src 'self'`, which blocks inline
+  // script and every `style` attribute in the HTML.
+  it("comes from a script file, with no inline script or style in the built HTML", () => {
+    const scripts = [...builtHtml.matchAll(/<script\b([^>]*)>/g)].map((match) => match[1] ?? "");
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const attributes of scripts) {
+      expect(
+        /type="application\/json"/.test(attributes) || /\ssrc="\/[^"]+\.js"/.test(attributes),
+      ).toBe(true);
+    }
+    // Only the attributes of tags count. The text of a script is data, and a note in BCD may hold
+    // any characters, so the check removes script bodies and reads the tags that remain.
+    const tags = builtHtml.replace(/<script\b[^>]*>[^]*?<\/script>/g, "").match(/<[a-zA-Z][^>]*>/g);
+    expect(tags?.length).toBeGreaterThan(0);
+    for (const tag of tags ?? []) {
+      expect(tag, "a style attribute").not.toMatch(/\sstyle\s*=/);
+      expect(tag, "an event handler attribute").not.toMatch(/\son[a-z]+\s*=/);
+    }
+  });
+});
+
+type Scheme = "light" | "dark";
+const SCHEMES: readonly Scheme[] = ["light", "dark"];
+
+/** The computed value of each property on the first element the locator matches. */
+const computed = <Name extends string>(
+  locator: Locator,
+  names: readonly Name[],
+): Promise<Record<Name, string>> =>
+  locator.evaluate((element, properties) => {
+    const style = getComputedStyle(element);
+    return Object.fromEntries(
+      properties.map((property) => [property, style.getPropertyValue(property)]),
+    );
+  }, names) as Promise<Record<Name, string>>;
+
+const labelFor = (page: Page, id: string) => page.locator(`label[for="example-${id}"]`);
+
+// Every style rule in every stylesheet, nested rules included.
+const styleRules = (page: Page) =>
+  page.evaluate(() => {
+    const found: { selector: string; boxShadow: string }[] = [];
+    const walk = (rules: CSSRuleList) => {
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule) {
+          found.push({ selector: rule.selectorText, boxShadow: rule.style.boxShadow });
+        }
+        if ("cssRules" in rule) walk(rule.cssRules as CSSRuleList);
+      }
+    };
+    for (const sheet of document.styleSheets) walk(sheet.cssRules);
+    return found;
+  });
+
+describe("the segmented control's styles", () => {
+  it("hides each radio with a clip pattern, and keeps it rendered", async () => {
+    const { context, page } = await openPage();
+    try {
+      const radio = await computed(page.locator("#example-html"), [
+        "position",
+        "clip-path",
+        "display",
+        "visibility",
+        "inline-size",
+        "block-size",
+        "opacity",
+      ] as const);
+      expect(radio.position).toBe("absolute");
+      expect(radio["clip-path"]).not.toBe("none");
+      expect(radio.display).not.toBe("none");
+      expect(radio.visibility).toBe("visible");
+      expect(radio.opacity).toBe("1");
+      expect(Number.parseFloat(radio["inline-size"])).toBeLessThanOrEqual(1);
+      expect(Number.parseFloat(radio["block-size"])).toBeLessThanOrEqual(1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("styles the checked and focus states with the sibling combinator, with no :has() and no box-shadow", async () => {
+    const { context, page } = await openPage();
+    try {
+      const rules = await styleRules(page);
+      const stateful = rules.filter(
+        ({ selector }) => selector.includes(":checked") || selector.includes(":focus"),
+      );
+      const selectors = stateful.map(({ selector }) => selector);
+      expect(selectors.some((selector) => selector.includes("input:checked + label"))).toBe(true);
+      expect(selectors.some((selector) => selector.includes("input:focus-visible + label"))).toBe(
+        true,
+      );
+      // The one rule allowed to use :has() in a :checked or :focus selector is the panel switching,
+      // which reaches the panels, not a label, so it cannot use the sibling combinator. Nothing
+      // else may.
+      const panelSwitching =
+        /^\.examples:has\(\[value="(html|css|javascript|api)"\]:checked\) \.example-panel:not\(\[data-example="\1"\]\)$/;
+      const withHas = selectors
+        .flatMap((selector) => selector.split(", "))
+        .filter((selector) => selector.includes(":has("));
+      expect(withHas).toHaveLength(4);
+      for (const selector of withHas) expect(selector).toMatch(panelSwitching);
+      // Forced colours removes a box-shadow, so no state rule and no rule of the control may use one.
+      for (const { selector, boxShadow } of rules) {
+        if (
+          selector.includes(":checked") ||
+          selector.includes(":focus") ||
+          selector.includes(".example-choices")
+        ) {
+          expect(boxShadow, selector).toBe("");
+        }
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  // A browser that parses :has() but not light-dark() drops each declaration that has light-dark()
+  // with literal arguments and keeps the plain one before it. The test plays that browser by
+  // renaming the function in the stylesheets, which makes the declaration invalid at parse time.
+  it.each(SCHEMES)(
+    "keeps a border, a checked border and a focus ring in a browser without light-dark(), in the %s scheme",
+    async (scheme) => {
+      const { context, page } = await openPage({
+        colorScheme: scheme,
+        transformCss: (css) => css.replaceAll("light-dark(", "lightdark("),
+      });
+      try {
+        const pageBackground = parseRgb(
+          (await computed(page.locator("html"), ["background-color"] as const))["background-color"],
+        );
+        const names = ["border-top-width", "border-top-color"] as const;
+        const unchecked = await computed(labelFor(page, "css"), names);
+        const checked = await computed(labelFor(page, "html"), names);
+        expect(unchecked["border-top-width"]).toBe("2px");
+        expect(checked["border-top-width"]).toBe("4px");
+        // The plain fallback, which proves that the renamed function was dropped.
+        expect(unchecked["border-top-color"]).toBe("rgb(128, 128, 128)");
+        expect(
+          contrastRatio(parseRgb(unchecked["border-top-color"]), pageBackground),
+        ).toBeGreaterThanOrEqual(3);
+        expect(
+          contrastRatio(parseRgb(checked["border-top-color"]), pageBackground),
+        ).toBeGreaterThanOrEqual(3);
+
+        await page.keyboard.press("Tab");
+        const ring = await computed(labelFor(page, "html"), [
+          "outline-style",
+          "outline-width",
+          "outline-color",
+        ] as const);
+        expect(ring["outline-style"]).toBe("solid");
+        expect(ring["outline-width"]).toBe("3px");
+        expect(
+          contrastRatio(parseRgb(ring["outline-color"]), pageBackground),
+          `ring ${ring["outline-color"]} in ${scheme}`,
+        ).toBeGreaterThanOrEqual(3);
+      } finally {
+        await context.close();
+      }
+    },
+  );
+
+  it("differs between the checked and an unchecked label by more than colour", async () => {
+    const { context, page } = await openPage();
+    try {
+      const names = ["border-top-width", "border-top-style", "font-weight"] as const;
+      const checked = await computed(labelFor(page, "html"), names);
+      const unchecked = await computed(labelFor(page, "css"), names);
+      expect(Number.parseFloat(checked["border-top-width"])).toBeGreaterThan(
+        Number.parseFloat(unchecked["border-top-width"]),
+      );
+      expect(Number(checked["font-weight"])).toBeGreaterThan(Number(unchecked["font-weight"]));
+      expect(checked["border-top-style"]).toBe("solid");
+    } finally {
+      await context.close();
+    }
+  });
+
+  // The radios stay in a group, so a keyboard user always lands on the checked one, and its label
+  // shows the ring and the checked style together. The ring is an outline, drawn outside the
+  // border, so the two stay apart.
+  it("draws a focus ring of at least 2 pixels, apart from the checked style, only for keyboard focus", async () => {
+    const { context, page } = await openPage();
+    try {
+      const names = ["outline-width", "outline-style", "outline-offset", "outline-color"] as const;
+      expect((await computed(labelFor(page, "html"), names))["outline-style"]).toBe("none");
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("example-html");
+      const ring = await computed(labelFor(page, "html"), names);
+      expect(ring["outline-style"]).toBe("solid");
+      expect(Number.parseFloat(ring["outline-width"])).toBeGreaterThanOrEqual(2);
+      // An offset of at least 2 pixels keeps the ring off the checked border, so the colour next to
+      // the ring is the page's on both sides, and the contrast test measures it against the page.
+      expect(Number.parseFloat(ring["outline-offset"])).toBeGreaterThanOrEqual(2);
+      // A mouse click on another label checks it without a ring.
+      await labelFor(page, "css").click();
+      expect((await computed(labelFor(page, "css"), names))["outline-style"]).toBe("none");
+    } finally {
+      await context.close();
+    }
+  });
+
+  it.each([320, 1280])(
+    "keeps every label at least 44 by 44 pixels at %i pixels wide",
+    async (width) => {
+      const { context, page } = await openPage({ width });
+      try {
+        for (const example of EXAMPLES) {
+          const box = await labelFor(page, example.id).boundingBox();
+          // WCAG 2.5.8 asks for 24 by 24; the design aims for 44.
+          expect(box?.width).toBeGreaterThanOrEqual(44);
+          expect(box?.height).toBeGreaterThanOrEqual(44);
+        }
+        // The labels wrap instead of leaving the viewport, so a narrow screen needs no sideways
+        // scrolling.
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+      } finally {
+        await context.close();
+      }
+    },
+  );
+
+  it("moves no label when the selection changes", async () => {
+    const { context, page } = await openPage({ width: 400 });
+    try {
+      const boxes = () =>
+        Promise.all(EXAMPLES.map((example) => labelFor(page, example.id).boundingBox()));
+      const before = await boxes();
+      await labelFor(page, "javascript").click();
+      expect(await boxes()).toEqual(before);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+// A developer sets this to a directory to keep the screenshots the tests take, for a visual check.
+const screenshotDirectory = process.env.BCD_EMBED_HOME_SCREENSHOTS;
+// It takes a function, so no screenshot is taken when the variable is unset.
+const keepScreenshot = async (name: string, take: () => Promise<Buffer>): Promise<void> => {
+  if (screenshotDirectory === undefined) return;
+  await mkdir(screenshotDirectory, { recursive: true });
+  await writeFile(join(screenshotDirectory, `${name}.png`), await take());
+};
+
+// A screenshot of the element and the margin around it, which holds a focus ring, taken with the
+// pointer away so that no label is hovered.
+const photographAround = async (page: Page, locator: Locator, margin = 12): Promise<Buffer> => {
+  await page.mouse.move(0, 0);
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error("The element has no box.");
+  return page.screenshot({
+    clip: {
+      x: Math.max(0, box.x - margin),
+      y: Math.max(0, box.y - margin),
+      width: box.width + 2 * margin,
+      height: box.height + 2 * margin,
+    },
+  });
+};
+
+type Check = { readonly pair: string; readonly ratio: number; readonly minimum: number };
+
+describe.each(SCHEMES)("the segmented control's contrast in the %s scheme", (scheme) => {
+  // Every colour is read from the browser's computed style, so each ratio is the one the page
+  // paints. Each pair is a colour against the colour next to it.
+  it("meets 3:1 for the boundary, the checked indicator and the focus ring, and 4.5:1 for text", async () => {
+    const { context, page } = await openPage({ colorScheme: scheme });
+    try {
+      const colour = async (locator: Locator, name: string): Promise<Rgb> =>
+        parseRgb((await computed(locator, [name] as const))[name] ?? "");
+      const pageBackground = await colour(page.locator("html"), "background-color");
+      const bodyText = await colour(page.locator("body"), "color");
+
+      const checkedLabel = labelFor(page, "html");
+      const checkedBorder = await colour(checkedLabel, "border-top-color");
+      const checkedFill = await colour(checkedLabel, "background-color");
+      const checkedText = await colour(checkedLabel, "color");
+
+      const label = labelFor(page, "css");
+      const border = await colour(label, "border-top-color");
+      const fill = await colour(label, "background-color");
+      const text = await colour(label, "color");
+
+      await label.hover();
+      const hoverFill = await colour(label, "background-color");
+      const hoverText = await colour(label, "color");
+      const hoverBorder = await colour(label, "border-top-color");
+      await page.mouse.move(0, 0);
+
+      await page.keyboard.press("Tab");
+      const ring = await colour(checkedLabel, "outline-color");
+
+      const checks: Check[] = [
+        {
+          pair: "unchecked border on the page",
+          ratio: contrastRatio(border, pageBackground),
+          minimum: 3,
+        },
+        { pair: "unchecked border on its label", ratio: contrastRatio(border, fill), minimum: 3 },
+        {
+          pair: "unchecked border on its hovered label",
+          ratio: contrastRatio(hoverBorder, hoverFill),
+          minimum: 3,
+        },
+        {
+          pair: "checked border on the page",
+          ratio: contrastRatio(checkedBorder, pageBackground),
+          minimum: 3,
+        },
+        {
+          pair: "checked border on its label",
+          ratio: contrastRatio(checkedBorder, checkedFill),
+          minimum: 3,
+        },
+        { pair: "focus ring on the page", ratio: contrastRatio(ring, pageBackground), minimum: 3 },
+        { pair: "unchecked label text", ratio: contrastRatio(text, fill), minimum: 4.5 },
+        { pair: "hovered label text", ratio: contrastRatio(hoverText, hoverFill), minimum: 4.5 },
+        {
+          pair: "checked label text",
+          ratio: contrastRatio(checkedText, checkedFill),
+          minimum: 4.5,
+        },
+        {
+          pair: "body text on the page",
+          ratio: contrastRatio(bodyText, pageBackground),
+          minimum: 4.5,
+        },
+      ];
+      await keepScreenshot(`segmented-control-${scheme}`, () =>
+        photographAround(page, page.locator(".example-choices")),
+      );
+      if (process.env.BCD_EMBED_HOME_CONTRAST_REPORT === "1") {
+        const rows = checks.map(
+          ({ pair, ratio, minimum }) => `${pair}\t${ratio.toFixed(2)}\t${minimum}`,
+        );
+        console.info(`\n${scheme}\n${rows.join("\n")}`);
+      }
+      for (const { pair, ratio, minimum } of checks) {
+        expect(ratio, `${pair} in ${scheme}`).toBeGreaterThanOrEqual(minimum);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("motion", () => {
+  // The listener sits on the document in the capture phase, so it sees a transition on any element
+  // of the page, the panels, the status region and the tables included.
+  it("starts no transition anywhere on the page under prefers-reduced-motion: reduce", async () => {
+    const { context, page } = await openPage({ reducedMotion: "reduce" });
+    try {
+      await waitForTables(page);
+      await page.evaluate(() => {
+        const started: string[] = [];
+        for (const type of ["transitionrun", "transitionstart"]) {
+          document.addEventListener(type, (event) => started.push(event.type), true);
+        }
+        (window as unknown as { started: string[] }).started = started;
+      });
+      const durations = await page.evaluate(() =>
+        [...document.querySelectorAll("*")].map(
+          (element) => getComputedStyle(element).transitionDuration,
+        ),
+      );
+      expect(durations.length).toBeGreaterThan(100);
+      for (const duration of durations) {
+        for (const value of duration.split(",")) expect(Number.parseFloat(value)).toBe(0);
+      }
+      // A selection by mouse and by keyboard, a disclosure in the table, and the pointer over it.
+      await labelFor(page, "css").click();
+      await page.keyboard.press("ArrowRight");
+      const summary = page
+        .locator(".example-panel:visible bcd-compat-table details summary")
+        .first();
+      await summary.click();
+      await summary.hover();
+      await page.waitForTimeout(100);
+      const started = await page.evaluate(
+        () => (window as unknown as { started: string[] }).started,
+      );
+      expect(started).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("forced colours", () => {
+  // Under `forced-colors: active` the browser replaces the author's colours and removes shadows, so
+  // only shape survives. The test photographs one label unchecked, checked, and checked with the
+  // keyboard ring, and each picture must differ from the others.
+  it("tells the checked label and the focused label apart from an unchecked one", async () => {
+    const { context, page } = await openPage({ forcedColors: "active" });
+    try {
+      expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+      const label = labelFor(page, "css");
+      const photograph = () => photographAround(page, label);
+      const focusVisible = () =>
+        page.locator("#example-css").evaluate((element) => element.matches(":focus-visible"));
+
+      const unchecked = await photograph();
+      await label.click();
+      expect(await focusVisible()).toBe(false);
+      const checked = await photograph();
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowRight");
+      expect(await focusVisible()).toBe(true);
+      const focused = await photograph();
+
+      expect(checked.equals(unchecked)).toBe(false);
+      expect(focused.equals(unchecked)).toBe(false);
+      expect(focused.equals(checked)).toBe(false);
+
+      await keepScreenshot("forced-colours-css-label-unchecked", async () => unchecked);
+      await keepScreenshot("forced-colours-css-label-checked", async () => checked);
+      await keepScreenshot("forced-colours-css-label-checked-and-focused", async () => focused);
+      await keepScreenshot("forced-colours-control-checked-and-focused", () =>
+        photographAround(page, page.locator(".example-choices")),
+      );
+
+      const ring = await computed(label, ["outline-style", "outline-width"] as const);
+      expect(ring["outline-style"]).toBe("solid");
+      expect(Number.parseFloat(ring["outline-width"])).toBeGreaterThanOrEqual(2);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe.each(SCHEMES)("axe in the %s scheme", (scheme) => {
+  it("reports no violation with each of the four panels showing", async () => {
+    // A tall viewport brings the live table within the lazy margin, so axe checks it as well.
+    const { context, page } = await openPage({ colorScheme: scheme, height: 1000 });
+    try {
+      await page.waitForFunction(
+        () => document.querySelectorAll("bcd-compat-table[loaded]").length === 5,
+      );
+      for (const example of EXAMPLES) {
+        await labelFor(page, example.id).click();
+        await page.mouse.move(0, 0);
+        const { violations, passes } = await new AxeBuilder({ page }).analyze();
+        expect(
+          violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) })),
+          `${example.id} panel in ${scheme}`,
+        ).toEqual([]);
+        // Guards against a run that checked nothing: axe passed its colour contrast rule here.
+        expect(passes.map(({ id }) => id)).toContain("color-contrast");
+      }
+    } finally {
+      await context.close();
+    }
+    // Four axe runs take about two seconds alone, and more while other test files share the CPU.
+  }, 30_000);
 });

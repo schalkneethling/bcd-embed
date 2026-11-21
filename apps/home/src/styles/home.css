@@ -47,9 +47,127 @@ pre {
 }
 
 /*
- * In that browser the radios would choose nothing, because every panel already shows, so the
- * fieldset is hidden. A browser too old to know selector() in @supports also treats the condition
- * as false, so `not` makes it true there too, and it lacks :has() as well.
+ * The segmented control (#210). The radio inputs stay in the page, in the accessibility tree and in
+ * the focus order, and are hidden with a clip pattern, never `display: none`, which would remove
+ * them from both. Each label is the visible button, and it follows its input with the sibling
+ * combinator, so no rule of the control needs :has().
+ *
+ * Colour never carries a state alone. The checked label has a thicker border and bold text, and
+ * the focus ring is an outline, so forced colours mode, which replaces colours and removes shadows,
+ * keeps both. No rule uses box-shadow, and nothing transitions, so there is nothing for
+ * prefers-reduced-motion to turn off.
+ *
+ * Each colour pair is checked against the colour next to it, in light and dark, by
+ * tests/home-page.test.ts: borders and the focus ring need 3:1, text needs 4.5:1.
+ */
+.example-choices {
+  --choice-border-width: 2px;
+  --choice-border-width-checked: 4px;
+
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.example-choices legend {
+  margin-block-end: 0.5rem;
+  padding: 0;
+  font-weight: 700;
+}
+
+.example-choices input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * The labels share the row equally, and the widths do not depend on the text, so bold text does not
+ * move a neighbour. The block size is a minimum of 44 pixels: WCAG 2.5.8 asks for 24, and this
+ * aims higher.
+ */
+.example-choices label {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 8rem;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.75rem;
+  min-inline-size: 2.75rem;
+  padding-inline: 1rem;
+  border-style: solid;
+  border-width: var(--choice-border-width);
+
+  /*
+   * A browser without light-dark() drops the second declaration at parse time, because its
+   * arguments are literals, and keeps the plain one, a grey that holds 3:1 on white and on near
+   * black. With a var() argument the second declaration would parse everywhere, and a browser
+   * without light-dark() would then compute it as invalid and paint no border colour.
+   */
+  border-color: #808080;
+  border-color: light-dark(#6b6b6b, #9a9a9a);
+  border-radius: 0.5rem;
+  background-color: Canvas;
+  color: CanvasText;
+  text-align: center;
+  cursor: pointer;
+}
+
+.example-choices input:checked + label {
+  border-width: var(--choice-border-width-checked);
+  border-color: CanvasText;
+
+  /* Without light-dark() the label keeps its plain background, and the border and bold text remain. */
+  background-color: light-dark(#e1ebfa, #1e3354);
+  font-weight: 700;
+}
+
+/* An outline, because forced colours mode removes a box-shadow. The offset keeps it off the border. */
+.example-choices input:focus-visible + label {
+  /* The plain blue holds 3:1 on white and on near black, for a browser without light-dark(). */
+  outline: 3px solid #4285f4;
+  outline-color: light-dark(#0b57d0, #8ab4f8);
+  outline-offset: 3px;
+}
+
+/*
+ * Hover changes the background only, and only on a label that is not checked. It has no plain
+ * fallback: a light grey would sit under white text in a dark scheme, so a browser without
+ * light-dark() shows no hover change, which costs nothing.
+ */
+.example-choices input:not(:checked) + label:hover {
+  background-color: light-dark(#f0f0f0, #262626);
+}
+
+/* Visually hidden, but still read by a screen reader. */
+.example-status {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * A browser without :has() shows every panel, so the radios would choose nothing, and the fieldset
+ * is hidden. A browser too old to know selector() in @supports also treats the condition as false,
+ * so `not` makes it true there too, and it lacks :has() as well. This block follows the control's
+ * rules on purpose: its `display: none` must come after their `display: flex` to win.
  */
 @supports not selector(:has(*)) {
   .example-choices {
