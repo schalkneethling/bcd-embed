@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Both schemes, so the canvas and the palette follow the scheme the test emulates. -->
+    <meta name="color-scheme" content="light dark" />
+    <title>Layout visual fixture</title>
+    <link rel="stylesheet" href="/dist/base.css" />
+    <script type="module" src="./layout-visual.ts"></script>
+  </head>
+  <body>
+    <!-- The page of the visual snapshots in e2e/layout.visual.ts, and of nothing else, because any
+         change to it changes the recorded images. It holds a narrow table, wider than its 30em
+         container, and a wide one in a 60em container. -->
+    <main>
+      <bcd-compat-table
+        id="narrow"
+        style="inline-size: 30em"
+        browsers="chrome edge firefox opera safari nodejs"
+      ></bcd-compat-table>
+      <bcd-compat-table
+        id="wide"
+        style="inline-size: 60em"
+        browsers="chrome opera nodejs"
+      ></bcd-compat-table>
+    </main>
+  </body>
+</html>

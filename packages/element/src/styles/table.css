@@ -19,9 +19,9 @@ bcd-compat-table {
  * - Element children are removed with display: none.
  * - Bare text is hidden by hiding the whole element and showing the render container again.
  * - Bare text would still keep its line box, a blank line beside the table. So the element
- *   becomes a one-column grid. The container is placed in the first row, and the text, which a
- *   grid wraps in an anonymous item, is placed after it in a row of zero height. Text between
- *   tags that is only white space makes no item.
+ *   becomes a one-column grid. The container is placed in the first row, which is explicit and
+ *   sized to it, and the text, which a grid wraps in an anonymous item, is placed after it in an
+ *   implicit row of zero height. Text between tags that is only white space makes no item.
  *
  * Nothing changes the font, so the table keeps the page's font size and line height, and a
  * token in em still follows them. The rules do not depend on where the container sits among
@@ -30,6 +30,7 @@ bcd-compat-table {
 bcd-compat-table[loaded] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
   grid-auto-rows: 0;
   visibility: hidden;
 }
@@ -103,12 +104,20 @@ bcd-compat-table[loaded] > .bcd-render-container {
   border-inline-start-width: var(--bcd-border-width);
 }
 
+/* A long name wraps, so a squeezed sticky column shrinks to 10em and the others can scroll. */
+.bcd-table .bcd-feature {
+  box-sizing: border-box;
+  min-inline-size: 10em;
+}
+
+.bcd-table .bcd-feature code {
+  overflow-wrap: anywhere;
+}
+
 /*
- * The feature column sticks to the region's start while the other columns scroll beneath it, so it
- * needs the page's background. Sticky does nothing while the table fits, so it holds at every
- * width. No container query: style containment made Chromium slow down quadratically with the
- * number of <summary> elements (Document 3 section 5). On screen only, because printed, the
- * region does not scroll.
+ * The feature column sticks while the others scroll beneath it, so it needs the page's background.
+ * It holds at every width, with no container query, because style containment made Chromium
+ * quadratic in the number of <summary> elements (Document 3 section 5). Screen only.
  */
 @media not print {
   .bcd-table thead tr:first-child > :first-child,

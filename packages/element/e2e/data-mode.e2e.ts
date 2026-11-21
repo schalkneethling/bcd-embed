@@ -237,8 +237,9 @@ test.describe("notes", () => {
   });
 });
 
-// Each container size is timed, because the stylesheet lays the table out differently in each
-// (issue #201): in a container narrower than 40em the feature column is sticky.
+// Each container size is timed, because the table lays out differently in each (issue #201): in
+// the page's width the table fits, and in a 30em container the region scrolls under the sticky
+// feature column.
 const LARGE_TABLE_CONTAINERS = [
   { label: "in the page's width", inlineSize: null },
   { label: "in a 30em container", inlineSize: "30em" },
