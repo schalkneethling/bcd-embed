@@ -167,22 +167,13 @@
           "members": [
             {
               "kind": "field",
-              "name": "#instanceCount",
-              "privacy": "private",
-              "type": {
-                "text": "number"
-              },
-              "static": true,
-              "default": "1"
-            },
-            {
-              "kind": "field",
               "name": "data",
               "privacy": "public",
               "type": {
                 "text": "CompatTableData | null"
               },
-              "default": "null"
+              "default": "null",
+              "description": "A contract-conformant payload. The element renders it without a request. `null` removes the table. The element reads the payload when it is assigned, so assign a new object to show new data; a change made inside the same object is not seen."
             },
             {
               "kind": "field",
@@ -192,7 +183,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "attribute": "query"
+              "attribute": "query",
+              "description": "The `query` attribute: the BCD dotted key to request, such as `css.properties.display`, or `null` when it is absent. The element requests it only while `data` is `null`."
             },
             {
               "kind": "field",
@@ -202,7 +194,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "attribute": "endpoint"
+              "attribute": "endpoint",
+              "description": "The `endpoint` attribute: the base URL of the API, or `null` for the hosted API, `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query string, fragment, or credentials; any other value gives the error `invalid-endpoint`."
             },
             {
               "kind": "field",
@@ -212,17 +205,19 @@
                 "text": "string | null"
               },
               "default": "null",
-              "attribute": "source"
+              "attribute": "source",
+              "description": "The `source` attribute: the `id` of a `<script type=\"application/json\">` that holds a payload, or `null` when it is absent. The element reads the script once for each id, so changing the script's text afterwards changes nothing. A `source` that is set keeps the element out of fetch mode, even when the read fails. `data` wins over `source`."
             },
             {
               "kind": "field",
               "name": "loading",
               "privacy": "public",
               "type": {
-                "text": "CompatTableLoading"
+                "text": "\"lazy\" | \"eager\""
               },
               "default": "\"lazy\"",
-              "attribute": "loading"
+              "attribute": "loading",
+              "description": "The `loading` attribute. `lazy`, the default, holds the first request back until the element nears the viewport; `eager` requests on connection. A missing or unknown value reads as `lazy`, and the property does not write the attribute back."
             },
             {
               "kind": "field",
@@ -232,7 +227,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "attribute": "browsers"
+              "attribute": "browsers",
+              "description": "The `browsers` attribute: space-separated support target ids, or `null` for the default."
             },
             {
               "kind": "field",
@@ -242,330 +238,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "attribute": "locale"
-            },
-            {
-              "kind": "field",
-              "name": "#captionId",
-              "privacy": "private",
-              "type": {
-                "text": "string"
-              },
-              "readonly": true,
-              "default": "`bcd-compat-table-caption-${BcdCompatTable.#instanceCount}`"
-            },
-            {
-              "kind": "field",
-              "name": "#outcome",
-              "privacy": "private",
-              "type": {
-                "text": "Outcome"
-              },
-              "default": "{ status: \"empty\" }"
-            },
-            {
-              "kind": "field",
-              "name": "#announce",
-              "privacy": "private",
-              "type": {
-                "text": "boolean"
-              },
-              "default": "false"
-            },
-            {
-              "kind": "field",
-              "name": "#task",
-              "privacy": "private",
-              "readonly": true,
-              "default": "new Task<FetchArgs, FeatureResult>(this, { task: ([query, endpoint], { signal }) => { const request: FeatureRequest = endpoint === null ? { query, signal } : { query, endpoint, signal }; return getPageFeatureClient().requestFeature(request); }, autoRun: false, })"
-            },
-            {
-              "kind": "field",
-              "name": "#runArgs",
-              "privacy": "private",
-              "type": {
-                "text": "FetchArgs | null"
-              },
-              "default": "null"
-            },
-            {
-              "kind": "field",
-              "name": "#nearViewport",
-              "privacy": "private",
-              "type": {
-                "text": "boolean"
-              },
-              "default": "false"
-            },
-            {
-              "kind": "field",
-              "name": "#taskArgs",
-              "privacy": "private",
-              "type": {
-                "text": "FetchArgs | null"
-              },
-              "default": "null"
-            },
-            {
-              "kind": "field",
-              "name": "#lastSuccess",
-              "privacy": "private",
-              "type": {
-                "text": "{ readonly args: FetchArgs; readonly result: FeatureSuccess } | null"
-              },
-              "default": "null"
-            },
-            {
-              "kind": "field",
-              "name": "#ownsBusy",
-              "privacy": "private",
-              "type": {
-                "text": "boolean"
-              },
-              "default": "false"
-            },
-            {
-              "kind": "field",
-              "name": "#viewportObserver",
-              "privacy": "private",
-              "type": {
-                "text": "IntersectionObserver | null"
-              },
-              "default": "null"
-            },
-            {
-              "kind": "field",
-              "name": "#sourceState",
-              "privacy": "private",
-              "type": {
-                "text": "SourceState | null"
-              },
-              "default": "null"
-            },
-            {
-              "kind": "field",
-              "name": "#sourceWait",
-              "privacy": "private",
-              "type": {
-                "text": "AbortController | null"
-              },
-              "default": "null"
-            },
-            {
-              "kind": "field",
-              "name": "#containerGuard",
-              "privacy": "private",
-              "readonly": true,
-              "default": "new MutationObserver(() => { this.#guardContainer(); // The loading and error sentences show only while the author has no fallback content, so a // child that arrives or leaves in those states calls for another render. Rendering changes // the container's children, not this element's, so it does not call the observer again. const { status } = this.#outcome; if (status === \"error\" || status === \"pending\" || status === \"deferred\") this.requestUpdate(); })"
-            },
-            {
-              "kind": "method",
-              "name": "#guardContainer",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "description": "Removes any stale copy of a container, then appends this element's container again when it\nis no longer a child. It must be the same node, because Lit creates the render root once and\nkeeps rendering into it. Appending fires the observer once more, and that call finds the\ncontainer in place and does nothing."
-            },
-            {
-              "kind": "method",
-              "name": "#removeStaleContainers",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "description": "Removes every child with the render container's class that is not this element's container.\nIt reads the children only, never the table inside the container, so it costs O(n) for the\nelement's n children: the author's fallback and one container. The children are copied first,\nbecause removing one from the live collection while reading it would skip the next."
-            },
-            {
-              "kind": "method",
-              "name": "#fetchInputs",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "FetchArgs | null"
-                }
-              },
-              "description": "The query and endpoint the element is in fetch mode for, or `null` when it is not: `data` is\nset, `source` is present, or `query` is absent. The checks read property values, which a\nscript or a framework binding can set without the attribute converter, so `undefined` counts\nas absent, as it does for `data`. A `source` that is present, even one that failed, keeps the\nelement out of fetch mode, so a bad reference never turns into a request."
-            },
-            {
-              "kind": "method",
-              "name": "#cancelSourceWait",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "description": "Stops waiting for the parser, if the element is."
-            },
-            {
-              "kind": "method",
-              "name": "#syncSource",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "boolean"
-                }
-              },
-              "description": "Brings `#sourceState` in line with the `source` attribute, and returns whether it changed.\nIt reads the script only while the element is connected and `data` is unset, and it reads\neach id once:\n\n- `source` is absent: forget any read. A later `source` is read afresh.\n- The id is already read: nothing, so changing the script's text changes nothing.\n- The element is out of the document: nothing, because there is no tree to look in. The next\n  `connectedCallback` reads.\n- `data` is set: nothing. `data` wins, so the script is not parsed for nothing, and a broken\n  reference reports nothing. Clearing `data` reads it.\n- The script is not there yet and the parser is still running: wait. When the element is\n  defined before the parser reaches it, `connectedCallback` runs before the parser has read\n  anything after the element's start tag, so a script written after the element does not\n  exist yet (docs/planning/10-component-spikes.md, #187 section 1). The wait ends on the\n  document's `readystatechange`, which fires when the parser has finished.\n- Otherwise: read the script now.\n\nEvery branch is O(1) apart from the read, which `readSource` states."
-            },
-            {
-              "kind": "method",
-              "name": "#canSend",
-              "static": true,
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "boolean"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "[query, endpoint]",
-                  "type": {
-                    "text": "FetchArgs"
-                  }
-                }
-              ],
-              "description": "Whether a request could go out for these inputs. A query that fails the key pattern, or an\nendpoint that is not a base URL, never sends one, so there is nothing to hold back for it:\nits error arrives at once, and no observer waits. O(q + e) for a query of q characters and an\nendpoint of e."
-            },
-            {
-              "kind": "method",
-              "name": "#waitsForViewport",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "boolean"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "inputs",
-                  "type": {
-                    "text": "FetchArgs | null"
-                  }
-                }
-              ],
-              "description": "Whether the element holds its first request back until it nears the viewport. Any `loading`\nvalue other than `eager` counts as `lazy`, as the attribute does."
-            },
-            {
-              "kind": "method",
-              "name": "#fetchArgs",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "FetchArgs | null"
-                }
-              },
-              "description": "The arguments the element should request with now, or `null` when it should not request:\nit is not in fetch mode, or it is lazy and has not come near the viewport."
-            },
-            {
-              "kind": "method",
-              "name": "#syncRequest",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "description": "Starts a run when the fetch arguments changed, and aborts the pending run when there should\nbe none. It never starts a run while the element is out of the document; `connectedCallback`\nrequests an update that starts it on return."
-            },
-            {
-              "kind": "method",
-              "name": "#syncViewportObserver",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "description": "Observes the element while it waits for the viewport, and stops once it no longer waits:\nwhen it has come near, when `data` is set or `query` is absent, when `loading` is `eager`,\nwhen no request can be sent, or when it leaves the document. Each element owns one observer\nwith one target, so a call is O(1) apart from the O(q + e) check in `#canSend`.\n\nAn observer reports only on an element that has a box. A host with `display: none` or\n`display: contents` never intersects, so a lazy element there waits for good. And the\n`rootMargin` applies to the viewport, not to a scrolling ancestor, so inside an\n`overflow: auto` box the request starts only when the element is visible in that box."
-            },
-            {
-              "kind": "method",
-              "name": "#hasFallbackContent",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "boolean"
-                }
-              },
-              "description": "Whether the author gave fallback content: an element other than the render container, or\ntext that is not only white space. Comments and the line breaks between tags do not count.\nO(n) for the element's n child nodes."
-            },
-            {
-              "kind": "method",
-              "name": "#buildOutcome",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "Outcome"
-                }
-              }
-            },
-            {
-              "kind": "method",
-              "name": "#buildSourceOutcome",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "Outcome"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "id",
-                  "type": {
-                    "text": "string"
-                  }
-                }
-              ],
-              "description": "The outcome for a `source` attribute. Nothing shows while the element waits for the parser or\nfor a connection, and no event fires, because the state changes again when the read ends. A\nfailed read is the error in mode `source`, with no query in its sentence, as in data mode.\n`id` is the attribute's current value; a read held for another id is not its answer."
-            },
-            {
-              "kind": "method",
-              "name": "#buildTable",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "Outcome"
-                }
-              },
-              "parameters": [
-                {
-                  "name": "payload",
-                  "type": {
-                    "text": "unknown"
-                  }
-                },
-                {
-                  "name": "detail",
-                  "type": {
-                    "text": "BcdLoadDetail"
-                  }
-                },
-                {
-                  "name": "query",
-                  "type": {
-                    "text": "string | null"
-                  }
-                }
-              ],
-              "description": "Builds the table for a payload. A payload the model cannot read is the error\n`invalid-payload`, in the mode the payload came from."
-            },
-            {
-              "kind": "method",
-              "name": "#dispatchPendingEvent",
-              "privacy": "private",
-              "return": {
-                "type": {
-                  "text": "void"
-                }
-              },
-              "description": "Dispatches the event that the latest update owes, once, and only while the element is in a\ndocument. The events bubble so that one listener on the document hears every table, and an\nevent dispatched on a detached element would never reach it. The event reports the state at\nthe moment it fires: a payload assigned and then replaced while the element was detached\ngives one event, for the payload that is rendered."
+              "attribute": "locale",
+              "description": "The `locale` attribute. An unknown locale, and `null`, select English."
             }
           ],
           "events": [
@@ -591,7 +265,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "fieldName": "query"
+              "fieldName": "query",
+              "description": "The `query` attribute: the BCD dotted key to request, such as `css.properties.display`, or `null` when it is absent. The element requests it only while `data` is `null`."
             },
             {
               "name": "endpoint",
@@ -599,7 +274,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "fieldName": "endpoint"
+              "fieldName": "endpoint",
+              "description": "The `endpoint` attribute: the base URL of the API, or `null` for the hosted API, `https://api.browser-compat.dev`. It must be an absolute `https:` or `http:` URL with no query string, fragment, or credentials; any other value gives the error `invalid-endpoint`."
             },
             {
               "name": "source",
@@ -607,15 +283,17 @@
                 "text": "string | null"
               },
               "default": "null",
-              "fieldName": "source"
+              "fieldName": "source",
+              "description": "The `source` attribute: the `id` of a `<script type=\"application/json\">` that holds a payload, or `null` when it is absent. The element reads the script once for each id, so changing the script's text afterwards changes nothing. A `source` that is set keeps the element out of fetch mode, even when the read fails. `data` wins over `source`."
             },
             {
               "name": "loading",
               "type": {
-                "text": "CompatTableLoading"
+                "text": "\"lazy\" | \"eager\""
               },
               "default": "\"lazy\"",
-              "fieldName": "loading"
+              "fieldName": "loading",
+              "description": "The `loading` attribute. `lazy`, the default, holds the first request back until the element nears the viewport; `eager` requests on connection. A missing or unknown value reads as `lazy`, and the property does not write the attribute back."
             },
             {
               "name": "browsers",
@@ -623,7 +301,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "fieldName": "browsers"
+              "fieldName": "browsers",
+              "description": "The `browsers` attribute: space-separated support target ids, or `null` for the default."
             },
             {
               "name": "locale",
@@ -631,7 +310,8 @@
                 "text": "string | null"
               },
               "default": "null",
-              "fieldName": "locale"
+              "fieldName": "locale",
+              "description": "The `locale` attribute. An unknown locale, and `null`, select English."
             }
           ],
           "superclass": {
@@ -673,6 +353,37 @@
           "declaration": {
             "name": "BcdCompatTable",
             "module": "src/bcd-compat-table.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/public-types.ts",
+      "declarations": [],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "MessageId",
+          "declaration": {
+            "name": "MessageId",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MessageValues",
+          "declaration": {
+            "name": "MessageValues",
+            "module": "./strings/format.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "StringTable",
+          "declaration": {
+            "name": "StringTable",
+            "module": "./strings/format.js"
           }
         }
       ]

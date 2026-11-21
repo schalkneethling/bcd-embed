@@ -704,9 +704,13 @@ none of those files imports from `lit`.
 
 `tests/consumer-build.test.ts` builds the package and then a throwaway consumer project with Vite
 in production mode, and loads the built page in Chromium (the `playwright` package at the
-repository root, with the browser that `pnpm exec playwright install` fetches).
-`tests/custom-elements-manifest.test.ts` runs the analyzer into a temporary directory and compares
-the result with the committed `custom-elements.json`.
+repository root, using the Chromium headless shell that CI installs with
+`pnpm exec playwright install --with-deps --only-shell chromium`). It also type-checks a consumer
+against the emitted declarations and builds one that imports `base.css`.
+`tests/custom-elements-manifest.test.ts` runs the analyzer into a directory under
+`node_modules/.cache` and compares the result with the committed `custom-elements.json`. The
+manifest lists the public surface only: a plugin in `custom-elements-manifest.config.mjs` removes
+private members, so an internal refactor does not change it.
 
 The size budget in `.size-limit.json` was 2 kB while the package held only the message table. The
 element, the table model, and the note tokenizer measured 6.43 kB with Brotli, without Lit, so the
@@ -722,7 +726,7 @@ The packaging issue (#206) added the two gzip entries. `size-limit` 14.3.0 measu
 unless an entry sets `"gzip": true`, and it counts `lit` unless an entry sets `ignore`. The first
 new entry, `dist/index.js` with `"gzip": true` and no `ignore`, is the overall budget of Document 3
 section 6: 16.68 kB against 25 kB, Lit and `@lit/task` included. The second measures
-`src/render/table.ts`, which pulls in the other renderers and the message formatter, with
+`src/render/table.ts`, which imports only `render/status.ts` and the message formatter, with
 `"ignore": ["lit"]`: 1.74 kB against 8 kB, the threshold above which Document 3 proposes a lazy
 renderer chunk. The same file bundled with Lit counts 8.10 kB, but the shell's `LitElement` base
 class already brings in `lit-html`, the template engine that the renderer's templates run on, so a
