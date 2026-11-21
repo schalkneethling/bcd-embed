@@ -10,7 +10,8 @@ BCD releases. The API Worker has been deployed to Cloudflare since 15 November
 2026, answers on `https://api.browser-compat.dev`, and serves BCD 8.1.9, behind a Cloudflare rate limiting rule and with Sentry alerting. One launch
 requirement remains open, a test under sustained load, which the
 [deployment page](./apps/website/src/content/docs/deployment.md#what-is-still-open-before-a-public-launch)
-lists. The web component (`packages/element`) has not been started. The design and sequencing
+lists. The web component (`packages/element`) renders in fetch, data, and source modes, and is
+not published yet. The design and sequencing
 decisions live in [`docs/planning`](./docs/planning/).
 
 ## Repository layout
@@ -33,9 +34,9 @@ workspaces are:
   a candidate artifact tree against a baseline and, only when an operator
   explicitly opts in, uploads it to an R2 bucket and switches the current
   snapshot.
-- `packages/element` — `@bcd-embed/element`, the future `<bcd-compat-table>`
-  web component. The component does not exist yet; the workspace holds the
-  screen reader tests for the Phase 1 static markup.
+- `packages/element` — `@bcd-embed/element`, the `<bcd-compat-table>` web
+  component, its opt-in base stylesheet, and its screen reader tests. It is
+  private until it is published.
 - `apps/worker` — `@bcd-embed/worker`, the Cloudflare Worker that runs the
   server handler against an R2 bucket binding and adds edge caching and error
   reporting. It is deployed manually with `pnpm --filter @bcd-embed/worker run
@@ -47,6 +48,10 @@ workspaces are:
   in `apps/website/src/content/docs`. It is deployed manually with
   `pnpm --filter @bcd-embed/website run deploy` and answers on
   `https://docs.browser-compat.dev`.
+- `apps/home` — `@bcd-embed/home`, the introduction page for
+  `https://browser-compat.dev`, built with [Astro](https://astro.build). Its
+  four example tables are built into the page from the installed BCD, and one
+  more table loads from the API when it scrolls near. It is not deployed yet.
 
 Each package and app has its own README with the details of its behavior.
 
@@ -195,6 +200,7 @@ Useful commands:
 ```sh
 pnpm dev              # Run the contract playground
 pnpm dev:website      # Run the documentation site
+pnpm dev:home         # Run the introduction page
 pnpm fixtures:report  # Summarize the v1 golden fixture corpus
 pnpm format           # Format the repository
 pnpm lint             # Run JavaScript/TypeScript and CSS linting

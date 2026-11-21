@@ -1,0 +1,139 @@
+---
+import bcd from "@mdn/browser-compat-data";
+
+import "@bcd-embed/element/base.css";
+import "../styles/home.css";
+import { buildHomePageData } from "../data/examples.js";
+
+// Runs once, at build time. It throws when BCD lacks any of the keys, which fails the build.
+const { bcdVersion, examples, live } = buildHomePageData(bcd);
+const repository = "https://github.com/schalkneethling/bcd-embed";
+
+// Shown to readers as text. Astro escapes it, so its `<` characters reach the page as `&lt;`.
+const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-properties-line-clamp">
+  { "contract": "1.1.0", "query": "css.properties.line-clamp", … }
+</script>
+<bcd-compat-table source="bcd-data-css-properties-line-clamp">
+  <p><a href="…">Browser compatibility for line-clamp on MDN Web Docs</a></p>
+</bcd-compat-table>`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bcd-embed: browser compatibility tables for any page</title>
+    <meta
+      name="description"
+      content="Embeddable browser compatibility tables backed by MDN Browser Compatibility Data."
+    />
+  </head>
+  <body>
+    <main>
+      <h1>bcd-embed</h1>
+      <p>
+        bcd-embed puts a browser compatibility table on any page. A small API serves MDN's Browser
+        Compatibility Data (BCD), and the <code>&lt;bcd-compat-table&gt;</code> web component turns
+        it into an accessible table that you style with your own CSS.
+      </p>
+      <p>
+        The four tables below were built into this page from BCD {bcdVersion}, so showing them sends
+        no request.
+      </p>
+
+      <section class="examples" aria-labelledby="examples-heading">
+        <h2 id="examples-heading">Examples</h2>
+        <fieldset class="example-choices">
+          <legend>Choose an example</legend>
+          {
+            examples.map((example, index) => (
+              <>
+                <input
+                  type="radio"
+                  name="example"
+                  id={`example-${example.id}`}
+                  value={example.id}
+                  checked={index === 0}
+                />
+                <label for={`example-${example.id}`}>{example.label}</label>
+              </>
+            ))
+          }
+        </fieldset>
+
+        <div class="example-panels">
+          {
+            examples.map((example) => (
+              <section
+                class="example-panel"
+                id={`panel-${example.id}`}
+                data-example={example.id}
+              >
+                <h3>
+                  {example.label}: <code>{example.name}</code>
+                </h3>
+                <p>{example.summary}</p>
+                <script
+                  is:inline
+                  type="application/json"
+                  id={example.scriptId}
+                  set:html={example.scriptJson}
+                />
+                <bcd-compat-table source={example.scriptId}>
+                  <p>
+                    <a href={example.mdnPage.url}>
+                      Browser compatibility for <code>{example.mdnPage.name}</code> on MDN Web Docs
+                    </a>
+                  </p>
+                </bcd-compat-table>
+              </section>
+            ))
+          }
+        </div>
+      </section>
+
+      <section aria-labelledby="how-heading">
+        <h2 id="how-heading">How the examples work</h2>
+        <p>
+          Each example is two pieces of HTML that the build writes into the page: a JSON script
+          that holds the API's answer for the feature, and the element that names it with its
+          <code>source</code> attribute. The element reads the script once, renders the table, and
+          sends no request.
+        </p>
+        <pre><code>{sourceModeSnippet}</code></pre>
+        <p>
+          The link inside the element is its fallback content. It shows until the table renders, and
+          it stays when script is turned off, so every reader can reach the data on MDN Web Docs.
+          The examples switch with CSS alone, so choosing one works without script too.
+        </p>
+      </section>
+
+      <section class="live" aria-labelledby="live-heading">
+        <h2 id="live-heading">A table fetched from the API</h2>
+        <p>
+          This table asks the hosted API for <code>{live.key}</code> when you scroll near it, and
+          not before. It always shows the API's current data.
+        </p>
+        <bcd-compat-table query={live.key}>
+          <p>
+            <a href={live.mdnPage.url}>
+              Browser compatibility for <code>{live.mdnPage.name}</code> on MDN Web Docs
+            </a>
+          </p>
+        </bcd-compat-table>
+      </section>
+    </main>
+    <footer>
+      <p>
+        The data comes from
+        <a href="https://github.com/mdn/browser-compat-data">MDN Browser Compatibility Data</a>.
+        Read the <a href="https://docs.browser-compat.dev/">documentation</a> or the
+        <a href={repository}>source code</a>.
+      </p>
+    </footer>
+    <script>
+      import "@bcd-embed/element";
+    </script>
+  </body>
+</html>

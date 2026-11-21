@@ -165,9 +165,11 @@ with its own README.
 | `packages/generator` | The generator: writes a snapshot to disk and compares two snapshots  |
 | `packages/publisher` | The publisher: checks a snapshot and uploads it to R2                |
 | `packages/server`    | Turns a request into a file read; has no Cloudflare-specific code    |
+| `packages/element`   | The `<bcd-compat-table>` web component that renders a response       |
 | `apps/worker`        | The Worker: connects the server to R2 and adds the edge cache        |
 | `apps/docs`          | A playground that validates a response against the contract          |
 | `apps/website`       | This documentation site                                              |
+| `apps/home`          | The introduction page at browser-compat.dev, with example tables     |
 
 The design documents behind these parts are in
 [`docs/planning`](https://github.com/schalkneethling/bcd-embed/tree/main/docs/planning).

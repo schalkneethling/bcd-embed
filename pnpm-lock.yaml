@@ -60,6 +60,24 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  apps/home:
+    dependencies:
+      '@bcd-embed/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@bcd-embed/element':
+        specifier: workspace:*
+        version: link:../../packages/element
+      '@bcd-embed/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      '@mdn/browser-compat-data':
+        specifier: 8.1.9
+        version: 8.1.9
+      astro:
+        specifier: 7.4.12
+        version: 7.4.12(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
+
   apps/website:
     dependencies:
       '@astrojs/starlight':
