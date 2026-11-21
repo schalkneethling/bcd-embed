@@ -237,44 +237,56 @@ test.describe("notes", () => {
   });
 });
 
+// Each container size is timed, because the stylesheet lays the table out differently in each
+// (issue #201): in a container narrower than 40em the feature column is sticky.
+const LARGE_TABLE_CONTAINERS = [
+  { label: "in the page's width", inlineSize: null },
+  { label: "in a 30em container", inlineSize: "30em" },
+] as const;
+
 test.describe("a large table", () => {
-  test("renders 2,000 features by four targets, and records how long that takes", async ({
-    page,
-  }, testInfo) => {
-    test.slow();
-    await openFixture(page);
+  for (const { label, inlineSize } of LARGE_TABLE_CONTAINERS) {
+    test(`renders 2,000 features by four targets ${label}, and records how long that takes`, async ({
+      page,
+    }, testInfo) => {
+      test.slow();
+      await openFixture(page);
 
-    const measured = await page.evaluate(async () => {
-      const payload = window.bcdFixture.buildLargePayload(2000);
-      const table = document.createElement("bcd-compat-table");
-      table.id = "large";
-      document.querySelector("main")?.append(table);
-      const loaded = new Promise<number>((resolve) => {
-        table.addEventListener("bcd-load", () => resolve(performance.now()), { once: true });
-      });
+      const measured = await page.evaluate(async (size) => {
+        const payload = window.bcdFixture.buildLargePayload(2000);
+        const table = document.createElement("bcd-compat-table");
+        table.id = "large";
+        if (size !== null) table.style.inlineSize = size;
+        document.querySelector("main")?.append(table);
+        const loaded = new Promise<number>((resolve) => {
+          table.addEventListener("bcd-load", () => resolve(performance.now()), { once: true });
+        });
 
-      const start = performance.now();
-      table.data = payload;
-      // `bcd-load` fires once the table's nodes are in the document: the model and the markup.
-      const rendered = (await loaded) - start;
-      // Two animation frames later the browser has also laid the table out and painted it.
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const painted = performance.now() - start;
+        const start = performance.now();
+        table.data = payload;
+        // `bcd-load` fires once the table's nodes are in the document: the model and the markup.
+        const rendered = (await loaded) - start;
+        // Two animation frames later the browser has also laid the table out and painted it.
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const painted = performance.now() - start;
 
-      return {
-        rendered,
-        painted,
-        rows: table.querySelectorAll("tbody tr").length,
-        elements: table.querySelectorAll("*").length,
-      };
+        return {
+          rendered,
+          painted,
+          rows: table.querySelectorAll("tbody tr").length,
+          elements: table.querySelectorAll("*").length,
+        };
+      }, inlineSize);
+
+      expect(measured.rows).toBe(2000);
+      const description =
+        `${measured.elements} elements; ${measured.rendered.toFixed(0)} ms until bcd-load, ` +
+        `${measured.painted.toFixed(0)} ms until two frames later`;
+      testInfo.annotations.push({ type: "render-time", description });
+      // The time is recorded, not asserted: it depends on the machine.
+      console.log(
+        `[${testInfo.project.name}] 2,000 features by 4 targets ${label}: ${description}`,
+      );
     });
-
-    expect(measured.rows).toBe(2000);
-    const description =
-      `${measured.elements} elements; ${measured.rendered.toFixed(0)} ms until bcd-load, ` +
-      `${measured.painted.toFixed(0)} ms until two frames later`;
-    testInfo.annotations.push({ type: "render-time", description });
-    // The time is recorded, not asserted: it depends on the machine.
-    console.log(`[${testInfo.project.name}] 2,000 features by 4 targets: ${description}`);
-  });
+  }
 });

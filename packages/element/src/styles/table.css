@@ -46,12 +46,15 @@ bcd-compat-table[loaded] > .bcd-render-container {
 
 /*
  * The scroll region. It takes a tab stop (tabindex="0" in the markup), so a keyboard user can
- * scroll a table wider than its container, and focus on it must be visible.
+ * scroll a table wider than its container, and focus on it must be visible. Printed, it does not
+ * clip the table.
  */
-.bcd-scroller {
-  /* A fallback for engines below the Baseline 2025 floor, which drop overflow-inline. */
-  overflow-x: auto;
-  overflow-inline: auto;
+@media not print {
+  .bcd-scroller {
+    /* A fallback for engines below the Baseline 2025 floor, which drop overflow-inline. */
+    overflow-x: auto;
+    overflow-inline: auto;
+  }
 }
 
 .bcd-history > summary {
@@ -64,9 +67,15 @@ bcd-compat-table[loaded] > .bcd-render-container {
   outline-offset: 2px;
 }
 
+/*
+ * Separate borders: in a collapsed table, all three engines dropped the side borders of a scrolled
+ * sticky cell (Firefox bug 1727594 is one case). Each cell draws its end sides, and the first row
+ * and column add the start sides.
+ */
 .bcd-table {
   inline-size: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .bcd-table caption {
@@ -78,10 +87,36 @@ bcd-compat-table[loaded] > .bcd-render-container {
 .bcd-table th,
 .bcd-table td {
   padding: var(--bcd-cell-padding, 0.5rem);
-  border: var(--bcd-border-width) solid
-    light-dark(var(--bcd-color-border-light), var(--bcd-color-border-dark));
+  border: 0 solid light-dark(var(--bcd-color-border-light), var(--bcd-color-border-dark));
+  border-block-end-width: var(--bcd-border-width);
+  border-inline-end-width: var(--bcd-border-width);
   text-align: start;
   vertical-align: top;
+}
+
+.bcd-table thead tr:first-child > * {
+  border-block-start-width: var(--bcd-border-width);
+}
+
+.bcd-table thead tr:first-child > :first-child,
+.bcd-table .bcd-feature {
+  border-inline-start-width: var(--bcd-border-width);
+}
+
+/*
+ * The feature column sticks to the region's start while the other columns scroll beneath it, so it
+ * needs the page's background. Sticky does nothing while the table fits, so it holds at every
+ * width. No container query: style containment made Chromium slow down quadratically with the
+ * number of <summary> elements (Document 3 section 5). On screen only, because printed, the
+ * region does not scroll.
+ */
+@media not print {
+  .bcd-table thead tr:first-child > :first-child,
+  .bcd-table .bcd-feature {
+    position: sticky;
+    inset-inline-start: 0;
+    background-color: var(--bcd-color-sticky-background, Canvas);
+  }
 }
 
 /*

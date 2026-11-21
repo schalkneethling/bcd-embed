@@ -28,6 +28,7 @@
     "test:live": "playwright test --config playwright.live.config.ts",
     "test:nvda": "playwright test --config playwright.nvda.config.ts",
     "test:orca": "playwright test --config playwright.orca.config.ts",
+    "test:visual": "playwright test --config playwright.visual.config.ts",
     "test:voiceover": "playwright test --config playwright.voiceover.config.ts",
     "typecheck": "tsc --noEmit"
   },
