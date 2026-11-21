@@ -333,7 +333,20 @@ Alternative considered and rejected: a card-per-support-target layout at very na
 
 ### Motion and preference
 
-Expansion animation respects `prefers-reduced-motion`. Default palette respects `prefers-color-scheme`; `light-dark()` follows an author-set `color-scheme` where present.
+Expansion has no animation, so there is nothing for `prefers-reduced-motion` to switch off (#204). Animating a native `<details>` needs its `::details-content` part, which is not Baseline, and the stylesheet's size budget and Baseline 2025 floor leave no room for a fallback. A stylesheet that adds motion must wrap it in `@media (prefers-reduced-motion: no-preference)`. `e2e/interaction.e2e.ts` fails if any element of the table declares a transition or animation duration above 0, or if `document.getAnimations()` is not empty after a disclosure opens or closes, with `reduce` and with `no-preference`. It also checks that opening a disclosure changes only its own row's height and moves each later row by exactly that amount.
+
+### Interaction (#204)
+
+The component calls `focus()` nowhere, sets no `autofocus`, and adds no `tabindex` other than the scroll region's `0`; `tests/no-focus-call.test.ts` reads the source for all three. The HTML Standard defines a `<summary>`'s activation behavior as toggling the parent `<details>`' `open` attribute and says nothing that moves focus, so focus stays on the summary. `e2e/interaction.e2e.ts` shows this in Chromium, Firefox, and WebKit:
+
+- Tab stops on the region, then on each of the fixture's five summaries in order, then leaves the table.
+- Enter and Space each open and close a disclosure with focus still on its summary.
+- A `browsers` change that adds a column on each side of an open, focused cell keeps the same `<details>` element, still open and focused, because rows and cells are keyed. Removing the other columns does the same. When the focused cell's own column goes, focus falls to the body, and the component does not move it to another summary.
+- Hover changes nothing: the stylesheet has no `:hover` rule, no element has a `title` or `popover` attribute, and the table's text, markup, and cell sizes are identical while each cell is hovered.
+
+**The Safari question is not settled.** #186 asks whether Safari with VoiceOver speaks a disclosure's change of state. It has not run, because the owner runs every manual screen reader pass at the end (#212). Until that pass answers it, the remedy for a silent disclosure is not built and its criterion is open. If Safari is silent, the remedy goes in this section and the VoiceOver walk asserts the new announcement.
+
+Default palette respects `prefers-color-scheme`; `light-dark()` follows an author-set `color-scheme` where present.
 
 ---
 
@@ -488,7 +501,7 @@ Visual regression covers the support-state palette and container-query breakpoin
 
 **Phase 4 — fetch mode.** Async task, loading/error states, request cache and deduplication, `IntersectionObserver` deferral and the `loading` attribute that controls it, `endpoint` override. Integrate against the live service. A request that fails without a readable response is a temporary failure, not a bug in the page: the hosted service's rate limit answers with a Cloudflare 429 that has no CORS header, so the browser reports it as a network error (Document 1 §8, Document 9). The element shows its fallback content, fires `bcd-error` with `reason: "network"` and `status: null` (§4), and does not retry on its own. #203 built this phase. The element runs a `Task` from `@lit/task` with `autoRun: false` and starts it from `willUpdate`, because the element decides when a request may start: only while `.data` is `null`, only once the lazy wait is over, and never while the element is out of the document. A new `query` or `endpoint` while a request is pending aborts the old run, and `Task` drops the old result, so the old answer neither renders nor fires an event. Removing the element aborts its wait, so no event fires for an answer that arrives later, and the viewport observer is disconnected; adding it back asks again, and the request cache answers without a second request. The one test against the live service is `pnpm --filter @bcd-embed/element test:live`, which is not part of `pnpm check`. The size budget rose from 7 kB to 8.5 kB with Brotli, without Lit, because the feature client and the request cache entered the bundle; the package measured 8.26 kB.
 
-**Phase 5 — interaction.** Disclosure, focus management, keyboard paths, reduced motion.
+**Phase 5 — interaction.** Disclosure, focus management, keyboard paths, reduced motion. #204 built this as tests over native behaviour, with no new component code or CSS (§5, "Interaction"); the Safari remedy waits for the owner's pass.
 
 **Phase 6 — the `source` inline-JSON variant of data mode.** Reading and parsing the referenced `<script type="application/json">` in `connectedCallback` (§7), with the same rendering path as the `.data` property. No SSR, no hydration — this is still client-side parsing of an already-present payload, not markup rendered on the server.
 
