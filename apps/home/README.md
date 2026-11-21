@@ -3,7 +3,7 @@
 `@bcd-embed/home` is the introduction page for `https://browser-compat.dev`. It is built with
 [Astro](https://astro.build), without Starlight, and produces one static HTML page with one
 stylesheet and one script. It is not deployed yet: the Wrangler configuration, the response headers,
-and the deploy belong to #211, and the styling of the example picker to #210.
+and the deploy belong to #211.
 
 The page shows four example tables, one at a time, chosen with four radio inputs. Their data is
 built into the page, so showing them sends no request. One more table, lower on the page, asks the
@@ -28,13 +28,17 @@ load the page in Chromium's headless shell, so install it once with
 
 ```
 apps/home/
+├─ .stylelintrc.json        the Baseline 2025 floor for this workspace's stylesheet
 ├─ astro.config.ts          site address, CSS and script settings, the test-only source plugin
 ├─ scripts/assert-no-v1.mjs fails when the built site has a top-level v1 entry
 ├─ src/
 │  ├─ data/examples.ts      the four examples, and everything the page reads from BCD
 │  ├─ pages/index.astro     the page
-│  └─ styles/home.css       the page's own styles and the panel switching
+│  ├─ scripts/example-status.ts  creates the status region and fills it when the choice changes
+│  └─ styles/home.css       the page's own styles, the segmented control, and the panel switching
 └─ tests/
+   ├─ contrast.test.ts      the contrast formula, without a build
+   ├─ contrast.ts           WCAG contrast ratios from computed colours
    ├─ examples.test.ts      the data module, without a build
    └─ home-page.test.ts     builds the page and checks it in Chromium
 ```
@@ -116,6 +120,72 @@ at the root configuration or at the 2025 floor.
   └─ other three panels            → display: none
 ```
 
+## The segmented control
+
+The four radios look like one row of four buttons (#210). Each radio is hidden with a clip pattern
+(`position: absolute`, a 1 pixel box, `clip-path: inset(50%)`), never `display: none`, so it stays
+in the accessibility tree and in the focus order. Its label is the visible button, and the rules
+reach the label from the radio with the sibling combinator:
+
+| State         | Selector                            | What changes                                        |
+| ------------- | ----------------------------------- | --------------------------------------------------- |
+| Checked       | `input:checked + label`             | A 4 pixel border in `CanvasText`, bold text, a tint |
+| Keyboard ring | `input:focus-visible + label`       | A 3 pixel outline, offset 3 pixels from the border  |
+| Hover         | `input:not(:checked) + label:hover` | The background only                                 |
+
+No focus or checked rule of the control uses `:has()`, and none uses `box-shadow`, which forced
+colours mode removes. The checked state does not depend on colour, because its border is thicker
+and its text is bold. A radio group puts keyboard focus on the checked radio, so the ring and the
+checked style show together, and the ring's colour and gap keep them apart.
+
+Every label is at least 44 by 44 CSS pixels, above the 24 pixels of WCAG 2.5.8 (Target Size,
+Minimum). The labels share the row equally, so bold text moves nothing. Nothing transitions, so
+`prefers-reduced-motion: reduce` has nothing to turn off, and a test checks that no transition
+starts.
+
+The colours are `light-dark()` pairs, written as `-light` and `-dark` custom properties on
+`.example-choices`, the way `packages/element/src/styles/tokens.css` writes its tokens. The text and
+the checked border are the system colours `CanvasText` on `Canvas`. The stylesheet needs the
+Baseline 2025 floor for `light-dark()`, and the root `.stylelintrc.json` still checks for widely
+available features (the same state as `packages/element/README.md`, "Building and linting it"), so this
+workspace's `.stylelintrc.json` extends the root and sets `available: 2025`. Delete it when the
+root configuration carries the floor.
+
+## The status region
+
+The panels switch with CSS alone, which tells a screen reader nothing. So
+`src/scripts/example-status.ts` creates a `<div role="status">` after the fieldset when the page
+loads, empty, and sets one sentence on each `change` event, such as "Showing the Cascading Style
+Sheets (CSS) example: line-clamp". Each radio carries its sentence in `data-announcement`, which
+the build writes from `announcement` in `src/data/examples.ts`. The region is clipped away, not
+`display: none`, because a screen reader skips an element that is not rendered.
+
+The static HTML has no status element, so the page without script has no empty region. Focus stays
+on the radio. The script is a file bundled with the element's script, never inline, so the page can
+be served with `script-src 'self'` (#211), and the built HTML has no `style` attribute, so it can
+be served with `style-src 'self'`.
+
+## Accessibility checks
+
+The page test covers each criterion of #210 that a browser can measure, in Chromium:
+
+- **Contrast.** The test reads each colour from `getComputedStyle` and applies the WCAG relative
+  luminance formula (`tests/contrast.ts`). In light and dark it requires 3:1 for the unchecked
+  border against the page and against the label (resting and hovered), for the checked border
+  against the page and against its tint, and for the focus ring against the page, and 4.5:1 for
+  the label text (resting, hovered, checked) and the body text (WCAG 1.4.11 and 1.4.3). axe cannot
+  check non-text contrast.
+- **Forced colours.** With Playwright's `forcedColors: "active"`, the test photographs one label
+  unchecked, checked, and checked with the keyboard ring, and requires all three pictures to
+  differ.
+- **axe.** `@axe-core/playwright` reports no violation with each of the four panels showing, in
+  light and dark.
+- **Size and layout.** Every label is at least 44 pixels each way at 320 and 1280 pixels wide, and
+  choosing an example moves no label.
+
+Set `BCD_EMBED_HOME_SCREENSHOTS` to a directory to keep the screenshots the tests take (the control
+in light, dark, and forced colours), and `BCD_EMBED_HOME_CONTRAST_REPORT=1` to print each ratio.
+
 ## What the deployed page contains
 
 The deployed page ships what a consumer of the packages gets. `pnpm build` builds the workspaces in
@@ -170,24 +240,28 @@ request to `https://api.browser-compat.dev` is answered by the test from install
 other request that leaves the local server is aborted and recorded, so no test reaches a real
 server.
 
-| What the page test checks                                                                                       |
-| --------------------------------------------------------------------------------------------------------------- |
-| One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label       |
-| Every radio is rendered, not `display: none` or `visibility: hidden`, and is in the accessibility tree          |
-| Only the HTML panel shows on load; a click on CSS shows only the CSS panel, with its rendered table             |
-| Each of three right arrows switches the panel at once, ending on Web API with focus there, and sends no request |
-| Focus stays on the selected radio after every selection                                                         |
-| With script off, the panels switch, each shows its MDN Web Docs link, and the HTML link names `<video>`         |
-| Without `:has()`, all four panels show under their headings and the fieldset is hidden                          |
-| Each panel has one JSON script, with no `<`, that validates and equals the build from installed BCD             |
-| A hostile note stays inside its script, and nothing runs                                                        |
-| The live table sends no request until it scrolls near, then exactly one                                         |
-| The stylesheet keeps `@layer bcd-embed.base;` and `light-dark()`, and the page has no `<style>` element         |
-| The build has no top-level `v1` entry; the check rejects one, and its command line exits with code 1            |
+| What the page test checks                                                                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label                                                                              |
+| Every radio is rendered, not `display: none` or `visibility: hidden`, and is in the accessibility tree                                                                                 |
+| Only the HTML panel shows on load; a click on CSS shows only the CSS panel, with its rendered table                                                                                    |
+| Each of three right arrows switches the panel at once, ending on Web API with focus there, and sends no request                                                                        |
+| Focus stays on the selected radio after every selection                                                                                                                                |
+| With script off, the panels switch, each shows its MDN Web Docs link, and the HTML link names `<video>`                                                                                |
+| Without `:has()`, all four panels show under their headings and the fieldset is hidden                                                                                                 |
+| Each panel has one JSON script, with no `<`, that validates and equals the build from installed BCD                                                                                    |
+| A hostile note stays inside its script, and nothing runs                                                                                                                               |
+| The live table sends no request until it scrolls near, then exactly one                                                                                                                |
+| The stylesheet keeps `@layer bcd-embed.base;` and `light-dark()`, and the page has no `<style>` element                                                                                |
+| The built HTML has no `role="status"`, no inline script, and no `style` attribute; a loaded page has one empty status region, and a selection sets one sentence that names the example |
+| The control's rules use `input:checked + label` and `input:focus-visible + label`, with no `:has()` or `box-shadow`                                                                    |
+| The checked label has a thicker border and bold text; the keyboard ring is an outline of at least 2 pixels                                                                             |
+| Contrast, target size, no transition under reduced motion, forced colours, and axe (see "Accessibility checks")                                                                        |
+| The build has no top-level `v1` entry; the check rejects one, and its command line exits with code 1                                                                                   |
 
 The arrow-key test does not time the presses. Timed from Node, they would measure Playwright's round
 trips rather than the page, so the test checks that each press takes effect before the next and
-that nothing is requested. Firefox and WebKit do not run these tests. The accessibility checks, axe among them, arrive with #210.
+that nothing is requested. Firefox and WebKit do not run these tests.
 
 ## No top-level `v1` entry
 
