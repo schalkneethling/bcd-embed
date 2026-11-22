@@ -13,7 +13,7 @@ custom properties.
 
 ## The base stylesheet
 
-The package ships an optional stylesheet, `@bcd-embed/element/base.css`. It
+The package ships an optional stylesheet, `@schalkneethling/bcd-embed/base.css`. It
 makes the table usable with no other CSS: borders, padding, a visible focus
 ring, the icons and their colours, the hidden sentences, the rule that hides
 the fallback content once a table loads, and the layout in a narrow container
@@ -21,7 +21,7 @@ and in print. It sets no font, font size, text colour, or background, so the
 table takes those from the page.
 
 Link `dist/base.css` from the package with a `<link>` element in the document,
-or import `@bcd-embed/element/base.css` through a bundler. Load it from the
+or import `@schalkneethling/bcd-embed/base.css` through a bundler. Load it from the
 document, not from inside a shadow root: Chromium 159, Firefox 159, and
 WebKit 27.2 ignore an `@property` rule inside a shadow root, so the tokens
 would stay unregistered.

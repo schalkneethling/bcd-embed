@@ -7,7 +7,7 @@ description: Use bcd-compat-table in React 19, Vue 3, and Svelte 5, and the load
 wrapper. The project tests it in React 19.3.1, Vue 3.5.45, and Svelte 5.57.3,
 in Chromium, Firefox, and WebKit. In every framework, two rules apply:
 
-1. **Import `@bcd-embed/element` before the framework renders the element,**
+1. **Import `@schalkneethling/bcd-embed` before the framework renders the element,**
    as the first import of the module that mounts the app or of the component
    that uses it. The import is what defines the element.
 2. **Write the fallback as an element, such as `<p>`, not as bare text.** A
@@ -47,8 +47,12 @@ prop, so `onbcd-load` listens for `bcd-load`.
 <!-- sample: packages/element/examples/react/CompatTable.tsx -->
 
 ```tsx
-import "@bcd-embed/element";
-import type { BcdCompatTableElement, BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+import "@schalkneethling/bcd-embed";
+import type {
+  BcdCompatTableElement,
+  BcdLoadDetail,
+  CompatTableData,
+} from "@schalkneethling/bcd-embed";
 
 export const CompatTable = ({ data }: { data: CompatTableData }) => (
   <bcd-compat-table
@@ -99,8 +103,8 @@ Then bind `data` with the `.prop` modifier, which always sets the property:
 
 ```vue
 <script setup lang="ts">
-import "@bcd-embed/element";
-import type { BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+import "@schalkneethling/bcd-embed";
+import type { BcdLoadDetail, CompatTableData } from "@schalkneethling/bcd-embed";
 
 defineProps<{ data: CompatTableData }>();
 
@@ -133,8 +137,8 @@ Svelte 5's listener syntax, so `onbcd-load` listens for `bcd-load`.
 
 ```svelte
 <script lang="ts">
-  import "@bcd-embed/element";
-  import type { BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+  import "@schalkneethling/bcd-embed";
+  import type { BcdLoadDetail, CompatTableData } from "@schalkneethling/bcd-embed";
 
   let { data }: { data: CompatTableData } = $props();
 

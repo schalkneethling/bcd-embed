@@ -110,23 +110,26 @@ const MIN_EXCERPT_LINES = 3;
  */
 const OTHER_SAMPLES = new Set(["packages/element/e2e/frameworks/vite.config.ts"]);
 
-/** The one command that cannot be checked, because the package is not published yet. */
-const UNPUBLISHED_INSTALL = "pnpm add @bcd-embed/element";
+/**
+ * The one command that cannot be checked here, because it reaches the npm registry. The package is
+ * a beta, so the command names the `beta` dist-tag.
+ */
+const INSTALL = "npm install @schalkneethling/bcd-embed@beta";
 
 /** The directory of each workspace a command may name with `--filter`. */
 const WORKSPACES: Record<string, string> = {
-  "@bcd-embed/element": "packages/element",
+  "@schalkneethling/bcd-embed": "packages/element",
   "@bcd-embed/website": "apps/website",
 };
 
 /**
- * Checks each line of a shell block: the unpublished install, or a pnpm script that exists in the
+ * Checks each line of a shell block: the install, or a pnpm script that exists in the
  * root `package.json` or, with `--filter`, in that workspace's `package.json`.
  */
 const shellProblems = async (block: CodeBlock): Promise<string[]> => {
   const problems: string[] = [];
   for (const line of block.lines.map((entry) => entry.trim()).filter((entry) => entry !== "")) {
-    if (line === UNPUBLISHED_INSTALL) continue;
+    if (line === INSTALL) continue;
     const filtered = /^pnpm --filter (\S+) (?:run )?([\w:-]+)$/.exec(line);
     const root = /^pnpm (?:run )?([\w:-]+)$/.exec(line);
     const directory = filtered ? WORKSPACES[filtered[1] ?? ""] : root ? "." : undefined;
@@ -336,7 +339,7 @@ describe("the component's documentation pages", () => {
     // One line, such as an import, appears in many files, so it proves nothing.
     expect(
       await problemsOf(
-        `<!-- sample: packages/element/examples/data-mode.js -->\n${fence}js\nimport "@bcd-embed/element";\n${fence}`,
+        `<!-- sample: packages/element/examples/data-mode.js -->\n${fence}js\nimport "@schalkneethling/bcd-embed";\n${fence}`,
       ),
     ).toHaveLength(1);
     // A file outside the examples, even one that holds the lines.
@@ -346,11 +349,13 @@ describe("the component's documentation pages", () => {
       ),
     ).toHaveLength(1);
     expect(
-      await problemsOf(`${fence}sh\npnpm --filter @bcd-embed/element test:imaginary\n${fence}`),
+      await problemsOf(
+        `${fence}sh\npnpm --filter @schalkneethling/bcd-embed test:imaginary\n${fence}`,
+      ),
     ).toHaveLength(1);
     expect(await problemsOf(`${fence}sh\npnpm add left-pad\n${fence}`)).toHaveLength(1);
     expect(
-      await problemsOf(`${fence}sh\npnpm --filter @bcd-embed/element test:e2e\n${fence}`),
+      await problemsOf(`${fence}sh\npnpm --filter @schalkneethling/bcd-embed test:e2e\n${fence}`),
     ).toEqual([]);
   });
 

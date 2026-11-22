@@ -81,7 +81,7 @@ key, for each of the four keys.
    `featureResponseSchema` from `@bcd-embed/schema`. The result is the body the API would answer.
 3. `toScriptJson` turns it into the text of a `<script type="application/json">`, and the page
    writes that next to a `<bcd-compat-table source="…">` that names the script's `id`. The element
-   reads it once and renders with no request (`packages/element/README.md`, "Source mode").
+   reads it once and renders with no request (`packages/element/DEVELOPMENT.md`, "Source mode").
 4. `findMdnPage` gives each panel's fallback link: the feature's MDN Web Docs page, or the nearest
    ancestor's page when the feature has none, with the `#browser_compatibility` fragment added.
    The link text names the page it links to. `html.elements.video.loading` has no page, so its link
@@ -166,7 +166,7 @@ Stylelint with `stylelint-plugin-use-baseline` 1.4.8 treats `light-dark()` as av
 it flags it at the `widely` and 2023 floors and reports nothing at 2024 and 2025 (checked on 21
 November 2026). The repository's policy floor is 2025 (`calavera.config.json`), but the root
 `.stylelintrc.json` still checks for widely available features, the same state as
-`packages/element/README.md`, "Building and linting it". So this workspace's `.stylelintrc.json`
+`packages/element/DEVELOPMENT.md`, "Building and linting it". So this workspace's `.stylelintrc.json`
 extends the root and sets `available: 2025`. Delete it when the root configuration carries the
 floor.
 
@@ -224,11 +224,11 @@ The deployed page ships what a consumer of the packages gets. `pnpm build` build
 dependency order, so `schema`, `core`, and `element` are built before this page, and the page
 imports each through its `exports`:
 
-| Import                        | Resolves to                                                      | Where it ends up                                    |
-| ----------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
-| `@bcd-embed/element`          | `packages/element/dist/index.js`, kept by the `sideEffects` list | Bundled with Lit into the element's script file     |
-| `@bcd-embed/element/base.css` | `packages/element/dist/base.css`                                 | Bundled, unminified, into the page's one stylesheet |
-| `@bcd-embed/core`, `schema`   | Their `dist/index.js`                                            | Run at build time only; nothing of them ships       |
+| Import                                | Resolves to                                                      | Where it ends up                                    |
+| ------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| `@schalkneethling/bcd-embed`          | `packages/element/dist/index.js`, kept by the `sideEffects` list | Bundled with Lit into the element's script file     |
+| `@schalkneethling/bcd-embed/base.css` | `packages/element/dist/base.css`                                 | Bundled, unminified, into the page's one stylesheet |
+| `@bcd-embed/core`, `schema`           | Their `dist/index.js`                                            | Run at build time only; nothing of them ships       |
 
 So `pnpm --filter @bcd-embed/home build` and `pnpm dev:home` need those packages built first. On a
 fresh checkout, run `pnpm --filter "@bcd-embed/home^..." build` once, which builds this workspace's

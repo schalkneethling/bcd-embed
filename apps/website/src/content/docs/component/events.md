@@ -55,7 +55,7 @@ events, and offers a button that asks again when the failure is temporary:
 <!-- sample: packages/element/examples/handle-errors.js -->
 
 ```js
-import "@bcd-embed/element";
+import "@schalkneethling/bcd-embed";
 
 // One listener on the document hears every table on the page, because both events bubble.
 document.addEventListener("bcd-load", (event) => {
