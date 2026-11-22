@@ -11,8 +11,8 @@ BCD releases. The API Worker has been deployed to Cloudflare since 15 November
 requirement remains open, a test under sustained load, which the
 [deployment page](./apps/website/src/content/docs/deployment.md#what-is-still-open-before-a-public-launch)
 lists. The web component, `<bcd-compat-table>` in `packages/element`, renders a
-table from the API, from a `data` property, or from inline JSON. It is on npm as a
-beta, `@schalkneethling/bcd-embed` under the `beta` dist-tag, and
+table from the API, from a `data` property, or from inline JSON. It publishes to npm
+as `@schalkneethling/bcd-embed`, in betas under the `beta` dist-tag until 1.0, and
 [Releasing the component](./apps/website/src/content/docs/releasing.md) describes
 how a release is staged and approved. The documentation site documents it, starting at
 [Getting started](./apps/website/src/content/docs/component/getting-started.mdx).

@@ -1,5 +1,8 @@
 # Document 10 — Component spikes
 
+> On 22 November 2026 the element package was renamed from `@bcd-embed/element` to
+> `@schalkneethling/bcd-embed`. The dated records below keep the old name.
+
 This document records the results of the time-boxed spikes that test the assumptions behind
 Document 3 (`03-web-component-architecture.md`) before Phase 2 of the component starts. Each
 spike has its own section, titled with its issue number and subject. A section states the

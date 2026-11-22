@@ -11,8 +11,9 @@ The full guide is on the documentation site, starting at
 
 ## Beta status
 
-This package is a beta, published under the `beta` dist-tag. Its attributes, events, and styling
-tokens can still change before version 1.0. Each release lists its changes in the package's
+Releases of this package are betas, published under the `beta` dist-tag, until version 1.0. A
+beta's attributes, events, and styling tokens can still change. To see which versions npm has,
+run `npm view @schalkneethling/bcd-embed versions`. Each release lists its changes in the package's
 [changelog](https://github.com/schalkneethling/bcd-embed/blob/main/packages/element/CHANGELOG.md)
 and on the [GitHub releases page](https://github.com/schalkneethling/bcd-embed/releases).
 

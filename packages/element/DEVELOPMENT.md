@@ -15,7 +15,7 @@ and the screen reader tests, which walk the element's own table.
 
 ## Installation and entry points
 
-The package is on npm as a beta, under the `beta` dist-tag. `lit` and `@lit/task` arrive with it,
+Releases are betas under the `beta` dist-tag until 1.0. `lit` and `@lit/task` arrive with it,
 because they are listed under `dependencies`:
 
 ```sh

@@ -45,8 +45,14 @@ list a staged version until it is approved, so without the tag every push to
 Only the `stage` job holds an OpenID Connect (OIDC) token, the short-lived
 credential GitHub gives a job so that npm can check which repository,
 workflow, and environment it runs in. That job checks out nothing and installs
-nothing but a pinned npm, so no code from the repository or its dependencies
-runs while the token exists. No npm token is stored anywhere.
+nothing: it uses the npm that Node.js 26.13.0 bundles, 11.20.0, and fails
+before staging if that npm is older than 11.15.0, the first version that can
+stage. So no code from the repository or its dependencies runs while the token
+exists. No npm token is stored anywhere.
+
+Before packing, the `build` job removes `devDependencies` and `scripts` from
+the package's `package.json`. Consumers never need them, and the development
+dependencies name the private, unpublished `@bcd-embed/schema`.
 
 ### Why Changesets does not publish
 
@@ -66,7 +72,10 @@ approve it, and it is marked as a prerelease when the version has a `-`.
 Do these steps once, in this order. Steps 5 to 8 must happen within two days
 of each other, because npm expires a new trusted publisher that has not
 completed a publish within two days of being created
-([npm: trusted publishers](https://docs.npmjs.com/trusted-publishers)).
+([npm: trusted publishers](https://docs.npmjs.com/trusted-publishers)). npm's
+documentation does not say whether staging a version counts as that publish,
+so approve the first staged version inside the same two days, and check the
+trusted publisher afterwards (step 8).
 
 ### 1. Turn on two-factor authentication
 
@@ -118,17 +127,22 @@ in the root `package.json`: GitHub as the provider, the workflow file
 the workflow to stage but not to publish directly. It skips every package
 whose `private` is `true`, so it finds only `@schalkneethling/bcd-embed`.
 
-First print the plan, which changes nothing:
+Before you run it, read the `fledgling` block in the root `package.json` and
+check that it says `"provider": "github"`, `"workflow": "release.yml"`,
+`"environment": "publish"`, and `"publish": false`. The dry run does not print
+those settings, so this is where you confirm them. Fledgling takes the
+repository from the checkout's `origin` remote, which must be
+`schalkneethling/bcd-embed`.
+
+Then print the plan, which changes nothing:
 
 ```sh
 npx fledgling@1.3.1 --dry-run
 ```
 
-Check that the plan names `@schalkneethling/bcd-embed` and no other package,
-that it will claim the name with a placeholder version `0.0.0`, and that the
-trusted publisher it describes uses the repository
-`schalkneethling/bcd-embed`, the file `release.yml`, and the environment
-`publish`. Then apply it:
+The plan lists the files of the placeholder it would publish, says it would
+claim `@schalkneethling/bcd-embed` at `0.0.0`, and says it would set up
+trusted publishing. Check that it names no other package. Then apply it:
 
 ```sh
 npx fledgling@1.3.1 --yes
@@ -146,9 +160,10 @@ approval covers the whole run.
 npm trust list @schalkneethling/bcd-embed
 ```
 
-Check that the list shows one GitHub configuration with the repository
-`schalkneethling/bcd-embed`, the workflow `release.yml`, and the environment
-`publish`, and that it allows staged publishing but not direct publishing. Then, on npmjs.com, open the
+This is the check of what Fledgling configured. The list should show one
+GitHub configuration with the repository `schalkneethling/bcd-embed`, the
+workflow `release.yml`, and the environment `publish`, and it should allow
+staged publishing but not direct publishing. Then, on npmjs.com, open the
 package's Settings and set publishing access to **Require two-factor
 authentication and disallow tokens**.
 
@@ -161,7 +176,27 @@ staging run fails that way, wait and re-run the failed jobs.
 
 Follow [Each release](#each-release) from its step 2 with the Version
 Packages pull request that step 4 opened. When you reach its last step, also
-deal with the placeholder, below.
+deal with the placeholder, below. After the first approval, check that the
+trusted publisher is still there:
+
+```sh
+npm trust list @schalkneethling/bcd-embed
+```
+
+If the list is empty, or a later staging run is refused although the
+workflow and environment match, the configuration has probably expired, and
+npm does not let you use or edit an expired one. Remove it and create it
+again from the `fledgling` block. `npm trust revoke` takes the configuration's
+id from `npm trust list`
+([npm: npm trust](https://docs.npmjs.com/cli/v12/commands/npm-trust)), and
+`fledgling sync` sets up trust for any package that has none:
+
+```sh
+npm trust revoke --id <id> @schalkneethling/bcd-embed
+npx fledgling@1.3.1 sync
+```
+
+The new configuration has its own two days to complete a publish.
 
 ### The placeholder and the `latest` dist-tag
 
@@ -231,6 +266,29 @@ an older beta than `@beta` does.
 
 6. Open the draft release that the `release` job created on the repository's
    Releases page, and publish it.
+
+### When a release run fails part way
+
+Re-run the failed jobs of the same workflow run, from its page in the Actions
+tab. A re-run builds from the same commit as the first attempt, and the
+`release` job checks for the tag and the draft release before it creates
+either, so it finishes whatever the first attempt left undone.
+
+Do not wait for the next push to `main` instead. If `stage` succeeded but
+`release` failed, there is no tag, so the next push plans to stage again: it
+builds from the newer commit at the tip of `main`, not the version commit, and
+npm refuses it, because that version is already staged. If the re-run cannot
+create the tag either, create it by hand on the commit that the staged run
+built, which the run's page shows, then publish a release for it:
+
+```sh
+git tag @schalkneethling/bcd-embed@<version> <commit>
+git push origin refs/tags/@schalkneethling/bcd-embed@<version>
+```
+
+If you later add a tag ruleset that protects release tags, which the npm
+publishing checklist recommends, it must still let GitHub Actions create tags
+named `@schalkneethling/bcd-embed@*`, or the `release` job fails every time.
 
 ### When a staged version is wrong
 
@@ -311,6 +369,11 @@ watching on it:
   it does.
 - npm's documentation does not say how long a staged version waits for
   approval before it expires.
+- npm's documentation does not say whether staging a version counts as the
+  first publish that keeps a new trusted publisher from expiring after two
+  days, or whether only an approved version does. Step 8 of the one-time
+  setup checks the trusted publisher after the first approval for that
+  reason.
 - The `stage` job passes the packed tarball to `npm stage publish`. npm's
   synopsis accepts a package spec, which includes a tarball path, but the first
   run is the first real use of it with this package.
