@@ -205,15 +205,18 @@ Fledgling publishes a placeholder version with the dist-tag `latest`, and
 whatever `latest` points at. A publish moves `latest` only when it uses that
 tag ([npm: dist-tag](https://docs.npmjs.com/cli/v12/commands/npm-dist-tag)),
 and betas use `beta`, so after the first approval `latest` still points at
-the empty placeholder. Fledgling 1.3.1 defaults the placeholder to `0.0.0`,
-but the claim of 22 November 2026 published `0.0.0-stage`, so read the
-version from npm rather than assuming it. Check the tags, then point `latest`
-at the beta and deprecate the placeholder:
+the empty placeholder. The claim of 22 November 2026 left two placeholder
+versions, `0.0.0-stage` and `0.0.0`, two minutes apart, and `latest` pointed
+at `0.0.0`. A query soon after the claim listed only
+`0.0.0-stage`, so read the versions from npm rather than assuming them.
+Check the tags, then point `latest` at the beta and deprecate every
+placeholder:
 
 ```sh
 npm dist-tag ls @schalkneethling/bcd-embed
 npm view @schalkneethling/bcd-embed versions
 npm dist-tag add @schalkneethling/bcd-embed@0.1.0-beta.0 latest
+npm deprecate @schalkneethling/bcd-embed@0.0.0 "A placeholder that reserved the name. Install @schalkneethling/bcd-embed@beta."
 npm deprecate @schalkneethling/bcd-embed@0.0.0-stage "A placeholder that reserved the name. Install @schalkneethling/bcd-embed@beta."
 npm view @schalkneethling/bcd-embed version
 ```
@@ -360,23 +363,28 @@ it had fewer than 300 downloads in the last week, and it has a single owner.
 Unpublishing every version blocks any new publish of the package for 24 hours.
 Prefer deprecating and moving the dist-tag.
 
+## What the first release showed
+
+The first release, `0.1.0-beta.0` on 22 November 2026, settled three of the
+open questions:
+
+- `npm stage publish` accepts the packed tarball over OIDC. The stage job's
+  log reads "Staging to https://registry.npmjs.org/ with tag beta and public
+  access".
+- An approved version carries provenance. The same log reads "Signed
+  provenance statement with source and build information from GitHub
+  Actions", and after approval `npm view @schalkneethling/bcd-embed@0.1.0-beta.0 dist.attestations`
+  shows a `https://slsa.dev/provenance/v1` statement. `npm audit signatures`
+  in a fresh project verifies it.
+- The `release` job creates the git tag and the draft pre-release through the
+  real GitHub API.
+
 ## What is not verified yet
 
-These points could not be checked before the first release and are worth
-watching on it:
-
-- npm's documentation does not say whether a staged version carries a
-  provenance statement after approval. npm generates provenance by itself for
-  a trusted publish from a public repository, and `npm stage publish` shares
-  that code, so it probably does. The package page on npmjs.com shows it if
-  it does.
 - npm's documentation does not say how long a staged version waits for
   approval before it expires.
 - npm's documentation does not say whether staging a version counts as the
   first publish that keeps a new trusted publisher from expiring after two
-  days, or whether only an approved version does. Step 8 of the one-time
-  setup checks the trusted publisher after the first approval for that
-  reason.
-- The `stage` job passes the packed tarball to `npm stage publish`. npm's
-  synopsis accepts a package spec, which includes a tarball path, but the first
-  run is the first real use of it with this package.
+  days. The first version was staged and approved within the two days, so
+  this did not come up. Step 8 of the one-time setup checks the trusted
+  publisher after the first approval.
