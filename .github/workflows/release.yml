@@ -50,13 +50,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # `mode` is `version` while changesets are pending, `stage` when the current version has not
-      # been staged yet, and `none` otherwise. In pre-release mode, `changeset version` moves the
-      # changesets it used into `.changeset/pre/`, so only top-level files count as pending.
+      # `mode` is `version` while a changeset that bumps the package is pending, `stage` when the
+      # current version has not been staged yet, and `none` otherwise. The script reads the
+      # changeset files the way Changesets does, with no installed dependency; in pre-release mode,
+      # `changeset version` moves the changesets it used into `.changeset/pre/`, which it skips.
       - name: Read the changesets, the version, and its git tag
         id: plan
         run: |
-          pending="$(find .changeset -maxdepth 1 -name '*.md' ! -name README.md | wc -l | tr -d ' ')"
+          pending="$(node scripts/release-changesets.mjs pending)"
           name="$(node -p 'require("./packages/element/package.json").name')"
           version="$(node -p 'require("./packages/element/package.json").version')"
           git_tag="${name}@${version}"
@@ -165,7 +166,14 @@ jobs:
       - name: Check the package's manifest and types
         run: pnpm --filter @schalkneethling/bcd-embed check:package
 
-      # `pnpm pack` rewrites the `workspace:` ranges in package.json, which `npm pack` would leave
+      # Consumers never need the development dependencies, which name the private, unpublished
+      # @bcd-embed/schema, or the scripts, which only build and test the package in this
+      # repository. This edits the copy in the runner's checkout, after the steps that use them.
+      - name: Remove what consumers never need from package.json
+        working-directory: packages/element
+        run: npm pkg delete devDependencies scripts
+
+      # `pnpm pack` rewrites any `workspace:` range in package.json, which `npm pack` would leave
       # in place.
       - name: Pack the package
         run: pnpm --filter @schalkneethling/bcd-embed pack --out "$RUNNER_TEMP/package/package.tgz"
@@ -178,8 +186,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The only job with an OIDC token. It checks out nothing and installs nothing but a pinned npm,
-  # so no code from the repository or its dependencies runs while the token exists.
+  # The only job with an OIDC token. It checks out nothing and installs nothing, so no code from
+  # the repository or its dependencies runs while the token exists.
   stage:
     name: Stage the release on npm
     needs: [plan, build]
@@ -204,10 +212,19 @@ jobs:
 
       # Trusted publishing needs npm 11.5.1 or later and staged publishing 11.15.0 or later
       # (https://docs.npmjs.com/trusted-publishers, https://docs.npmjs.com/staged-publishing).
-      # The version is pinned exactly and installs without scripts. No lockfile covers it, which
-      # zizmor's `adhoc-packages` audit reports, because this job deliberately checks out nothing.
-      - name: Install a pinned npm
-        run: npm install --global --ignore-scripts npm@12.2.3 # zizmor: ignore[adhoc-packages]
+      # Node.js 26.13.0 bundles npm 11.20.0 (https://nodejs.org/dist/index.json), so the job uses
+      # that npm instead of installing one, and fails here if a Node.js change ever lowers it.
+      - name: Check that the bundled npm can stage over OIDC
+        run: |
+          version="$(npm --version)"
+          node -e '
+            const [major, minor] = process.argv[1].split(".").map(Number);
+            if (major < 11 || (major === 11 && minor < 15)) {
+              console.error(`npm ${process.argv[1]} cannot stage; staged publishing needs 11.15.0 or later.`);
+              process.exit(1);
+            }
+          ' "$version"
+          echo "npm $version"
 
       # The dist-tag is fixed when a version is staged, and approval publishes it with that tag.
       # npm generates provenance by itself under trusted publishing from a public repository.
@@ -231,7 +248,9 @@ jobs:
           persist-credentials: false
 
       # The tag is the record that this version is staged, so the next push to main does not stage
-      # it again. The release stays a draft until the maintainer approves the staged version.
+      # it again. The release stays a draft until the maintainer approves the staged version. Both
+      # steps check first, so re-running this job after a partial failure finishes the work instead
+      # of failing on what the first attempt already created.
       - name: Create the git tag and the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -248,8 +267,22 @@ jobs:
             const end = rest.search(/^## /m);
             writeFileSync("release-notes.md", (end === -1 ? rest : rest.slice(0, end)).trim() + "\n");
           '
-          gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f "ref=refs/tags/${GIT_TAG}" -f "sha=${GITHUB_SHA}" > /dev/null
-          prerelease="false"
-          case "$VERSION" in *-*) prerelease="true" ;; esac
-          gh release create "$GIT_TAG" --verify-tag --draft --prerelease="$prerelease" \
-            --title "$GIT_TAG" --notes-file release-notes.md
+
+          # Exit code 2 means the tag does not exist; anything else non-zero is a failure.
+          status=0
+          git ls-remote --exit-code --tags origin "refs/tags/${GIT_TAG}" > /dev/null || status=$?
+          case "$status" in
+            0) echo "The tag $GIT_TAG exists already." ;;
+            2) gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f "ref=refs/tags/${GIT_TAG}" -f "sha=${GITHUB_SHA}" > /dev/null ;;
+            *) echo "::error::Could not list the remote tags."; exit 1 ;;
+          esac
+
+          # The releases list includes drafts for a token that can write contents.
+          if gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" --jq '.[].tag_name' | grep -Fxq -- "$GIT_TAG"; then
+            echo "A release for $GIT_TAG exists already."
+          else
+            prerelease="false"
+            case "$VERSION" in *-*) prerelease="true" ;; esac
+            gh release create "$GIT_TAG" --verify-tag --draft --prerelease="$prerelease" \
+              --title "$GIT_TAG" --notes-file release-notes.md
+          fi
