@@ -200,18 +200,21 @@ The new configuration has its own two days to complete a publish.
 
 ### The placeholder and the `latest` dist-tag
 
-Fledgling publishes the placeholder `0.0.0` with the dist-tag `latest`, and
+Fledgling publishes a placeholder version with the dist-tag `latest`, and
 `npm install @schalkneethling/bcd-embed`, with no version or tag, installs
 whatever `latest` points at. A publish moves `latest` only when it uses that
 tag ([npm: dist-tag](https://docs.npmjs.com/cli/v12/commands/npm-dist-tag)),
 and betas use `beta`, so after the first approval `latest` still points at
-the empty placeholder. Check it, then point `latest` at the beta and deprecate
-the placeholder:
+the empty placeholder. Fledgling 1.3.1 defaults the placeholder to `0.0.0`,
+but the claim of 22 November 2026 published `0.0.0-stage`, so read the
+version from npm rather than assuming it. Check the tags, then point `latest`
+at the beta and deprecate the placeholder:
 
 ```sh
 npm dist-tag ls @schalkneethling/bcd-embed
+npm view @schalkneethling/bcd-embed versions
 npm dist-tag add @schalkneethling/bcd-embed@0.1.0-beta.0 latest
-npm deprecate @schalkneethling/bcd-embed@0.0.0 "A placeholder that reserved the name. Install @schalkneethling/bcd-embed@beta."
+npm deprecate @schalkneethling/bcd-embed@0.0.0-stage "A placeholder that reserved the name. Install @schalkneethling/bcd-embed@beta."
 npm view @schalkneethling/bcd-embed version
 ```
 
