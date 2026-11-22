@@ -4,7 +4,7 @@
     "jsx": "react-jsx",
     "paths": {
       "@bcd-embed/schema": ["../schema/src/index.ts"],
-      "@bcd-embed/element": ["./src/index.ts"]
+      "@schalkneethling/bcd-embed": ["./src/index.ts"]
     }
   },
   "include": [

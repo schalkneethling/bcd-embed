@@ -2,7 +2,7 @@
   // The Svelte page. An attribute named `on` plus the event name is Svelte 5's listener syntax, so
   // `onbcd-load` listens for `bcd-load` (the compiler's `visit_event_attribute` takes the name
   // after `on`). `window.bcdPage` is made by `main.ts` before this component is created.
-  import type { BcdErrorDetail, BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+  import type { BcdErrorDetail, BcdLoadDetail, CompatTableData } from "@schalkneethling/bcd-embed";
 
   import { brokenPayload, browsersFor, fallbackFor, payload, readOptions } from "../shared.js";
 

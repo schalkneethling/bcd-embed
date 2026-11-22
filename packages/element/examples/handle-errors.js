@@ -1,4 +1,4 @@
-import "@bcd-embed/element";
+import "@schalkneethling/bcd-embed";
 
 // One listener on the document hears every table on the page, because both events bubble.
 document.addEventListener("bcd-load", (event) => {

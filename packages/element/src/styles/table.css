@@ -186,7 +186,7 @@ bcd-compat-table[loaded] > .bcd-render-container {
  *
  * It stays an inline box, sized to nothing by font-size: 0. A positioned or inline-block span gets
  * an accessible object of its own, which broke NVDA's reading of row headers and Orca's Return on
- * disclosures in Firefox (packages/element/README.md, "Styling").
+ * disclosures in Firefox (packages/element/DEVELOPMENT.md, "Styling").
  */
 .bcd-table .visually-hidden {
   font-size: 0;

@@ -1019,7 +1019,7 @@ describe("the size of the rendered tree", () => {
     expect(element.querySelectorAll("tbody td")).toHaveLength(featureCount * targetCount);
     expect(elementCount).toBeLessThanOrEqual(bound);
     // Because F × T is at least F and at least T, the bound is under 16 × F × T + 9 × S + E + 10
-    // when S also counts each flag and note. That is the multiple the README records.
+    // when S also counts each flag and note. That is the multiple DEVELOPMENT.md records.
     expect(bound).toBeLessThanOrEqual(
       16 * featureCount * targetCount + 9 * (statements + flags + notes) + noteElements + 10,
     );

@@ -1,7 +1,7 @@
 // What the three framework pages have in common, so each page differs only in how its framework
 // binds `data`, registers the event listeners, and re-renders. This module imports no framework
 // and never imports the element: the order in which the element is defined is the test's variable.
-import type { BcdErrorDetail, BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+import type { BcdErrorDetail, BcdLoadDetail, CompatTableData } from "@schalkneethling/bcd-embed";
 
 import { v1NormalizedFixture } from "../../../schema/src/fixtures/v1.js";
 
@@ -96,9 +96,9 @@ export const recordFirstRender = (record: PageRecord): void => {
   record.undefinedAtFirstRender = customElements.get("bcd-compat-table") === undefined;
 };
 
-/** Defines the element, the way a page does with `import "@bcd-embed/element"`. */
+/** Defines the element, the way a page does with `import "@schalkneethling/bcd-embed"`. */
 export const defineElement = async (): Promise<void> => {
-  await import("@bcd-embed/element");
+  await import("@schalkneethling/bcd-embed");
 };
 
 /** Marks the page as ready, so a test waits for the mount and for the definition. */

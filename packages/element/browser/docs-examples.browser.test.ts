@@ -181,7 +181,7 @@ describe("data-mode.html and data-mode.js", () => {
 });
 
 describe("source-mode.js", () => {
-  // The two sequences that end or swallow a script when `<` is not escaped (README, "Source mode").
+  // The two sequences that end or swallow a script when `<` is not escaped (DEVELOPMENT.md, "Source mode").
   const hostileNote = "Ends here: </script> and here: <!--<script>, then goes on.";
 
   const withNote = (note: string): FeatureResponse => {

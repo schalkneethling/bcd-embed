@@ -73,7 +73,7 @@ describe("custom-elements.json", () => {
   });
 
   it("equals a fresh run of the analyzer", () => {
-    // If this fails, run `pnpm --filter @bcd-embed/element cem` and commit the result.
+    // If this fails, run `pnpm --filter @schalkneethling/bcd-embed cem` and commit the result.
     expect(committed).toEqual(fresh);
   });
 

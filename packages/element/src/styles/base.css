@@ -1,5 +1,5 @@
 /*
- * The opt-in base stylesheet for <bcd-compat-table>, published as @bcd-embed/element/base.css
+ * The opt-in base stylesheet for <bcd-compat-table>, published as @schalkneethling/bcd-embed/base.css
  * (Document 3 section 3, "Cascade layers"). The build flattens the imports into one file.
  *
  * The statement below fixes the layer's place in the cascade before any rule is read, so an

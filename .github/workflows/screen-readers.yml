@@ -2,7 +2,7 @@ name: Screen readers
 
 # Screen reader tests for the web component: VoiceOver on macOS, Orca on Linux, and NVDA on
 # Windows, driven by Guidepup. They walk a built fixture page that renders `<bcd-compat-table>`
-# (packages/element/README.md).
+# (packages/element/DEVELOPMENT.md).
 #
 # The `screen-readers` job at the end is a required status check, so a failed or cancelled
 # screen reader run blocks the merge. A required check must report on every pull request, so the
@@ -118,7 +118,7 @@ jobs:
           cache: pnpm
 
       - name: Install the element workspace
-        run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
+        run: pnpm install --frozen-lockfile --filter @schalkneethling/bcd-embed...
 
       # Guidepup's setup tool runs with `pnpm dlx`, not as a dependency of the workspace, because
       # only this workflow uses it: it prepares a runner and the tests never import it. Its
@@ -139,16 +139,16 @@ jobs:
       # On Windows, `--with-deps` installs system dependencies only for Chromium, so for Firefox it
       # installs nothing there.
       - name: Install the browser
-        run: pnpm --filter @bcd-embed/element exec playwright install --with-deps ${{ matrix.browser }}
+        run: pnpm --filter @schalkneethling/bcd-embed exec playwright install --with-deps ${{ matrix.browser }}
 
       # The walks load the built fixture page, which renders the component. A build that fails
       # fails the job here, so the walks never run against a missing or stale page.
       - name: Build the fixture page
-        run: pnpm --filter @bcd-embed/element run build:screen-reader-fixture
+        run: pnpm --filter @schalkneethling/bcd-embed run build:screen-reader-fixture
 
       - name: Run the screen reader tests
         run: >-
-          ${{ matrix.run }} pnpm --filter @bcd-embed/element run test:${{ matrix.reader }}
+          ${{ matrix.run }} pnpm --filter @schalkneethling/bcd-embed run test:${{ matrix.reader }}
           --forbid-only --reporter=list,github
 
       # Also after a pass, because the transcripts are the result a person reviews.

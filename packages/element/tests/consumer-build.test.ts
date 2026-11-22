@@ -1,6 +1,6 @@
 // A throwaway consumer project that installs the built package and builds with Vite in production
-// mode, the way a page that depends on `@bcd-embed/element` does (issue #206). The consumer reaches
-// the package through `node_modules/@bcd-embed/element`, so the build follows the package's own
+// mode, the way a page that depends on `@schalkneethling/bcd-embed` does (issue #206). The consumer reaches
+// the package through `node_modules/@schalkneethling/bcd-embed`, so the build follows the package's own
 // `exports` and `sideEffects` fields, not a path alias to the source.
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
@@ -28,7 +28,6 @@ import { build } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
-const schemaSource = fileURLToPath(new URL("../../schema/src/index.ts", import.meta.url));
 
 // Lit announces itself by writing these arrays to `globalThis` when its modules run. They survive
 // minification because they are property names, so their presence in a built file means that the
@@ -93,9 +92,8 @@ const buildWithNodeEnv = async (nodeEnv: string, run: () => Promise<unknown>): P
 
 // Emits the package's declarations the way `tsconfig.build.json` does, into a temporary directory,
 // and copies them next to `dist/index.js` of the installed package. The configuration extends the
-// package's `tsconfig.json`, whose `paths` point at the schema package's source, so the test does
-// not need `@bcd-embed/schema` built first. `tsc` finds `@types/node` from a directory under
-// `node_modules/.cache` inside the package.
+// package's `tsconfig.json`. `tsc` finds `@types/node` from a directory under `node_modules/.cache`
+// inside the package.
 const installDeclarations = async (installedDist: string): Promise<void> => {
   const cache = join(packageRoot, "node_modules", ".cache");
   await mkdir(cache, { recursive: true });
@@ -135,7 +133,7 @@ const buildConsumer = async ({
 }: ConsumerSource): Promise<ConsumerBuild> => {
   buildCount += 1;
   const root = join(workspace, `consumer-${buildCount}`);
-  const installed = join(root, "node_modules", "@bcd-embed", "element");
+  const installed = join(root, "node_modules", "@schalkneethling", "bcd-embed");
   await mkdir(installed, { recursive: true });
 
   await build({
@@ -231,8 +229,8 @@ const runPage = async (
 };
 
 // Runs the TypeScript compiler on `typecheck.ts` in a consumer project and returns its exit code
-// and output. The consumer's `paths` entry stands in for the install of `@bcd-embed/schema` that
-// the declarations import their types from.
+// and output. The consumer has no `@bcd-embed/schema` and no `paths`, as on a real install, so the
+// compile passes only when the declarations import nothing beyond the package's dependencies.
 const typecheck = async (
   root: string,
   source: string,
@@ -249,7 +247,6 @@ const typecheck = async (
         types: [],
         strict: true,
         noEmit: true,
-        paths: { "@bcd-embed/schema": [schemaSource] },
       },
       include: ["typecheck.ts"],
     }),
@@ -263,10 +260,10 @@ const typecheck = async (
   }
 };
 
-const sideEffectImport = 'import "@bcd-embed/element";\n';
+const sideEffectImport = 'import "@schalkneethling/bcd-embed";\n';
 
 const typeOnlyImport = [
-  'import type { BcdCompatTableElement } from "@bcd-embed/element";',
+  'import type { BcdCompatTableElement } from "@schalkneethling/bcd-embed";',
   'const table: BcdCompatTableElement | null = document.querySelector("bcd-compat-table");',
   "console.log(table?.query);",
   "",
@@ -314,7 +311,7 @@ describe("a consumer that builds with Vite in production mode", () => {
   // only Lit-free consumer is one that imports types.
   it("brings in Lit and defines the element when the consumer imports a value", async () => {
     const consumer = await buildConsumer({
-      main: 'import { en } from "@bcd-embed/element";\nconsole.log(en);\n',
+      main: 'import { en } from "@schalkneethling/bcd-embed";\nconsole.log(en);\n',
     });
 
     for (const marker of LIT_MARKERS) expect(consumer.script).toContain(marker);
@@ -343,7 +340,7 @@ describe("a consumer that builds with Vite in production mode", () => {
         "import type {",
         "  BcdCompatTableElement,",
         "  CompatTableData,",
-        '} from "@bcd-embed/element";',
+        '} from "@schalkneethling/bcd-embed";',
         'const table = document.querySelector("bcd-compat-table");',
         "const element: BcdCompatTableElement | null = table;",
         'const loading: "lazy" | "eager" | undefined = table?.loading;',
@@ -361,7 +358,7 @@ describe("a consumer that builds with Vite in production mode", () => {
     // the package through `exports` and read its declarations.
     const rejected = await typecheck(
       consumer.root,
-      'import type { NotExported } from "@bcd-embed/element";\nexport type { NotExported };\n',
+      'import type { NotExported } from "@schalkneethling/bcd-embed";\nexport type { NotExported };\n',
     );
     expect(rejected.code).not.toBe(0);
     expect(rejected.output).toContain("NotExported");
@@ -371,8 +368,10 @@ describe("a consumer that builds with Vite in production mode", () => {
   // to `dist/base.css`. Vite minifies the CSS of an app build with lightningcss by default, which
   // drops the `@layer bcd-embed.base;` statement and lowers `light-dark()` (issue #246 tracks
   // it), so the assertions are on text that survives: the layer block and a rule inside it.
-  it("resolves @bcd-embed/element/base.css through exports", async () => {
-    const consumer = await buildConsumer({ main: 'import "@bcd-embed/element/base.css";\n' });
+  it("resolves @schalkneethling/bcd-embed/base.css through exports", async () => {
+    const consumer = await buildConsumer({
+      main: 'import "@schalkneethling/bcd-embed/base.css";\n',
+    });
 
     expect(consumer.styles).toContain("@layer bcd-embed.base{");
     expect(consumer.styles).toContain(".bcd-render-container");
@@ -380,7 +379,7 @@ describe("a consumer that builds with Vite in production mode", () => {
   }, 60_000);
 
   // The reason `sideEffects` is an array. A bare `false` tells the bundler that a bare
-  // `import "@bcd-embed/element"` has no effect, so it drops the module and nothing defines the
+  // `import "@schalkneethling/bcd-embed"` has no effect, so it drops the module and nothing defines the
   // element. This test shows that the first one would fail under that change.
   it("leaves the element undefined when sideEffects is false", async () => {
     const consumer = await buildConsumer({ main: sideEffectImport, sideEffects: false });

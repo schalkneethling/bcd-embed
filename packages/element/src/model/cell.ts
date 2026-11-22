@@ -1,4 +1,4 @@
-import type { SupportFlag, SupportState, SupportStatement } from "@bcd-embed/schema";
+import type { SupportFlag, SupportState, SupportStatement } from "../contract.js";
 
 import { formatMessage } from "../strings/format.js";
 import type { MessageId, MessageValues, StringTable } from "../strings/format.js";

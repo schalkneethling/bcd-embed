@@ -13,7 +13,7 @@ import "../src/index.js";
 
 const SOURCE_ID = "bcd-data-fixture-adversarial-v1";
 
-/** The escape rule the README gives pages: every `<` becomes the six characters `<`. */
+/** The escape rule DEVELOPMENT.md gives pages: every `<` becomes the six characters `<`. */
 const toScriptJson = (value: unknown): string => JSON.stringify(value).replaceAll("<", "\\u003c");
 
 const copy = <Value>(value: Value): Value => structuredClone(value);

@@ -9,7 +9,9 @@ export default defineConfig({
   resolve: {
     // The page imports the package by name, as a consumer does. The package is not linked into
     // its own `node_modules`, so the name is mapped to the library build.
-    alias: { "@bcd-embed/element": fileURLToPath(new URL("./dist/index.js", import.meta.url)) },
+    alias: {
+      "@schalkneethling/bcd-embed": fileURLToPath(new URL("./dist/index.js", import.meta.url)),
+    },
   },
   build: {
     // The page links the built `dist/base.css`, and Vite copies it into this build. Its default

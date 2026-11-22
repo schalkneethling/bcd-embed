@@ -1,6 +1,6 @@
 /**
  * A note with the two sequences that cut a JSON script short or swallow the rest of the page when
- * they are written into it unescaped (packages/element/README.md, "Source mode"): a closing script
+ * they are written into it unescaped (packages/element/DEVELOPMENT.md, "Source mode"): a closing script
  * tag followed by an opening one that would run `alert(1)`, and `<!--<script>`, which moves the
  * HTML tokenizer into its "script data double escaped" state.
  */

@@ -1,6 +1,7 @@
 {
   "name": "@bcd-embed/schema",
   "version": "0.0.0",
+  "private": true,
   "description": "Canonical schemas and TypeScript types for the bcd-embed API contract.",
   "license": "MIT",
   "files": [
@@ -22,9 +23,6 @@
     "./json-schema/meta-response": "./dist/json-schema/meta-response.schema.json",
     "./json-schema/api-error-response": "./dist/json-schema/api-error-response.schema.json",
     "./package.json": "./package.json"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "scripts": {
     "build": "vite build --mode lib && tsc --project tsconfig.build.json && node scripts/copy-json-schemas.mjs && node scripts/package-smoke-test.mjs",

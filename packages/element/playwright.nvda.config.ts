@@ -7,7 +7,7 @@ import { origin, webServer } from "./screen-reader/server.js";
 
 export default defineConfig({
   // The walk loads the built fixture page, which this server previews. Run
-  // `pnpm --filter @bcd-embed/element build:screen-reader-fixture` first.
+  // `pnpm --filter @schalkneethling/bcd-embed build:screen-reader-fixture` first.
   webServer,
   // One test at a time and headed, because there is only one screen reader and it cannot read a
   // headless browser.

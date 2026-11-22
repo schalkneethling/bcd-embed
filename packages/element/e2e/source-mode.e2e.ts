@@ -21,7 +21,7 @@ const FALLBACK = "<p>Fallback: the browser compatibility table has not loaded.</
 
 type EventRecord = { readonly type: string; readonly detail: unknown };
 
-/** The escape rule from the README: every `<` becomes the six characters `<`. */
+/** The escape rule from DEVELOPMENT.md: every `<` becomes the six characters `<`. */
 const toScriptJson = (value: unknown): string => JSON.stringify(value).replaceAll("<", "\\u003c");
 
 const jsonScript = (id: string, json: string): string =>

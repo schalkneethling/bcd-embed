@@ -1,7 +1,7 @@
 name: Element browser
 
 # Browser tests for the web component in Chromium, Firefox, and WebKit, run with Playwright Test and
-# axe (packages/element/README.md). The Chromium Vitest project is separate: it runs inside
+# axe (packages/element/DEVELOPMENT.md). The Chromium Vitest project is separate: it runs inside
 # `pnpm check` in ci.yml.
 #
 # The `element-browser` job at the end is a required status check, so a failed or cancelled browser
@@ -80,7 +80,7 @@ jobs:
           cache: pnpm
 
       - name: Install the element workspace
-        run: pnpm install --frozen-lockfile --filter @bcd-embed/element...
+        run: pnpm install --frozen-lockfile --filter @schalkneethling/bcd-embed...
 
       # The install runs through the workspace so it uses the same Playwright version as the tests,
       # because a browser build is tied to it.
@@ -103,7 +103,7 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
         run: |
-          playwright="pnpm --filter @bcd-embed/element exec playwright"
+          playwright="pnpm --filter @schalkneethling/bcd-embed exec playwright"
           case "$BROWSER" in
             chromium) $playwright install --with-deps --only-shell chromium ;;
             firefox)
@@ -115,7 +115,7 @@ jobs:
 
       - name: Run the browser tests
         run: >-
-          pnpm --filter @bcd-embed/element run test:e2e
+          pnpm --filter @schalkneethling/bcd-embed run test:e2e
           --project=${{ matrix.browser }} --forbid-only --reporter=list,github
 
       # Only after a failure, because a pass leaves nothing worth keeping. The traces show the page

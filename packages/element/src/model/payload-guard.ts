@@ -3,7 +3,7 @@ import type {
   FeatureResponse,
   SupportSummary,
   SupportTargetSupport,
-} from "@bcd-embed/schema";
+} from "../contract.js";
 
 /**
  * The checks that stand between an unknown value and the table model. The element bundle carries

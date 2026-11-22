@@ -14,9 +14,9 @@
   },
   "dependencies": {
     "@bcd-embed/core": "workspace:*",
-    "@bcd-embed/element": "workspace:*",
     "@bcd-embed/schema": "workspace:*",
     "@mdn/browser-compat-data": "8.1.9",
+    "@schalkneethling/bcd-embed": "workspace:*",
     "astro": "7.4.12"
   },
   "devDependencies": {

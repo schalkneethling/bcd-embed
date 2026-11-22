@@ -176,7 +176,7 @@ export const buildFeatureResponse = (bcd: CompatData, key: string): FeatureRespo
  * The text of a `<script type="application/json">` that holds the payload. Every `<` becomes the
  * six characters `\u003c`, which `JSON.parse` turns back into `<`. This is the page's one
  * injection control: a note that contains `</script>` or `<!--<script>` would otherwise end the
- * script early or swallow the rest of the page (packages/element/README.md, "Source mode").
+ * script early or swallow the rest of the page (packages/element/DEVELOPMENT.md, "Source mode").
  * O(n) time and space for n characters of JSON.
  */
 export const toScriptJson = (payload: unknown): string =>

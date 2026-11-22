@@ -1,4 +1,4 @@
-import type { SupportTarget } from "@bcd-embed/schema";
+import type { SupportTarget } from "../contract.js";
 
 import type { MessageId } from "../strings/format.js";
 import { assertTableModelBrowser } from "./payload-guard.js";

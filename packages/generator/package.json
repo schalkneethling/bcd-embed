@@ -1,6 +1,7 @@
 {
   "name": "@bcd-embed/generator",
   "version": "0.1.0",
+  "private": true,
   "description": "Validated, lazy static artifacts from pinned MDN Browser Compatibility Data.",
   "license": "MIT",
   "bin": {

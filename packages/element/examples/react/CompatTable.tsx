@@ -1,5 +1,9 @@
-import "@bcd-embed/element";
-import type { BcdCompatTableElement, BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+import "@schalkneethling/bcd-embed";
+import type {
+  BcdCompatTableElement,
+  BcdLoadDetail,
+  CompatTableData,
+} from "@schalkneethling/bcd-embed";
 
 export const CompatTable = ({ data }: { data: CompatTableData }) => (
   <bcd-compat-table

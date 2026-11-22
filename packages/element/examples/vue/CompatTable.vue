@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import "@bcd-embed/element";
-import type { BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+import "@schalkneethling/bcd-embed";
+import type { BcdLoadDetail, CompatTableData } from "@schalkneethling/bcd-embed";
 
 defineProps<{ data: CompatTableData }>();
 

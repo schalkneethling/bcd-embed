@@ -8,6 +8,13 @@ enableGlobalVirtualStore: false
 
 engineStrict: true
 strictPeerDependencies: true
+# Run no dependency's install scripts, so a compromised release cannot run code at install time.
+# pnpm 11 reads this setting here; it ignores `ignore-scripts` in `.npmrc`, which only npm reads.
+# Measured on 22 November 2026: esbuild and workerd still work without their postinstall scripts,
+# because their launchers find the platform binary package at run time, and no workspace has a
+# lifecycle script of its own. `allowBuilds` below still decides what may build when someone
+# installs with `--no-ignore-scripts`.
+ignoreScripts: true
 allowBuilds:
   esbuild: true
   # Needed only for the Guidepup setup tool's screen recording, which this project does not use.
