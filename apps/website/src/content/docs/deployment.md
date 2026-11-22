@@ -745,4 +745,8 @@ These items are separate work that a deploy does not cover:
 
 - A test under sustained load. The endpoint verifier and the rate limiting
   test have run against the live edge, but neither measures sustained
-  traffic.
+  traffic. The plan, the k6 script and the key list are in
+  [Document 11](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/11-load-test.md)
+  and [`load-test/`](https://github.com/schalkneethling/bcd-embed/tree/main/load-test).
+  They have run only against a local server. The preflight and the full run
+  (#214) are still to come, so this item stays open.
