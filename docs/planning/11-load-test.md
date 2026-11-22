@@ -48,7 +48,7 @@ neither is possible. The test therefore cannot show:
 | Many clients                               | Every request comes from one address, one TLS connection pool and one browser-like header set. The rule's per-IP counting is never stressed with many addresses. |
 | Other data centres                         | Cloudflare keeps a cache and a rate counter per data centre. One IP address reaches one data centre (Johannesburg, in Document 8's measurements), so the other caches stay cold and untested. |
 | Real popularity                            | The mix is a judgement (section 4). Real embeds may concentrate on a few keys far more than this mix does, or spread wider.               |
-| Behaviour above the rule                   | The `429` response was probed on 20 November 2026 (`10-component-spikes.md`, #189). This test never provokes it.                           |
+| Behaviour above the rule                   | This test never provokes the rule. The `429` was probed on 20 November 2026 (`10-component-spikes.md`, #189): status `429`, `content-type: text/plain; charset=UTF-8`, a 17-byte body, `retry-after: 10`, `cache-control` of `no-store` and friends, and no `access-control-allow-origin`. Document 9 recorded an HTML page on 17 November, so the shape has changed once. |
 | The rule's own accuracy                    | The rule's counters are per data centre and lag by seconds (Document 9). The test shows that 22.4 requests per second does not trip it, not where it trips exactly. |
 
 The issue's criterion "a skip rule for one IP address on the Free plan" is **not tested, because the owner
@@ -91,8 +91,31 @@ How the script keeps to the rate:
   k6 can sustain the rate, which lowers the rate and is safe for the rule.
 - `maxRedirects: 0` and `redirects: 0` mean no request the plan did not count.
 - The script sets no retries.
-- `--rps 24` on the command line caps the whole process as a second belt. k6's documentation calls `--rps`
-  discouraged and hard to use correctly, so the executors are the main control and the flag is only a backstop.
+- **`rps` is load-bearing, not a backstop.** The script sets `rps: 24` in its `options`, and the commands
+  repeat it as `--rps 24`. The k6 options reference (`using-k6/k6-options/reference/`) lists `rps` as a
+  script option, environment variable `K6_RPS`, and flag `--rps`, with the description "The maximum number of
+  requests to make per second, in total across all VUs", and marks it discouraged: it "has caveats and is
+  difficult to use correctly", each instance of a cloud or distributed run applies the limit alone, and the
+  page recommends the arrival-rate executors instead. Neither caveat applies to one local process. The
+  executors do not cap a burst, though. After a stall they start the missed iterations at once. A review
+  froze k6 with `kill -STOP` for 8 seconds during `PROFILE=ceiling` and measured it:
+
+  | Setting                                  | Most requests in 1 second | Most requests in any 10 seconds |
+  | ---------------------------------------- | ------------------------- | ------------------------------- |
+  | No `rps` (reviewer's run)                | 66                        | 272                             |
+  | No `rps` (my rerun, `--rps 0`)           | 53                        | 256                             |
+  | `rps: 24` in `options`, no CLI flag      | 24                        | 240                             |
+  | `rps: 24` in `options` and `--rps 24`    | 24                        | 240                             |
+  | `rps: 24` in the review's run            | 25                        | 241                             |
+
+  Without `rps`, only `maxVUs` kept the 10-second count under 300, by dropping iterations. A laptop sleep
+  could plausibly pass 300. `maxVUs` is now three seconds of requests (66 at the ceiling, 60 in the ramp)
+  so the executor cannot start a large backlog, which did not lower the steady rate in a local run
+  (22.4 per second).
+- **Run procedure.** Wrap the k6 command in `caffeinate -i` (`man caffeinate`: prevents idle sleep while the
+  wrapped command runs), never suspend the run, and send no other traffic from the Mac's IP address to
+  `/v1/` while it runs. The rule counts every request from that address, so a browser tab on the
+  documentation site that calls the API would add to the count and `rps` cannot see it.
 - On 22 November 2026, a 60-second `ceiling` run against the local server sent 1,340 requests (22.3 per
   second). The most in any one second was 24, and the most in any 10-second window was 227, which is 76% of
   the rule's 300.
@@ -108,7 +131,7 @@ requests).
 | `popular_br`       | 32%   | `/v1/current/features/<popular key>.json`      | Brotli      | The common browser case for the most embedded features.               |
 | `popular_gzip`     | 8%    | the same                                       | gzip        | Clients that do not offer Brotli.                                      |
 | `popular_identity` | 2%    | the same                                       | none        | Scripts and tools that send no `Accept-Encoding`.                      |
-| `sampled_br`       | 15%   | `/v1/current/features/<sampled key>.json`      | Brotli      | The long tail: 1,000 keys spread evenly over all 20,968, so most are cold for the edge cache. |
+| `sampled_br`       | 15%   | `/v1/current/features/<sampled key>.json`      | Brotli      | The long tail: 999 keys spread evenly over all 20,968, so most are cold for the edge cache. |
 | `deep_br`          | 5%    | `/v1/current/features/<deep key>.json`         | Brotli      | Keys with six or more segments, such as `api.Foo.bar.baz_parameter`.   |
 | `pinned_br`        | 10%   | `/v1/bcd-8.1.9-gen-0.1.0/features/<key>.json`  | Brotli      | Pages that pin a snapshot. The Worker does not edge-cache these, so each reads R2. |
 | `raw_br`           | 2%    | `/v1/current/raw/<popular key>.json`           | Brotli      | The raw representation route.                                          |
@@ -123,8 +146,8 @@ requests).
 
 The shares add up to 100 and the mean is 1.02 requests per iteration (`load-test/lib/mix.js`; the test file
 checks both). The shares are this plan's judgement, not measured traffic, because no public traffic exists yet.
-The reasoning behind the largest ones: most reads in the component are lazy feature fetches (about 80% together
-here), a smaller share are first-visit structural fetches (`meta`, `browsers`, `index`), and the error and
+The reasoning behind the largest ones: most reads in the component are lazy feature fetches (the feature-route
+classes add up to 91% of iterations: 86% that expect a 200 and 5% that expect a 404; 89% without `compare`), a smaller share are first-visit structural fetches (`meta`, `browsers`, `index`), and the error and
 conditional classes are there to exercise their paths rather than to match a measured frequency.
 
 **Where the keys come from.** `load-test/keys.json` holds public feature keys for the snapshot the Worker serves
@@ -135,8 +158,8 @@ run with generator 0.1.0 and BCD 8.1.9 reproduces the live snapshot's identifier
 | Group      | Count  | How it is chosen                                                                                       |
 | ---------- | ------ | ------------------------------------------------------------------------------------------------------ |
 | `popular`  | 49     | Hand-picked well known features (`css.properties.display`, `javascript.builtins.Array`, `api.fetch`, `html.elements.a` and so on). The builder fails if any one is missing from the index, so the list cannot drift silently. This is a judgement about popularity, not data. |
-| `sampled`  | 1,000  | Every 20th key of the sorted index, so it covers all namespaces in proportion to their size.            |
-| `deep`     | 100    | An even spread over the keys with six or more segments.                                                 |
+| `sampled`  | 999    | Every 21st key of the sorted index (stride `ceil(20,968 / 1,000)`), so it covers the whole alphabet and every namespace in proportion to its size. The first version used a stride of 20 capped at 1,000 keys, which never sampled the last 968 keys; the stride now rounds up. |
+| `deep`     | 100    | Keys with six or more segments, spread evenly over the six namespaces that have them (20 each, and 1 from `css`, which has only 1), not in proportion to size. A proportional spread put 69 of the 100 in `webextensions.*`. |
 | `grouping` | 40     | Prefixes up to two segments that are not themselves keys but are prefixes of keys.                      |
 | `missing`  | 26     | `<namespace>.load_test_missing_01` and `_02` for each of the 12 namespaces, plus two keys under an unknown namespace. Few and repeated on purpose: the Worker caches a `404`, so unique missing keys would measure the miss path alone. |
 
@@ -146,7 +169,10 @@ or grouping key is. The popular keys include some large payloads (`javascript.bu
 plain), so the identity classes dominate bandwidth: a local 105-second `full` run received 36 MB, about
 23 KB per request, which is 0.5 MB per second at the ceiling.
 
-**Conditional requests.** A `conditional` iteration picks one of 8 hot keys. If the virtual user already holds
+**Conditional requests.** A `conditional` iteration picks one of 9 hot keys, every sixth popular key (`api.AbortController`,
+`api.Request`, `api.fetch`, `css.properties.color`, `css.properties.margin`, `css.selectors.is`,
+`html.elements.input`, `javascript.builtins.Map`, `svg.elements.svg`). The popular list is sorted, so its first
+eight keys would all have been `api.*`, which is why the first version's hot keys were all one namespace. If the virtual user already holds
 that key's `ETag` (from an earlier Brotli response), it sends `If-None-Match` and expects a `304` with the same
 `ETag` and no body. If not, it fetches the key normally (counted as `conditional_seed`) and remembers the tag.
 Each virtual user keeps its own tags, so 304s grow over the run as users revisit the hot keys. An `ETag` is
@@ -194,6 +220,7 @@ a run, so the script uses them:
 ```js
 server_errors: [{ threshold: "rate<0.01", abortOnFail: true, delayAbortEval: "30s" }],
 transport_errors: [{ threshold: "rate<0.01", abortOnFail: true, delayAbortEval: "30s" }],
+unexpected_status: [{ threshold: "rate<0.01", abortOnFail: true, delayAbortEval: "10s" }],
 rate_limited_responses: [{ threshold: "count<1", abortOnFail: true }],
 ```
 
@@ -201,10 +228,12 @@ rate_limited_responses: [{ threshold: "count<1", abortOnFail: true }],
 | ------------------------- | --------------------------------------------------------- | ----------------------------------- |
 | `server_errors`           | Responses with status 500 or above, over all responses    | The rate passes 1%, after 30 seconds |
 | `transport_errors`        | Requests that got no response (status 0: timeout, reset)  | The rate passes 1%, after 30 seconds |
+| `unexpected_status`       | Responses whose status the request class does not expect (200 for most, 200 or 304 for `conditional`, 404 for `missing` and `grouping`, 204 for `preflight`) | The rate passes 1%, after 10 seconds |
 | `rate_limited_responses`  | Responses with status 429                                 | The first one                        |
 
-`transport_errors` and the `429` stop are additions to the issue. A timeout is a failure the 5xx rate cannot
-see, and one `429` means the generator exceeded the rule, which makes the rest of the run's data unreliable
+`transport_errors`, `unexpected_status` and the `429` stop are additions to the issue. A timeout is a failure
+the 5xx rate cannot see, and a proxy that answers every request with 403 is one too: a review found that such a
+proxy failed 830 of 924 requests and the run still went to the end. One `429` means the generator exceeded the rule, which makes the rest of the run's data unreliable
 (the cause would be the generator, not the API).
 
 **What this does not do.** k6 evaluates a threshold over the whole run so far, not over a trailing 30 seconds,
@@ -238,6 +267,7 @@ early as well (section 6).
 | -------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | 5xx rate                               | Under 1%                                                 | The issue's stop condition. The owner may tighten it: a healthy Worker should send none.                 |
 | Transport error rate                   | Under 1%                                                 | The same figure, for the same reason.                                                                    |
+| Unexpected statuses                    | Under 1%, and the run stops at 1% after 10 seconds       | A status the class does not expect means the route no longer answers as documented, or something in front of it is answering. The 1% matches the 5xx mark. |
 | `429` responses                        | 0                                                        | The generator stays under the rule (section 3), so one `429` means the plan or the machine is wrong.     |
 | Failed checks                          | Under 0.1% (`checks` rate above 0.999)                   | Any systematic fault fails every request of its class, which is at least 1% of requests, so 0.1% catches it. One network blip per 1,000 requests does not fail the run. |
 | `compare_mismatch`                     | 0                                                        | A compressed body that does not decode to the identity bytes is a defect, not noise. The issue requires the comparison. |
@@ -321,13 +351,14 @@ any run longer than a few hours.
 I sent no request to any production host. The commands below are for the coordinator. Run them from the
 repository root on the owner's Mac, one at a time, never two at once.
 
-**Step 1: the production smoke run.** One iteration per second for 60 seconds, about 64 requests, every
+**Step 1: the production smoke run.** One iteration per second for 60 seconds, about 64 requests (1.07 per second, not 1.00, because each of the four `compare` iterations sends two), every
 request class four times. It settles whether the script's checks hold against the real edge: headers, the
 cached 404's `max-age`, whether `compare` passes after the edge's handling, and whether `304` works there.
 
 ```sh
-BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=yes PROFILE=smoke \
-  k6 run --no-usage-report --rps 24 --summary-export smoke-summary.json load-test/load-test.js
+mkdir -p load-test/results
+BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=api.browser-compat.dev PROFILE=smoke \
+  caffeinate -i k6 run --no-usage-report --rps 24 --summary-export load-test/results/smoke.json load-test/load-test.js
 ```
 
 Expected: exit code 0, `checks_failed` 0, `compare_mismatch` 0, `conditional_304` at least 1. If a check fails
@@ -339,8 +370,8 @@ checks hold at a few requests per second; the cache status shares (`cf-cache-sta
 starting point; and the Worker's processor time, which the owner reads from the dashboard afterwards.
 
 ```sh
-BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=yes PROFILE=preflight \
-  k6 run --no-usage-report --rps 24 --summary-export preflight-summary.json load-test/load-test.js
+BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=api.browser-compat.dev PROFILE=preflight \
+  caffeinate -i k6 run --no-usage-report --rps 24 --summary-export load-test/results/preflight.json load-test/load-test.js
 ```
 
 Then the owner reads the Worker's CPU time for the preflight's time range in the dashboard and fills in section
@@ -349,14 +380,21 @@ Then the owner reads the Worker's CPU time for the preflight's time range in the
 **Step 3: the full run (#214).** Only after steps 1 and 2 pass and section 8 is filled in. Each phase is its
 own process, one after the other:
 
+Each command sets its own variables, so nothing stays set in the shell afterwards.
+
 ```sh
-export BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=yes
-k6 run --no-usage-report --rps 24 --summary-export ramp.json    -e PROFILE=ramp    load-test/load-test.js
-k6 run --no-usage-report --rps 24 --summary-export steady.json  -e PROFILE=steady  -e STEADY_SECONDS=300 load-test/load-test.js
-k6 run --no-usage-report --rps 24 --summary-export ceiling.json -e PROFILE=ceiling -e CEILING_SECONDS=300 load-test/load-test.js
+BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=api.browser-compat.dev PROFILE=ramp \
+  caffeinate -i k6 run --no-usage-report --rps 24 --summary-export load-test/results/ramp.json load-test/load-test.js
+BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=api.browser-compat.dev PROFILE=steady STEADY_SECONDS=300 \
+  caffeinate -i k6 run --no-usage-report --rps 24 --summary-export load-test/results/steady.json load-test/load-test.js
+BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=api.browser-compat.dev PROFILE=ceiling CEILING_SECONDS=300 \
+  caffeinate -i k6 run --no-usage-report --rps 24 --summary-export load-test/results/ceiling.json load-test/load-test.js
 ```
 
-`-e` is k6's documented flag for passing an environment variable. Repeat the `steady` line for a longer run.
+Repeat the `steady` command for a longer run. `load-test/results/` is git-ignored. Rules for every run: keep
+the Mac awake (`caffeinate -i`, already in the commands), never suspend a run, send no other traffic from the
+Mac's IP address to `/v1/`, and do not run two commands at once. The script prints `Target: <host>` once at the start; check
+it before the first request count climbs.
 
 The skip rule criterion is not tested (section 2). Nothing in these steps needs the Cloudflare dashboard except
 the CPU reading.
@@ -408,7 +446,18 @@ iterations.....................: 60     0.999976/s
 
 The smoke run sends 64 requests in 60 seconds, which is 1.07 per second, not 1.00, because each of its four
 `compare` iterations sends two. Also checked: with no `BASE_URL`, and with `BASE_URL=https://api.browser-compat.dev`
-and no `CONFIRM_REMOTE`, the script throws in the init stage before any request.
+and no `CONFIRM_REMOTE`, the script throws in the init stage before any request. It also throws when
+`CONFIRM_REMOTE` is anything but the target's own host name.
+
+**Review fixes, rerun on 22 November 2026.**
+
+| Check                                                      | Result                                                                                           |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Stall test (freeze k6 for 8 s after 10 s of a 30 s `ceiling` run), `rps: 24` in `options`, no CLI flag | Most in 1 second 24, in any 10 seconds 240; 539 requests, 133 iterations dropped. |
+| The same with `--rps 24` as well                           | 24 and 240; 537 requests.                                                                        |
+| The same with `--rps 0` (cap removed, for comparison)      | 53 and 256; 538 requests.                                                                        |
+| `smoke` against a stub that answers every request with 403 | `unexpected_status` 100% (12 of 12); k6 stopped after about 12 seconds with `abortOnFail`.       |
+| `smoke` against a stub that answers every request with 429 | Covered by `tests/load-test.test.ts` (runs k6 when installed): stops at the first 429.           |
 
 What the local runs cannot show: any Cloudflare behaviour (edge cache, `cf-cache-status`, Browser Cache TTL,
 `429`), the Worker's CPU time, real latency, and whether the edge keeps the bytes of a compressed body intact.
@@ -446,7 +495,10 @@ site offers, so a name that its pages show and the installed k6 accepted is the 
 | `exec.scenario.iterationInTest`                                                            | `javascript-api/k6-execution/`                               |
 | `__ENV`, `-e`                                                                              | `using-k6/environment-variables/`                            |
 | `tags.name` to group URLs                                                                  | `using-k6/tags-and-groups/`                                  |
+| `rps` as a script option (`export const options = { rps: 500 }`), `K6_RPS`, `--rps`, and the discouraged warning | `using-k6/k6-options/reference/` |
+| `export function setup()`, run once per test                                               | `using-k6/test-lifecycle/`                                   |
 | `--rps`, `--summary-export`, `--no-usage-report`, `-q`/`--quiet`, `-e`, `-o`/`--out`       | `k6 run --help` and `k6 --help`, v2.4.0, run locally         |
+| `caffeinate -i`                                                                            | `man caffeinate` on macOS                                    |
 
 Two behaviours the pages do not state and I measured instead: k6 decodes a compressed response body before the
 script sees it (section 5), and `open("./keys.json")` resolves relative to the script when k6 runs from the

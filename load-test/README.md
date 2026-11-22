@@ -34,7 +34,7 @@ node packages/generator/dist/bin.js --out /tmp/bcd-artifacts \
 node load-test/local-server.mjs --artifacts /tmp/bcd-artifacts
 
 # 4. In another terminal, run the 60-second smoke profile.
-BASE_URL=http://127.0.0.1:8787 PROFILE=smoke k6 run --no-usage-report load-test/load-test.js
+BASE_URL=http://127.0.0.1:8787 PROFILE=smoke k6 run --no-usage-report --rps 24 load-test/load-test.js
 ```
 
 The local server has no edge cache and no rate limiting rule, so it cannot show either. It checks the script
@@ -42,46 +42,66 @@ and the handler, not Cloudflare.
 
 ## Run one generator against a remote host
 
-The script refuses a non-loopback host unless `CONFIRM_REMOTE=yes` is set, and it has no default host, so a
-mistyped command cannot reach production.
+The script has no default host. It refuses a non-loopback host unless `CONFIRM_REMOTE` is set to that exact
+host name, so a mistyped command or a variable left over in the shell cannot reach production. Set both
+variables on the command, never with `export`, and keep the Mac awake with `caffeinate -i`, which
+`man caffeinate` describes as preventing idle sleep while the command it wraps runs.
 
 ```sh
-BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=yes PROFILE=steady \
-  k6 run --no-usage-report --rps 24 --summary-export result-steady.json load-test/load-test.js
+mkdir -p load-test/results
+BASE_URL=https://api.browser-compat.dev CONFIRM_REMOTE=api.browser-compat.dev PROFILE=steady \
+  caffeinate -i k6 run --no-usage-report --rps 24 --summary-export load-test/results/steady.json load-test/load-test.js
 ```
 
-Run it from one machine only. The zone's rule counts requests per IP address, and a second generator behind
-the same address would add to the count. Do not run two k6 processes at once, because each sends its own
-20 to 24 requests per second.
+`load-test/results/` is git-ignored. The script prints its target host once at the start (`Target: ...`).
+
+Rules for the run:
+
+- Run it from one machine only. The zone's rule counts requests per IP address, and a second generator behind
+  the same address would add to the count. Do not run two k6 processes at once.
+- Send no other traffic from the Mac's IP address to `/v1/` while it runs, including a browser tab on the
+  documentation or the introduction page that calls the API. The rule counts every request from that address.
+- Never suspend the run (`kill -STOP`, closing the lid, Ctrl-Z). After a stall k6 starts the missed iterations
+  at once, and the `rps` cap below is the only thing that holds that burst down.
 
 ## Settings
 
 All settings are environment variables.
 
-| Variable          | Meaning                                                      | Default |
-| ----------------- | ------------------------------------------------------------ | ------- |
-| `BASE_URL`        | The origin to test, with no path.                            | none    |
-| `CONFIRM_REMOTE`  | `yes` allows a host that is not loopback.                    | unset   |
-| `PROFILE`         | `smoke`, `preflight`, `ramp`, `steady`, `ceiling` or `full`. | `smoke` |
-| `STEADY_SECONDS`  | Length of the `steady` phase.                                | 600     |
-| `CEILING_SECONDS` | Length of the `ceiling` phase.                               | 300     |
+| Variable          | Meaning                                                                                            | Default |
+| ----------------- | -------------------------------------------------------------------------------------------------- | ------- |
+| `BASE_URL`        | The origin to test, with no path.                                                                  | none    |
+| `CONFIRM_REMOTE`  | The exact host name (for example `api.browser-compat.dev`) that a non-loopback `BASE_URL` may use. | unset   |
+| `PROFILE`         | `smoke`, `preflight`, `ramp`, `steady`, `ceiling` or `full`.                                       | `smoke` |
+| `STEADY_SECONDS`  | Length of the `steady` phase.                                                                      | 600     |
+| `CEILING_SECONDS` | Length of the `ceiling` phase.                                                                     | 300     |
 
-| Profile     | Iterations per second   | Length            | Requests, about |
-| ----------- | ----------------------- | ----------------- | --------------- |
-| `smoke`     | 1, every class in turn  | 60 s              | 65              |
-| `preflight` | 5                       | 60 s              | 306             |
-| `ramp`      | 1 rising to 20          | 60 s              | 640             |
-| `steady`    | 20                      | `STEADY_SECONDS`  | 20.4 per second |
-| `ceiling`   | 22                      | `CEILING_SECONDS` | 22.4 per second |
-| `full`      | the three above in turn | all three         | all three       |
+| Profile     | Iterations per second   | Length            | Requests, about                                                               |
+| ----------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------- |
+| `smoke`     | 1, every class in turn  | 60 s              | 64 (1.07 per second, because each of its four `compare` iterations sends two) |
+| `preflight` | 5                       | 60 s              | 306                                                                           |
+| `ramp`      | 1 rising to 20          | 60 s              | 640                                                                           |
+| `steady`    | 20                      | `STEADY_SECONDS`  | 20.4 per second                                                               |
+| `ceiling`   | 22                      | `CEILING_SECONDS` | 22.4 per second                                                               |
+| `full`      | the three above in turn | all three         | all three                                                                     |
 
-`--rps 24` is a second belt on top of the rate the executors set. k6's documentation discourages `--rps`
-because it has caveats, so the script does not depend on it.
+### The rate cap is load-bearing
+
+The script sets `rps: 24` in its `options`, and the commands repeat it as `--rps 24`. k6's options reference
+describes `rps` as the maximum requests per second summed across all VUs, and calls it discouraged because it
+has caveats and is difficult to use correctly, mainly in cloud or distributed runs where each instance applies
+the limit alone. Neither applies to one local process. It is used here because the arrival-rate executors it
+is meant to replace do not cap a burst: after a stall they start the missed iterations at once. A review froze
+k6 for 8 seconds during `PROFILE=ceiling`. Without `rps`, 66 requests went out in one second and 272 in 10
+seconds, 91% of the rule's 300 per 10 seconds. With `rps: 24`, at most 24 or 25 went out in one second and
+240 in 10 seconds. `maxVUs` is also limited to three seconds of requests, so the executor cannot start a
+large backlog. See Document 11, section 3, for the measurements.
 
 ## Reading the result
 
 The script stops the run on a 5xx rate above 1% (checked after 30 seconds), on a transport error rate above
-1%, and on the first `429`. It fails at the end if any check, comparison or latency pass mark fails. k6
+1% (30 seconds), on an unexpected status rate above 1% (10 seconds; any status a request class does not expect,
+such as a proxy's `403`), and on the first `429`. It fails at the end if any check, comparison or latency pass mark fails. k6
 exits with code 99 when a threshold fails. See Document 11, section 7, for each pass mark and its source.
 
 The counters to read are `conditional_304` (304 responses, counted apart from everything else),
