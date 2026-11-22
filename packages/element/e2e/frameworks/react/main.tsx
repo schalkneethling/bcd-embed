@@ -5,7 +5,7 @@ import type {
   BcdErrorDetail,
   BcdLoadDetail,
   CompatTableData,
-} from "@bcd-embed/element";
+} from "@schalkneethling/bcd-embed";
 import { useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";

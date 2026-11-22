@@ -13,30 +13,32 @@ needs one element and one script import.
 
 ## Status of the package
 
-The element is complete in this repository, but the package
-`@bcd-embed/element` is not published to npm yet: its `package.json` sets
-`private` to `true`. This page describes how a page will use it once it is
-published. The live example further down runs the element from the
-repository's source files, not from the package's built `dist` files. The
-site's bundler settings point `@bcd-embed/element` at the source and mark it
-as having side effects, which bypasses the package's `sideEffects` list, so the
-live example does not prove that the published `dist` files work. The
-package's own tests build a consumer against `dist` for that.
+Releases of `@schalkneethling/bcd-embed` are betas, published to npm under the
+`beta` dist-tag, until version 1.0. The first is `0.1.0-beta.0`, and a beta
+can still change its attributes, events, and styling tokens. To see which
+versions npm has, run `npm view @schalkneethling/bcd-embed versions`.
+[Releasing the component](/releasing/) describes how betas are published.
 
-Once the package is published, install it with your package manager. `lit`
-and `@lit/task`, the two libraries the element is built with, are installed
-with it.
+The live example further down runs the element from the repository's source
+files, not from the package's built `dist` files. The site's bundler settings
+point `@schalkneethling/bcd-embed` at the source and mark it as having side
+effects, which bypasses the package's `sideEffects` list, so the live example
+does not prove that the published `dist` files work. The package's own tests
+build a consumer against `dist` for that.
+
+Install the beta with your package manager. `lit` and `@lit/task`, the two
+libraries the element is built with, are installed with it.
 
 ```sh
-pnpm add @bcd-embed/element
+npm install @schalkneethling/bcd-embed@beta
 ```
 
 The package has two entry points, and no others:
 
-| Import                        | What it gives you                                                                                                                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `@bcd-embed/element`          | Importing it defines `<bcd-compat-table>`. It also exports the TypeScript types, such as `BcdCompatTableElement`, and the English message table. It exports no class and no type from Lit.       |
-| `@bcd-embed/element/base.css` | The optional base stylesheet: borders, padding, focus rings, icon colours, and the rule that hides the fallback content once a table loads. [Styling and tokens](/component/styling/) covers it. |
+| Import                                | What it gives you                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@schalkneethling/bcd-embed`          | Importing it defines `<bcd-compat-table>`. It also exports the TypeScript types, such as `BcdCompatTableElement`, and the English message table. It exports no class and no type from Lit.       |
+| `@schalkneethling/bcd-embed/base.css` | The optional base stylesheet: borders, padding, focus rings, icon colours, and the rule that hides the fallback content once a table loads. [Styling and tokens](/component/styling/) covers it. |
 
 The package also ships `custom-elements.json`, a Custom Elements Manifest,
 which editors and documentation tools read to list the element's attributes,
@@ -74,14 +76,14 @@ and Vue.
 
 ## Load the element and the stylesheet
 
-Import the package once, with `import "@bcd-embed/element";`, before anything
+Import the package once, with `import "@schalkneethling/bcd-embed";`, before anything
 renders the element. The import itself is what defines the element, so it
 needs no name. [Events](/component/events/) and
 [Data modes](/component/data-modes/) show it at the top of complete scripts.
 
 Then load the base stylesheet from the document. Link
-`node_modules/@bcd-embed/element/dist/base.css` with a `<link>` element, or
-import `@bcd-embed/element/base.css` through a bundler that does not minify
+`node_modules/@schalkneethling/bcd-embed/dist/base.css` with a `<link>` element, or
+import `@schalkneethling/bcd-embed/base.css` through a bundler that does not minify
 CSS. [Styling and tokens](/component/styling/) explains why a minifier can lose
 the stylesheet's colours, and why the file must not be loaded inside a shadow
 root.
@@ -117,7 +119,7 @@ The project's budget for the initial import, which is the element with Lit and
 `@lit/task`, is 25 kB compressed with gzip, and the package's build fails when
 the import grows past it. The data for each table is a separate request and is
 not part of the budget. The package's
-[README, section "Size"](https://github.com/schalkneethling/bcd-embed/blob/main/packages/element/README.md#size) records the latest measurements, and
+[maintainers' guide, section "Size"](https://github.com/schalkneethling/bcd-embed/blob/main/packages/element/DEVELOPMENT.md#size) records the latest measurements, and
 `.size-limit.json` in the package holds every limit.
 
 ## Next steps

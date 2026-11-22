@@ -34,7 +34,7 @@ export default defineConfig(({ command }) => ({
       // The dev server runs the source, as the other fixture pages do. The build reads the file
       // that `vite build --mode lib` wrote, which is the file a consumer's bundler reads through
       // the package's `exports`, so the production pages hold the element as it ships.
-      "@bcd-embed/element": fileURLToPath(
+      "@schalkneethling/bcd-embed": fileURLToPath(
         new URL(
           command === "serve" ? "../../src/index.ts" : "../../dist/index.js",
           import.meta.url,

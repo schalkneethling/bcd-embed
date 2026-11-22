@@ -59,7 +59,7 @@ repository root checks each one:
   `<!-- sample: packages/element/examples/fetch-mode.html -->` in Markdown, and
   `{/* sample: … */}` in MDX, which does not accept HTML comments. Change the
   example file first, then copy the change into the page. A shell (`sh`) block
-  may hold `pnpm add @bcd-embed/element`, which cannot run until the package is
+  may hold `pnpm add @schalkneethling/bcd-embed`, which cannot run until the package is
   published, or a `pnpm` script that exists in the root `package.json` or in
   the `package.json` of the workspace it names with `--filter`.
 - Every attribute, property, event, error reason, token, and class name must
@@ -74,7 +74,7 @@ repository root checks each one:
   `connect-src` each and check that a violation is then reported. The test
   answers for the hosted API, so it sends no request to production.
 
-The live example imports `@bcd-embed/element` and its stylesheet as a page
+The live example imports `@schalkneethling/bcd-embed` and its stylesheet as a page
 would. `astro.config.ts` resolves both names to the element's source, because
 `pnpm check` builds the site in a test before any package is built. It also
 marks the entry as having side effects: the element's `package.json` lists only

@@ -37,7 +37,7 @@ that comes with a new version of the package.
 
 The tests use the engine builds that the repository's pinned version of
 Playwright installs, not the released Chrome, Firefox, and Safari. The
-package's [README, section "Browser tests"](https://github.com/schalkneethling/bcd-embed/blob/main/packages/element/README.md#browser-tests) names the
+package's [maintainers' guide, section "Browser tests"](https://github.com/schalkneethling/bcd-embed/blob/main/packages/element/DEVELOPMENT.md#browser-tests) names the
 Playwright version. The engine versions below are the ones the project
 observed each behaviour in. [Accessibility](/component/accessibility/) lists what that
 leaves to a manual pass.

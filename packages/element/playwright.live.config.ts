@@ -1,6 +1,6 @@
 // The one test that calls the live, hosted API (issue #203). It is not part of `pnpm check` or the
 // Element browser workflow, because a test there must not depend on a production service or spend
-// its rate limit. Run it by hand with `pnpm --filter @bcd-embed/element test:live`. It requests
+// its rate limit. Run it by hand with `pnpm --filter @schalkneethling/bcd-embed test:live`. It requests
 // one feature, once, in Chromium.
 import { defineConfig, devices } from "@playwright/test";
 

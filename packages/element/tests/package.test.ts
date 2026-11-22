@@ -17,18 +17,44 @@ const readManifest = async (): Promise<Record<string, unknown>> =>
   JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
 
 describe("package.json", () => {
-  it("has exports, files, array-form sideEffects, and a build script, and stays private", async () => {
+  it("publishes as @schalkneethling/bcd-embed with exports, files, and array-form sideEffects", async () => {
     const manifest = await readManifest();
 
-    expect(manifest.private).toBe(true);
+    expect(manifest.name).toBe("@schalkneethling/bcd-embed");
+    expect(manifest).not.toHaveProperty("private");
     expect(manifest.exports).toEqual({
       ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
       "./base.css": "./dist/base.css",
       "./package.json": "./package.json",
     });
+    // npm adds package.json, README.md, and LICENSE to every tarball, so `files` lists the rest.
     expect(manifest.files).toEqual(["dist", "custom-elements.json"]);
     expect(manifest.sideEffects).toEqual(["./dist/index.js", "./dist/*.css"]);
     expect(manifest.scripts).toHaveProperty("build");
+  });
+
+  it("publishes publicly, with the metadata npm shows", async () => {
+    const manifest = await readManifest();
+
+    expect(manifest.publishConfig).toEqual({ access: "public" });
+    expect(manifest.license).toBe("MIT");
+    expect(manifest.repository).toEqual({
+      type: "git",
+      url: "git+https://github.com/schalkneethling/bcd-embed.git",
+      directory: "packages/element",
+    });
+    expect(manifest.homepage).toBe("https://docs.browser-compat.dev/component/getting-started/");
+    expect(manifest.bugs).toEqual({ url: "https://github.com/schalkneethling/bcd-embed/issues" });
+    expect(manifest.keywords).toEqual(expect.arrayContaining(["web-component", "custom-element"]));
+    expect(typeof manifest.author).toBe("string");
+  });
+
+  it("ships a README and a LICENSE beside package.json", async () => {
+    const readme = await readFile(join(packageRoot, "README.md"), "utf8");
+    const license = await readFile(join(packageRoot, "LICENSE"), "utf8");
+
+    expect(readme).toContain("npm install @schalkneethling/bcd-embed@beta");
+    expect(license).toContain("MIT License");
   });
 
   it("lists lit and @lit/task as regular dependencies, and the schema only as a development one", async () => {
@@ -145,8 +171,8 @@ describe("a production build", () => {
 
 describe("the type declarations", () => {
   // Emits the declarations the way `tsconfig.build.json` does, into a temporary directory. The
-  // configuration extends the package's `tsconfig.json`, whose `paths` point at the schema
-  // package's source, so the test does not need `@bcd-embed/schema` built first. It sits under
+  // configuration extends the package's `tsconfig.json`, and its `rootDir` is the parent folder, so
+  // the output keeps an `element/src` layout whatever the source imports. It sits under
   // `node_modules/.cache`, inside the package, so TypeScript finds `@types/node` from there.
   const emitDeclarations = async (): Promise<{ directory: string; sourceRoot: string }> => {
     const cache = join(packageRoot, "node_modules", ".cache");
@@ -191,6 +217,41 @@ describe("the type declarations", () => {
     }
     return files;
   };
+
+  // A consumer installs only `dependencies`, so a declaration file that imports anything else,
+  // such as the private `@bcd-embed/schema`, fails to resolve in the consumer's type checker. This
+  // reads every emitted file, not only the ones the entry reaches, because all of them ship.
+  it("imports nothing but relative files and the package's dependencies, in every declaration file", async () => {
+    const { directory, sourceRoot } = await emitDeclarations();
+    try {
+      const manifest = await readManifest();
+      const allowed = new Set(Object.keys(manifest.dependencies as Record<string, string>));
+      const packageName = (specifier: string): string =>
+        specifier
+          .split("/")
+          .slice(0, specifier.startsWith("@") ? 2 : 1)
+          .join("/");
+      const files = (await readdir(sourceRoot, { recursive: true })).filter((file) =>
+        file.endsWith(".d.ts"),
+      );
+      const outside: string[] = [];
+      for (const file of files) {
+        const text = await readFile(join(sourceRoot, file), "utf8");
+        for (const [, specifier = ""] of text.matchAll(
+          /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g,
+        )) {
+          if (!specifier.startsWith(".") && !allowed.has(packageName(specifier))) {
+            outside.push(`${file}: ${specifier}`);
+          }
+        }
+      }
+
+      expect(files).toContain("public-types.d.ts");
+      expect(outside).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it("names the hand-written interface in HTMLElementTagNameMap and never imports from lit", async () => {
     const { directory, sourceRoot } = await emitDeclarations();

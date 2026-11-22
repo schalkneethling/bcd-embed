@@ -1,9 +1,28 @@
 {
-  "name": "@bcd-embed/element",
+  "name": "@schalkneethling/bcd-embed",
   "version": "0.0.0",
-  "private": true,
-  "description": "The bcd-compat-table web component and its message table.",
+  "description": "The <bcd-compat-table> web component: embeddable browser compatibility tables from MDN Browser Compatibility Data.",
+  "keywords": [
+    "bcd",
+    "browser-compat-data",
+    "browser-compatibility",
+    "compatibility-table",
+    "custom-element",
+    "lit",
+    "mdn",
+    "web-component"
+  ],
+  "homepage": "https://docs.browser-compat.dev/component/getting-started/",
+  "bugs": {
+    "url": "https://github.com/schalkneethling/bcd-embed/issues"
+  },
   "license": "MIT",
+  "author": "Schalk Neethling",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schalkneethling/bcd-embed.git",
+    "directory": "packages/element"
+  },
   "files": [
     "dist",
     "custom-elements.json"
@@ -21,6 +40,9 @@
     "./base.css": "./dist/base.css",
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "vite build --mode lib && tsc --project tsconfig.build.json && size-limit",
     "build:screen-reader-fixture": "vite build --mode lib && vite build --config vite.screen-reader.config.ts",
@@ -31,13 +53,15 @@
     "test:orca": "playwright test --config playwright.orca.config.ts",
     "test:visual": "playwright test --config playwright.visual.config.ts",
     "test:voiceover": "playwright test --config playwright.voiceover.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:package": "publint --strict && attw --pack . --profile esm-only --exclude-entrypoints ./base.css"
   },
   "dependencies": {
     "@lit/task": "1.0.3",
     "lit": "3.3.3"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@axe-core/playwright": "4.14.0",
     "@bcd-embed/schema": "workspace:*",
     "@custom-elements-manifest/analyzer": "0.11.0",
@@ -52,6 +76,7 @@
     "@vitejs/plugin-react": "6.3.0",
     "@vitejs/plugin-vue": "6.0.11",
     "postcss": "8.5.32",
+    "publint": "0.3.25",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "size-limit": "14.3.0",

@@ -26,14 +26,14 @@ export default defineConfig({
         resolveId(source) {
           // The element's `package.json` lists only its `dist` files under
           // `sideEffects`, so the bundler would drop a bare
-          // `import "@bcd-embed/element"` of the source file, and the element
+          // `import "@schalkneethling/bcd-embed"` of the source file, and the element
           // would never be defined. Marking the entry as having side effects
           // keeps the `customElements.define` call, as the list does for
           // `dist/index.js`.
-          if (source === "@bcd-embed/element") {
+          if (source === "@schalkneethling/bcd-embed") {
             return { id: elementSource("index.ts"), moduleSideEffects: true };
           }
-          if (source === "@bcd-embed/element/base.css") {
+          if (source === "@schalkneethling/bcd-embed/base.css") {
             return { id: elementSource("styles/base.css"), moduleSideEffects: true };
           }
           return null;
@@ -76,6 +76,7 @@ export default defineConfig({
         { label: "How bcd-embed works", link: "/" },
         { slug: "publication" },
         { slug: "deployment" },
+        { slug: "releasing" },
         {
           label: "Web component",
           items: [

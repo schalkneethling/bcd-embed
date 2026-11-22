@@ -36,7 +36,7 @@
  * Callers share one payload object, so consumers must not mutate it.
  */
 
-import type { FeatureResponse } from "@bcd-embed/schema";
+import type { FeatureResponse } from "../contract.js";
 
 import { createRequestCache, type RequestCache, type Retention } from "./request-cache.js";
 

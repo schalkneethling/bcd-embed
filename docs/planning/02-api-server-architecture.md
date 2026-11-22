@@ -36,7 +36,7 @@ bcd-embed/
 │   ├── core/          @bcd-embed/core       Normalization logic (pure, isomorphic)
 │   ├── generator/     @bcd-embed/generator  BCD → static artifacts
 │   ├── server/        @bcd-embed/server     Edge adapter (routing, errors, headers)
-│   └── element/       @bcd-embed/element    The web component (Document 3)
+│   └── element/       @schalkneethling/bcd-embed    The web component (Document 3)
 ├── apps/
 │   └── docs/                                Demo site, playground, self-host guide
 └── ...

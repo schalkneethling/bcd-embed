@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --recursive --if-present run build",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run schema:check && pnpm run test && pnpm run build && node scripts/freshness-integration-check.mjs",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run schema:check && pnpm run changeset:check && pnpm run test && pnpm run build && pnpm --filter @schalkneethling/bcd-embed check:package && node scripts/freshness-integration-check.mjs",
     "dev": "pnpm --filter @bcd-embed/docs dev",
     "dev:home": "pnpm --filter @bcd-embed/home dev",
     "dev:website": "pnpm --filter @bcd-embed/website dev",
@@ -20,9 +20,11 @@
     "test": "vitest run",
     "typecheck": "pnpm --recursive --if-present run typecheck",
     "lint:fix": "oxlint --fix . && stylelint \"**/*.{css,scss}\" --fix",
-    "quality": "pnpm lint && pnpm format:check && pnpm typecheck"
+    "quality": "pnpm lint && pnpm format:check && pnpm typecheck",
+    "changeset:check": "node scripts/release-changesets.mjs check"
   },
   "devDependencies": {
+    "@changesets/cli": "3.0.3",
     "@types/node": "^26.6.6",
     "@vitest/browser-playwright": "5.1.0",
     "oxfmt": "0.79.0",
@@ -39,5 +41,11 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@11.24.0"
+  "packageManager": "pnpm@11.24.0",
+  "fledgling": {
+    "provider": "github",
+    "workflow": "release.yml",
+    "environment": "publish",
+    "publish": false
+  }
 }

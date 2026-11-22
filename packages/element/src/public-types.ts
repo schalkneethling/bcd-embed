@@ -1,10 +1,11 @@
-import type { FeatureResponse } from "@bcd-embed/schema";
+import type { FeatureResponse } from "./contract.js";
 
 export type { MessageId, MessageValues, StringTable } from "./strings/format.js";
 
 /**
  * The payload that the `.data` property and the `source` attribute carry: a feature response from
- * the API contract. This is a type-only import, so the built package holds no schema code.
+ * the API contract. `contract.ts` writes it out as plain types, so the published declarations
+ * import no other package.
  */
 export type CompatTableData = FeatureResponse;
 

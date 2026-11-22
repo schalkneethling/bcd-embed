@@ -1,10 +1,10 @@
 /*
- * The introduction page's own styles. The table's styles come from @bcd-embed/element/base.css,
+ * The introduction page's own styles. The table's styles come from @schalkneethling/bcd-embed/base.css,
  * which this page imports before this file.
  *
  * The base stylesheet picks each colour with light-dark(), which follows the inherited
  * color-scheme. A page that declares a dark scheme must also paint a dark background, or the dark
- * colours sit on white (packages/element/README.md, "Dark mode"), so the root sets both.
+ * colours sit on white (packages/element/DEVELOPMENT.md, "Dark mode"), so the root sets both.
  */
 :root {
   color-scheme: light dark;

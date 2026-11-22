@@ -5,7 +5,7 @@ import type {
   BcdErrorDetail,
   BcdLoadDetail,
   CompatTableData,
-} from "@bcd-embed/element";
+} from "@schalkneethling/bcd-embed";
 import type { ReactNode, Ref } from "react";
 
 type BcdCompatTableProps = {

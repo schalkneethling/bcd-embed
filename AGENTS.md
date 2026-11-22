@@ -46,3 +46,18 @@ Workspace-specific TypeScript files may extend the managed root configuration.
   work, and validate performance against realistically sized data.
 - Keep transformation logic out of the component; the API answers what the
   support is, and consumers decide how it is shown.
+
+## Publishing the component
+
+- `packages/element` publishes to npm as `@schalkneethling/bcd-embed`, a beta
+  under the `beta` dist-tag. Every other workspace keeps `"private": true`.
+- A pull request that changes what a consumer of the component sees adds a
+  changeset: run `pnpm exec changeset` and commit the file it writes.
+- `.github/workflows/release.yml` stages releases on npm, and the owner
+  approves them with two-factor authentication. Never run `npm publish`,
+  `npm stage`, `npm trust`, `npm dist-tag`, or `npx fledgling` without
+  `--dry-run`. `apps/website/src/content/docs/releasing.md` describes the flow.
+- The published type declarations may import only relative files and the
+  package's `dependencies`. The contract types the element exposes are plain
+  copies in `packages/element/src/contract.ts`, checked against
+  `@bcd-embed/schema` by `packages/element/tests/contract.test.ts`.

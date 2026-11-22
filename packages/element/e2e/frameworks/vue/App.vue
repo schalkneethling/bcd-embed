@@ -3,7 +3,7 @@
 // `@bcd-load` into the prop `onBcdLoad`, and the runtime turns that back into the event name
 // `bcd-load` (runtime-dom `parseName`, which hyphenates). `window.bcdPage` is made by `main.ts`
 // before this component is created.
-import type { BcdErrorDetail, BcdLoadDetail, CompatTableData } from "@bcd-embed/element";
+import type { BcdErrorDetail, BcdLoadDetail, CompatTableData } from "@schalkneethling/bcd-embed";
 import { ref, shallowRef } from "vue";
 
 import { brokenPayload, browsersFor, fallbackFor, payload, readOptions } from "../shared.js";

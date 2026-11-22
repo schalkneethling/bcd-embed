@@ -136,7 +136,7 @@ from the expectation.
 readers through Guidepup: VoiceOver in Playwright's WebKit on macOS, Orca in
 Playwright's Firefox on Linux, and NVDA in Playwright's Firefox on Windows
 Server 2025. Each run records what was spoken at every step as a transcript
-(`packages/element/README.md`). Since #199 the runs load the built component
+(`packages/element/DEVELOPMENT.md`). Since #199 the runs load the built component
 page, not the static pages, and they cover variant A only. VoiceOver and Orca
 also perform steps 8 to 12 there, with no recorded wording yet: each check is
 the cell's sentence from the string table, and the first CI transcripts will

@@ -11,16 +11,19 @@ BCD releases. The API Worker has been deployed to Cloudflare since 15 November
 requirement remains open, a test under sustained load, which the
 [deployment page](./apps/website/src/content/docs/deployment.md#what-is-still-open-before-a-public-launch)
 lists. The web component, `<bcd-compat-table>` in `packages/element`, renders a
-table from the API, from a `data` property, or from inline JSON; it is built and
-tested but not published to npm yet. The documentation site documents it, starting at
+table from the API, from a `data` property, or from inline JSON. It publishes to npm
+as `@schalkneethling/bcd-embed`, in betas under the `beta` dist-tag until 1.0, and
+[Releasing the component](./apps/website/src/content/docs/releasing.md) describes
+how a release is staged and approved. The documentation site documents it, starting at
 [Getting started](./apps/website/src/content/docs/component/getting-started.mdx).
 The design and sequencing decisions live in [`docs/planning`](./docs/planning/).
 
 ## Repository layout
 
 The monorepo keeps the contract, normalization pipeline, static artifact
-generator, edge adapter, and web component versioned together. The implemented
-workspaces are:
+generator, edge adapter, and web component versioned together. Only the web
+component publishes to npm; every other workspace sets `private` to `true`. The
+implemented workspaces are:
 
 - `packages/schema` — `@bcd-embed/schema`, the canonical Zod schemas, inferred
   TypeScript types, and derived JSON Schema.
@@ -36,10 +39,11 @@ workspaces are:
   a candidate artifact tree against a baseline and, only when an operator
   explicitly opts in, uploads it to an R2 bucket and switches the current
   snapshot.
-- `packages/element` — `@bcd-embed/element`, the `<bcd-compat-table>` web
+- `packages/element` — `@schalkneethling/bcd-embed`, the `<bcd-compat-table>` web
   component, its optional base stylesheet, its browser and screen reader tests,
-  and the examples that the documentation site shows. The package is private
-  and not published yet.
+  and the examples that the documentation site shows. It is the one published
+  package. Its `README.md` is the consumer guide npm shows, and `DEVELOPMENT.md`
+  is the maintainers' guide.
 - `apps/worker` — `@bcd-embed/worker`, the Cloudflare Worker that runs the
   server handler against an R2 bucket binding and adds edge caching and error
   reporting. It is deployed manually with `pnpm --filter @bcd-embed/worker run
@@ -63,7 +67,7 @@ Each package and app has its own README with the details of its behavior.
 
 ## Automation
 
-Seven GitHub Actions workflows live in `.github/workflows/`, and the scripts they
+Eight GitHub Actions workflows live in `.github/workflows/`, and the scripts they
 call live in `scripts/`:
 
 - `ci.yml` runs `pnpm check`, a generation check at full BCD volume, and the
@@ -100,13 +104,20 @@ call live in `scripts/`:
   required check: it reports on every pull request, passes when the tests pass
   or were not needed, and fails when they fail. Each run records what the screen
   reader said. The details are in
-  [`packages/element/README.md`](./packages/element/README.md).
+  [`packages/element/DEVELOPMENT.md`](./packages/element/DEVELOPMENT.md).
 - `element-browser.yml` runs the web component's browser tests with axe in
   Chromium, Firefox, and WebKit. It tests when a pull request or a push to
   `main` changes `packages/element`, `packages/schema`, `packages/core`, the
   root `package.json` or `vitest.config.ts`, `pnpm-lock.yaml`,
   `pnpm-workspace.yaml`, or the workflow itself, and always on manual dispatch. Its `element-browser` job is a required check that
   reports on every pull request, like `screen-readers`.
+- `release.yml` runs on every push to `main`. While changesets are pending it
+  opens or updates the Version Packages pull request; after that pull request
+  is merged it builds the web component, stages it on npm over OpenID Connect
+  with `npm stage publish`, and records a git tag and a draft release. The
+  owner approves the staged version with two-factor authentication.
+  [Releasing the component](./apps/website/src/content/docs/releasing.md)
+  explains it.
 
 The design behind the freshness workflows is in
 [`docs/planning/06-phase5-freshness.md`](./docs/planning/06-phase5-freshness.md).
