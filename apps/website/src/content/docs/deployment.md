@@ -73,9 +73,12 @@ Cloudflare dashboard. A deploy does not change it. These are its settings:
 | Action     | Block                       |
 | Duration   | 10 seconds                  |
 
-A blocked request gets Cloudflare's own HTML `429` page, and the Worker never
-runs, so it does not count as a Workers request. The page has no CORS header,
-so a browser reports a blocked request to the component as a network error.
+A blocked request gets Cloudflare's own `429` response, and the Worker never
+runs, so it does not count as a Workers request. The probe on 20 November 2026
+measured a `text/plain; charset=UTF-8` body of 17 bytes, `Retry-After: 10` and
+no CORS header; an earlier test on 17 November had seen an HTML page, so the
+shape can change. Without the CORS header, a browser reports a blocked request
+to the component as a network error.
 [Document 9](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/09-custom-domain-and-rate-limits.md)
 explains why the zone's plan fixes most of these settings, and records the
 test that tripped the rule.
@@ -745,4 +748,8 @@ These items are separate work that a deploy does not cover:
 
 - A test under sustained load. The endpoint verifier and the rate limiting
   test have run against the live edge, but neither measures sustained
-  traffic.
+  traffic. The plan, the k6 script and the key list are in
+  [Document 11](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/11-load-test.md)
+  and [`load-test/`](https://github.com/schalkneethling/bcd-embed/tree/main/load-test).
+  They have run only against a local server. The preflight and the full run
+  (#214) are still to come, so this item stays open.
