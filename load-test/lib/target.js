@@ -1,5 +1,5 @@
 // Validates the base URL. The script has no default host, so it can never reach production by
-// accident, and it refuses a non-loopback host unless the operator confirms it.
+// accident, and it refuses a non-loopback host unless CONFIRM_REMOTE names that exact host.
 
 const ORIGIN = /^(https?):\/\/([^/:?#]+|\[[0-9a-fA-F:]+\])(?::(\d{1,5}))?$/;
 
@@ -8,7 +8,8 @@ const isLoopbackHost = (host) =>
 
 /**
  * Returns the origin without a trailing slash, or throws with the reason.
- * `confirmRemote` is the value of the CONFIRM_REMOTE environment variable.
+ * `confirmRemote` is the value of the CONFIRM_REMOTE environment variable. A remote host is
+ * allowed only when it equals the host name, such as `api.browser-compat.dev` (no scheme or port).
  */
 export const resolveBaseUrl = (baseUrl, confirmRemote) => {
   if (baseUrl === undefined || baseUrl === "") {
@@ -20,9 +21,9 @@ export const resolveBaseUrl = (baseUrl, confirmRemote) => {
     throw new Error("BASE_URL must be an origin with no path, query or fragment.");
   }
   const host = match[2];
-  if (!isLoopbackHost(host) && confirmRemote !== "yes") {
+  if (!isLoopbackHost(host) && confirmRemote !== host) {
     throw new Error(
-      `BASE_URL points at ${host}, which is not a loopback address. Set CONFIRM_REMOTE=yes to run against it.`,
+      `BASE_URL points at ${host}, which is not a loopback address. Set CONFIRM_REMOTE=${host} to run against it.`,
     );
   }
   return origin;

@@ -13,7 +13,14 @@ import http from "k6/http";
 import { Counter, Rate } from "k6/metrics";
 
 import { sameBytes } from "./lib/bytes.js";
-import { classByIndex, PHASE_RATES, PREFLIGHT, pickClass, SMOKE } from "./lib/mix.js";
+import {
+  classByIndex,
+  MAX_REQUESTS_PER_SECOND,
+  PHASE_RATES,
+  PREFLIGHT,
+  pickClass,
+  SMOKE,
+} from "./lib/mix.js";
 import { resolveBaseUrl } from "./lib/target.js";
 
 const BASE = resolveBaseUrl(__ENV.BASE_URL, __ENV.CONFIRM_REMOTE);
@@ -36,8 +43,11 @@ http.setResponseCallback(http.expectedStatuses(200, 204, 304, 404));
 
 const list = new SharedArray("keys", () => [JSON.parse(open("./keys.json"))])[0];
 // Conditional requests revisit a few hot keys, as returning readers do, so 304s occur early. The
-// smoke profile uses one key so its 60 iterations are certain to reach a 304.
-const hotKeys = list.popular.slice(0, PROFILE === "smoke" ? 1 : 8);
+// hot keys are every sixth popular key, which spreads them over the namespaces (the popular list
+// is sorted, so its first keys would all be `api.*`). The smoke profile uses one key so its 60
+// iterations are certain to reach a 304.
+const hotKeys =
+  PROFILE === "smoke" ? [list.popular[0]] : list.popular.filter((_, index) => index % 6 === 0);
 
 const scenarioFor = (rate, seconds, startTime) => ({
   executor: "constant-arrival-rate",
@@ -45,7 +55,9 @@ const scenarioFor = (rate, seconds, startTime) => ({
   timeUnit: "1s",
   duration: `${seconds}s`,
   preAllocatedVUs: Math.max(2, Math.ceil(rate * 2)),
-  maxVUs: Math.max(5, rate * 6),
+  // Three seconds of requests in flight at the cold-miss latency (about 1.5 s, Document 8) is
+  // enough to sustain the rate. A larger pool would let k6 catch up on a long stall.
+  maxVUs: Math.max(5, rate * 3),
   ...(startTime === undefined ? {} : { startTime: `${startTime}s` }),
 });
 
@@ -55,7 +67,7 @@ const rampScenario = {
   timeUnit: "1s",
   stages: [{ target: PHASE_RATES.steady, duration: `${RAMP_SECONDS}s` }],
   preAllocatedVUs: 40,
-  maxVUs: 120,
+  maxVUs: 60,
 };
 
 // `ramp`, `steady` and `ceiling` each run alone, so the plan can run them as separate k6
@@ -77,24 +89,27 @@ if (scenarios[PROFILE] === undefined) {
   throw new Error(`PROFILE must be one of ${Object.keys(scenarios).join(", ")}.`);
 }
 
-const classNames = [
-  "popular_br",
-  "popular_gzip",
-  "popular_identity",
-  "sampled_br",
-  "deep_br",
-  "pinned_br",
-  "raw_br",
-  "conditional",
-  "meta",
-  "browsers",
-  "index",
-  "missing",
-  "grouping",
-  "preflight",
-  "compare",
-];
+// The statuses each class expects. Anything else counts toward `unexpected_status`, which stops
+// the run, so a proxy answering 403 or a route that stops answering as documented ends the test.
+const EXPECTED_STATUSES = {
+  popular_br: [200],
+  popular_gzip: [200],
+  popular_identity: [200],
+  sampled_br: [200],
+  deep_br: [200],
+  pinned_br: [200],
+  raw_br: [200],
+  conditional: [200, 304],
+  meta: [200],
+  browsers: [200],
+  index: [200],
+  missing: [404],
+  grouping: [404],
+  preflight: [204],
+  compare: [200],
+};
 
+const classNames = Object.keys(EXPECTED_STATUSES);
 // A threshold that always holds makes k6 list each class's sub-metric in the end-of-test summary.
 const perClass = Object.fromEntries(
   classNames.map((name) => [`requests_by_class{class:${name}}`, ["count>=0"]]),
@@ -110,6 +125,11 @@ const perCacheStatus = Object.fromEntries(
 
 export const options = {
   scenarios: scenarios[PROFILE],
+  // Caps the whole process at 24 requests per second across all VUs. The arrival-rate executors set
+  // the rate, but after a stall (a suspended laptop, a paused process) they start the missed
+  // iterations at once, and only this cap holds the burst down. k6's documentation discourages
+  // `rps`; the plan (section 3) says why it is used here anyway. The CLI flag --rps 24 repeats it.
+  rps: MAX_REQUESTS_PER_SECOND,
   // Redirects would send hidden extra requests, so none are followed.
   maxRedirects: 0,
   thresholds: {
@@ -118,6 +138,8 @@ export const options = {
     // outage. The plan therefore runs each phase as its own k6 process (see the plan, section 6).
     server_errors: [{ threshold: "rate<0.01", abortOnFail: true, delayAbortEval: "30s" }],
     transport_errors: [{ threshold: "rate<0.01", abortOnFail: true, delayAbortEval: "30s" }],
+    // Any status a class does not expect (403 from a proxy, 406, a 200 where a 404 belongs).
+    unexpected_status: [{ threshold: "rate<0.01", abortOnFail: true, delayAbortEval: "10s" }],
     // One 429 means the generator exceeded the zone's rule, so the run's data is no longer clean.
     rate_limited_responses: [{ threshold: "count<1", abortOnFail: true }],
     compare_mismatch: ["count<1"],
@@ -132,6 +154,7 @@ export const options = {
 
 const serverErrors = new Rate("server_errors");
 const transportErrors = new Rate("transport_errors");
+const unexpectedStatus = new Rate("unexpected_status");
 const rateLimited = new Counter("rate_limited_responses");
 const requestsByClass = new Counter("requests_by_class");
 const cacheStatus = new Counter("cache_status_responses");
@@ -174,6 +197,7 @@ const record = (res, className) => {
   requestsByClass.add(1, { class: className });
   serverErrors.add(res.status >= 500);
   transportErrors.add(res.status === 0);
+  unexpectedStatus.add(!EXPECTED_STATUSES[className].includes(res.status));
   if (res.status === 429) rateLimited.add(1);
   cacheStatus.add(1, { status: header(res, "cf-cache-status") ?? "none" });
 };
@@ -429,4 +453,11 @@ export default function () {
   const className =
     PROFILE === "smoke" ? classByIndex(exec.scenario.iterationInTest) : pickClass(Math.random());
   run(className);
+}
+
+// Runs once, so the target is printed once and not once per virtual user.
+export function setup() {
+  console.log(
+    `Target: ${BASE}, profile ${PROFILE}, at most ${MAX_REQUESTS_PER_SECOND} requests per second.`,
+  );
 }

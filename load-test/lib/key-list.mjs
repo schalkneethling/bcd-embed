@@ -99,19 +99,48 @@ export const buildKeyList = ({
   }
   const everyKey = [...keys].sort();
 
-  const stride = Math.max(1, Math.floor(everyKey.length / sampledCount));
+  // ceil, so the stride reaches the end of the sorted keys. floor would take `sampledCount` keys
+  // from the first part of the list and never sample the rest.
+  const stride = Math.max(1, Math.ceil(everyKey.length / sampledCount));
   const sampled = [];
   for (let index = 0; index < everyKey.length && sampled.length < sampledCount; index += stride) {
     sampled.push(everyKey[index]);
   }
 
-  const deepStride = (candidates) => Math.max(1, Math.floor(candidates.length / deepCount));
-  const deepCandidates = everyKey.filter((key) => key.split(".").length >= deepMinSegments);
-  const deep = [];
-  const step = deepStride(deepCandidates);
-  for (let index = 0; index < deepCandidates.length && deep.length < deepCount; index += step) {
-    deep.push(deepCandidates[index]);
+  // Deep keys are spread evenly over the namespaces that have them, not in proportion to size,
+  // because one namespace (webextensions) holds most of the deep keys and would fill the group.
+  const byNamespace = new Map();
+  for (const key of everyKey) {
+    if (key.split(".").length < deepMinSegments) continue;
+    const namespace = key.slice(0, key.indexOf("."));
+    const group = byNamespace.get(namespace) ?? [];
+    group.push(key);
+    byNamespace.set(namespace, group);
   }
+  // Quotas: a small namespace gives all it has, and the rest share the remaining places evenly.
+  const groups = [...byNamespace.values()].sort((a, b) => a.length - b.length);
+  const quotas = new Map();
+  let remaining = deepCount;
+  groups.forEach((group, position) => {
+    const quota = Math.min(group.length, Math.floor(remaining / (groups.length - position)));
+    quotas.set(group, quota);
+    remaining -= quota;
+  });
+  // Leftover places from rounding go to the largest groups first, one each.
+  for (let position = groups.length - 1; position >= 0 && remaining > 0; position -= 1) {
+    const group = groups[position];
+    if (quotas.get(group) < group.length) {
+      quotas.set(group, quotas.get(group) + 1);
+      remaining -= 1;
+    }
+  }
+  const deep = [];
+  for (const group of groups) {
+    const quota = quotas.get(group);
+    // Evenly spaced picks: quota <= group.length, so the indexes are distinct.
+    for (let n = 0; n < quota; n += 1) deep.push(group[Math.floor((n * group.length) / quota)]);
+  }
+  deep.sort();
 
   // A key that exists as a dot-boundary prefix of indexed keys but is not itself indexed is an
   // organizational namespace, which the API answers with namespace_not_queryable.
