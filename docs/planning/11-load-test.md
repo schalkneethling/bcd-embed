@@ -272,13 +272,13 @@ early as well (section 6).
 | Failed checks                          | Under 0.1% (`checks` rate above 0.999)                   | Any systematic fault fails every request of its class, which is at least 1% of requests, so 0.1% catches it. One network blip per 1,000 requests does not fail the run. |
 | `compare_mismatch`                     | 0                                                        | A compressed body that does not decode to the identity bytes is a defect, not noise. The issue requires the comparison. |
 | `conditional_not_304`                  | 0                                                        | `If-None-Match` with a current tag must give `304` (Document 1 §9, `packages/server/README.md`).        |
-| Median response time                   | Under 250 ms                                             | Document 8 measured edge-cache hits at 0.04 to 0.21 seconds from Johannesburg, and most requests are hits. The mark adds 40 ms margin. |
+| Median response time                   | Under 1,000 ms                                           | Set by the owner on 23 November 2026, replacing the proposed 250 ms. The production smoke run measured a median of 825 ms and the preflight 580 ms, and the Worker's own median wall time in the preflight was 321 ms, so a client-side median under 250 ms could not pass. 1 second keeps room for the cache misses in the mix. |
 | 95th percentile response time          | Under 1,500 ms                                           | Document 8 measured cold misses at 0.63 to 1.46 seconds. 1.5 seconds is just above that range.          |
 | Cache status                           | Recorded, no mark                                        | `cache_status_responses` by `cf-cache-status` shows the hit share but the Worker's Cache API hits may carry no header (the `none` bucket). A mark would be invented. |
 | Worker processor time per request      | Recorded from the dashboard, no mark                     | It feeds the cost estimate (section 8).                                                                  |
 
-The two latency marks are proposals from one location's measurements, to be revised after the production smoke
-run shows the owner's own round-trip time. They compare the whole mix. The 304 and 404 classes are fast, and the
+The median mark was revised after the production smoke run and preflight showed the owner's own round-trip
+time; the 95th percentile mark held in both runs (1.02 s and 1.00 s). They compare the whole mix. The 304 and 404 classes are fast, and the
 pinned and sampled classes are slow, so the marks describe the mix, not any one route.
 
 ## 8. Cost estimate
@@ -311,9 +311,11 @@ lengths:
 
 **CPU time.** The issue's assumption is 1 ms per request. The preflight replaces it with a reading.
 
-> **Worker processor time per request, from the Cloudflare dashboard after the preflight: ____ ms.**
-> Read by the owner on ____ (date), from the Worker's metrics for the preflight's time range (306 requests).
-> Not filled in yet.
+> **Worker processor time per request, from the Cloudflare dashboard after the preflight: 3.66 ms at the
+> median** (90th percentile 7.58 ms, 99th 19.06 ms, 99.9th 32.31 ms).
+> Read on 23 November 2026 from the Worker's metrics for 12:15 to 12:21 UTC, which held 310 invocations: the
+> preflight's 305 and 5 `meta.json` checks just before it, with no errors and no CPU-limit hits. The same
+> window's median wall time was 321 ms (90th percentile 960 ms, 99th about 1 s).
 
 CPU cost is `requests x c` milliseconds, charged only beyond 30 million ms, where `c` is the dashboard figure:
 
@@ -325,7 +327,8 @@ CPU cost is `requests x c` milliseconds, charged only beyond 30 million ms, wher
 | 25                   | 490,000 ms, inside                   | 44 million ms, 147%, so about 14 million ms billable, $0.28 |
 
 The allowance would only be exceeded by a 24-hour run at a CPU time above about 17 ms per request. If the
-dashboard figure is under 10 ms, the cost of every run in this plan is $0.00.
+dashboard figure is under 10 ms, the cost of every run in this plan is $0.00. The measured median, 3.66 ms, is
+under 5 ms, so the row for 5 ms is a safe upper estimate for the mix.
 
 **R2 reads.** A request that hits the edge cache reads nothing from R2. A miss on a current feature reads
 `meta.json` and the blob, and also the root and shard if this isolate has not read them yet (up to 4 reads,

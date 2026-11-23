@@ -145,7 +145,7 @@ export const options = {
     compare_mismatch: ["count<1"],
     conditional_not_304: ["count<1"],
     checks: ["rate>0.999"],
-    http_req_duration: ["p(95)<1500", "med<250"],
+    http_req_duration: ["p(95)<1500", "med<1000"],
     ...perClass,
     ...perCacheStatus,
   },
