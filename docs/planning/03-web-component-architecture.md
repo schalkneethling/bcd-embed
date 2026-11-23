@@ -457,7 +457,7 @@ Each layer runs where its cost fits, from cheapest to most expensive:
 | Browser tests in Chromium (Vitest)     | The element's rendering, in files named `*.browser.test.ts`                                        | Whether it joins `pnpm check` is decided in #197; the tooling spike recommends yes, provisionally ([Document 10, #188 section 10](10-component-spikes.md#10-recommendation-does-the-chromium-vitest-project-join-pnpm-check)) |
 | Three-engine tests with axe (Playwright) | Chromium, Firefox, and WebKit, with axe, in files named `*.e2e.ts`                                | The `element-browser` job, which #197 will add as a required check, outside the 10-minute `check` job                                                                   |
 | Screen reader walks (Guidepup, a library that drives real screen readers from tests) | VoiceOver in Playwright's WebKit, Orca and NonVisual Desktop Access (NVDA) in Playwright's Firefox                            | The required `screen-readers` job (`.github/workflows/screen-readers.yml`)                                                                     |
-| Manual screen reader pass              | VoiceOver with Safari, by the owner; the release gate below                                       | By hand, per release                                                                                                                           |
+| Manual screen reader pass              | VoiceOver with Safari, by the owner; the release gate below                                       | By hand, before version 1.0                                                                                                                    |
 
 The Node project must exclude `**/*.browser.test.ts`, because a browser project that only lists an `include` does not stop the Node project from collecting those files ([#188 section 3](10-component-spikes.md#3-a-browser-project-beside-the-node-tests)). Firefox and WebKit stay out of `pnpm check`, because three engines took 12.7 s to 38.8 s for 20 tests locally and needed a 1.2 GB browser install ([#188 section 10](10-component-spikes.md#10-recommendation-does-the-chromium-vitest-project-join-pnpm-check)).
 
@@ -469,7 +469,7 @@ Accessibility: automated auditing (axe) via Playwright on every state — loadin
 
 ### Release gate
 
-The gate names its combinations rather than leaving "a screen reader" to interpretation. Two pairs are required per release, and each is tested differently; JAWS with Chrome is best-effort.
+The gate names its combinations rather than leaving "a screen reader" to interpretation. Two pairs are required before version 1.0, and each is tested differently; JAWS with Chrome is best-effort. The owner decided on 23 November 2026 that beta releases (the `beta` dist-tag) ship without the manual pass and ask screen reader users for feedback instead, so the gate applies to 1.0, not to each beta.
 
 | Required pair           | How it is tested                                                                                                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
