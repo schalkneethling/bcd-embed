@@ -256,9 +256,176 @@ describe("the page's structure", () => {
 
   // Astro's HTML compression drops the line break between a word and an element that starts the
   // next source line, which ran "with its" and "source" together. The page writes `{" "}` there.
-  it("keeps a space between a word and the link or code that follows it", () => {
-    const text = builtHtml.replace(/<script\b[^>]*>[^]*?<\/script>/g, "");
-    expect(text.match(/[A-Za-z]<(?:a|code)[\s>]/g) ?? []).toEqual([]);
+  // The test reads the text a reader gets: it parses the built HTML with no script running and,
+  // inside each block of running text, reads the characters on each side of every inline element.
+  // A letter or digit on both sides of a boundary means two words ran together, and a space
+  // between an element and the punctuation after it means a stray space.
+  it("keeps words apart around every inline element, and no space before punctuation", async () => {
+    const { context, page } = await openPage();
+    try {
+      const problems = await page.evaluate((html) => {
+        const parsed = new DOMParser().parseFromString(html, "text/html");
+        for (const element of parsed.querySelectorAll("script, style, pre")) element.remove();
+        const word = /[\p{L}\p{N}]/u;
+        const found: string[] = [];
+        const blocks = "p, h1, h2, h3, h4, h5, h6, li, legend, label, caption, th, td";
+        for (const element of parsed.body.querySelectorAll("a, code, strong, em, b, i, abbr")) {
+          const block = element.parentElement?.closest(blocks);
+          if (block === null || block === undefined) continue;
+          const before = parsed.createRange();
+          before.setStart(block, 0);
+          before.setEndBefore(element);
+          const after = parsed.createRange();
+          after.setStartAfter(element);
+          after.setEnd(block, block.childNodes.length);
+          const previous = before.toString();
+          const next = after.toString();
+          const own = element.textContent ?? "";
+          if (word.test(previous.slice(-1)) && word.test(own.charAt(0))) {
+            found.push(`…${previous.slice(-12)}|${own}`);
+          }
+          if (word.test(own.slice(-1)) && word.test(next.charAt(0))) {
+            found.push(`${own}|${next.slice(0, 12)}…`);
+          }
+          if (/^\s+[.,;:!?)]/.test(next)) found.push(`${own}| ${next.trim().charAt(0)}`);
+        }
+        return found;
+      }, builtHtml);
+      expect(problems).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // The control: the same reading finds a join that the built page could have.
+  it("finds a word run into a link, which shows the check above can fail", async () => {
+    const { context, page } = await openPage();
+    try {
+      const joined = await page.evaluate(() => {
+        const parsed = new DOMParser().parseFromString(
+          "<p>comes from<a href='#'>MDN</a>.</p>",
+          "text/html",
+        );
+        const element = parsed.querySelector("a");
+        const block = parsed.querySelector("p");
+        if (element === null || block === null) return "";
+        const before = parsed.createRange();
+        before.setStart(block, 0);
+        before.setEndBefore(element);
+        return `${before.toString().slice(-1)}${element.textContent?.charAt(0)}`;
+      });
+      expect(joined).toBe("mM");
+    } finally {
+      await context.close();
+    }
+  });
+
+  // OFL 1.1, condition 2: the licence must accompany each copy of the fonts, so the site serves
+  // both packages' LICENSE files, unchanged, and the footer links to them.
+  it("ships both font licences unchanged, and links them from the footer", async () => {
+    const notices = await readFile(join(outDirectory, "font-licenses.txt"), "utf8");
+    for (const licence of [
+      "@fontsource-variable/inter-tight/LICENSE",
+      "@fontsource/jetbrains-mono/LICENSE",
+    ]) {
+      expect(notices).toContain(await readFile(require.resolve(licence), "utf8"));
+    }
+    const { context, page } = await openPage();
+    try {
+      const link = page.locator('.site-footer a[href="/font-licenses.txt"]');
+      expect(await link.textContent()).toBe("SIL Open Font License");
+      const response = await page.request.get(new URL("/font-licenses.txt", site?.url).href);
+      expect(response.status()).toBe(200);
+      expect(await response.text()).toBe(notices);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("has a skip link as the first stop, which shows when focused and moves on to main", async () => {
+    const { context, page } = await openPage({ width: 320 });
+    try {
+      const skip = page.locator(".skip-link");
+      expect(await skip.getAttribute("href")).toBe("#main");
+      expect(await page.locator("main#main").count()).toBe(1);
+      const hiddenBox = await skip.boundingBox();
+      expect(hiddenBox === null || (hiddenBox.width <= 1 && hiddenBox.height <= 1)).toBe(true);
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.className)).toBe("skip-link");
+      const box = await skip.boundingBox();
+      expect(box?.width).toBeGreaterThanOrEqual(44);
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+      expect(await skip.isVisible()).toBe(true);
+      await page.keyboard.press("Enter");
+      // The next Tab starts from main, so it reaches the first link inside it, not the header.
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.className)).toBe("hero__start");
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("keeps every navigation link at least 44 by 44 pixels, at 320 and 1280 pixels wide", async () => {
+    for (const width of [320, 1280]) {
+      const { context, page } = await openPage({ width });
+      try {
+        const boxes = await page
+          .locator(".site-header__links a")
+          .evaluateAll((links) =>
+            links.map((link) => [link.textContent, link.getBoundingClientRect().toJSON()]),
+          );
+        expect(boxes).toHaveLength(4);
+        for (const [name, box] of boxes as [string, DOMRect][]) {
+          expect(box.width, `${name} at ${width}`).toBeGreaterThanOrEqual(44);
+          expect(box.height, `${name} at ${width}`).toBeGreaterThanOrEqual(44);
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  });
+
+  // `code` is set at 0.9em for inline code. Inside the markup sample that would shrink the sample's
+  // own size a second time, so the sample's `code` inherits the size of its `pre`.
+  it("sets the markup sample's code at the sample's own size", async () => {
+    const { context, page } = await openPage();
+    try {
+      const sizes = await page
+        .locator(".how__snippet")
+        .evaluate((pre) => [
+          getComputedStyle(pre).fontSize,
+          getComputedStyle(pre.querySelector("code") as Element).fontSize,
+        ]);
+      expect(sizes).toEqual(["14px", "14px"]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // A browser without light-dark() would compute every pair as invalid, so each page token that
+  // uses one must have a plain value in the `@supports not (color: light-dark(…))` block.
+  it("gives every light-dark() token a fallback for a browser without light-dark()", async () => {
+    const css = await readFile(join(homeDirectory, "src", "styles", "home.css"), "utf8");
+    const tokens = (source: string, pattern: RegExp) =>
+      [...source.matchAll(pattern)].map((match) => match[1]).sort();
+    const rootStart = css.indexOf(":root {");
+    const root = css.slice(rootStart, css.indexOf("\n}", rootStart));
+    const supportsStart = css.indexOf("@supports not (color: light-dark(#000, #fff)) {");
+    expect(supportsStart).toBeGreaterThan(rootStart);
+    const supports = css.slice(supportsStart, css.indexOf("\n}", supportsStart));
+    const paired = tokens(root, /^\s*(--[\w-]+):\s*light-dark\(/gm);
+    expect(paired.length).toBeGreaterThan(10);
+    // The block may set more than the pairs: `--home-color-code-text` is one plain colour, but its
+    // background falls back to Canvas there, so the text falls back to CanvasText with it.
+    const fallbacks = tokens(supports, /^\s*(--[\w-]+):/gm);
+    expect(paired.filter((token) => !fallbacks.includes(token))).toEqual([]);
+    // No declaration outside the tokens calls light-dark() itself, so the tokens cover it all.
+    const elsewhere = css
+      .replace(root, "")
+      .replace(supports, "")
+      .split("\n")
+      .filter((line) => line.includes("light-dark(") && !line.trim().startsWith("*"));
+    expect(elsewhere).toEqual([]);
   });
 
   it("states the BCD version its inline data came from", async () => {
@@ -1045,7 +1212,25 @@ describe.each(SCHEMES)("the page's colours in the %s scheme", (scheme) => {
         minimum: 4.5,
       }));
 
-      // The first stop in the focus order is the wordmark's link.
+      // The first stop in the focus order is the skip link, which shows only while focused, and
+      // the second is the wordmark's link.
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.className)).toBe("skip-link");
+      checks.push(
+        {
+          pair: "skip link text on its fill",
+          ratio: contrastRatio(
+            await colour(".skip-link", "color"),
+            await colour(".skip-link", "background-color"),
+          ),
+          minimum: 4.5,
+        },
+        {
+          pair: "skip link focus ring on the page",
+          ratio: contrastRatio(await colour(".skip-link", "outline-color"), pageBackground),
+          minimum: 3,
+        },
+      );
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.className)).toBe(
         "site-header__brand",

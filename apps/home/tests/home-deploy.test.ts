@@ -100,6 +100,20 @@ const sentPolicy = (): string => headersFor("/")["content-security-policy"] ?? "
 /** Whether the page holds a table that asks the API for its data, which `connect-src` serves. */
 const hasFetchModeTable = (html: string): boolean => /<bcd-compat-table\b[^>]*\squery="/.test(html);
 
+/** Every font format a browser loads with `@font-face`. */
+const FONT_FILE = /\.(?:woff2?|ttf|otf|eot)$/i;
+
+/**
+ * Whether the policy's `font-src` matches the build: exactly `'self'` when it ships a font file,
+ * and absent when it ships none, so `default-src 'none'` denies fonts.
+ */
+const fontPolicyAgrees = (policy: Map<string, string[]>, fontFiles: string[]): boolean => {
+  const sources = policy.get("font-src");
+  return fontFiles.length > 0
+    ? sources?.length === 1 && sources[0] === "'self'"
+    : sources === undefined;
+};
+
 beforeAll(async () => {
   outDirectory = await mkdtemp(join(tmpdir(), "bcd-embed-home-deploy-"));
   // The same build as `home-page.test.ts`: Vitest runs with NODE_ENV=test, which would select
@@ -214,13 +228,37 @@ describe("the Content-Security-Policy", () => {
   });
 
   // `font-src 'self'` is in the policy because the build ships font files. If a later design drops
-  // them, the directive should go too, so the test ties the two together.
-  it("allows font-src exactly when the build ships font files, and only from _astro", async () => {
+  // them, the directive should go too, and a font added without it would be blocked, so the test
+  // ties the two together in both directions.
+  it("names font-src exactly when the build ships font files", async () => {
+    const fonts = (await readdir(outDirectory, { recursive: true })).filter((name) =>
+      FONT_FILE.test(name),
+    );
+    expect(fonts.map((name) => name.replaceAll("\\", "/")).sort()).toEqual([
+      expect.stringMatching(/^_astro\/inter-tight-latin-wght-normal\.[^/]+\.woff2$/),
+      expect.stringMatching(/^_astro\/jetbrains-mono-latin-400-normal\.[^/]+\.woff2$/),
+    ]);
+    expect(fontPolicyAgrees(policy(), fonts)).toBe(true);
+  });
+
+  it("agrees only when fonts and font-src 'self' come together, or neither does", () => {
+    const withFonts = new Map([["font-src", ["'self'"]]]);
+    const without = new Map<string, string[]>();
+    expect(fontPolicyAgrees(withFonts, ["_astro/a.woff2"])).toBe(true);
+    expect(fontPolicyAgrees(without, [])).toBe(true);
+    // A directive with no font to serve, and a font the policy would block.
+    expect(fontPolicyAgrees(withFonts, [])).toBe(false);
+    expect(fontPolicyAgrees(without, ["_astro/a.woff2"])).toBe(false);
+    // Any source beyond the site's own is more than the fonts need.
+    expect(
+      fontPolicyAgrees(new Map([["font-src", ["'self'", "https:"]]]), ["_astro/a.woff2"]),
+    ).toBe(false);
+  });
+
+  it("names in the stylesheet only fonts that the site serves from _astro", async () => {
     const fonts = (await readdir(join(outDirectory, "_astro"))).filter((name) =>
       name.endsWith(".woff2"),
     );
-    expect(fonts).toHaveLength(2);
-    expect(policy().has("font-src")).toBe(true);
     // Every font the stylesheet names is one of the site's own files.
     const css = (
       await Promise.all(

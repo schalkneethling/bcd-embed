@@ -7,8 +7,10 @@
  * prefer a light one. The layout is the same in both. apps/home/README.md, "Design", lists every
  * token and the contrast of each pair.
  *
- * The rules are written Shared First: every rule below the tokens applies at every width, and the
- * one media query at the end changes only what a wide viewport needs.
+ * The rules are written Shared First: a declaration outside a media query has the same value at
+ * every width, and each value that differs by viewport is written once for each range, in the
+ * media queries at the end, so no declaration overrides another. The ranges are below 48rem, from
+ * 48rem, below 64rem and from 64rem.
  */
 
 /*
@@ -63,7 +65,6 @@
   --home-color-text: light-dark(#2a0b09, #f2d3b0);
   --home-font-body: "Inter Tight", system-ui, sans-serif;
   --home-font-code: "JetBrains Mono", ui-monospace, monospace;
-  --home-gutter: 1rem;
   --home-measure: 75rem;
   --home-radius: 0.625rem;
 
@@ -213,12 +214,52 @@ main,
   padding: 0;
 }
 
-/* Each link is at least 44 pixels tall, as the example labels are. */
+/*
+ * Each link is at least 44 by 44 pixels, as the example labels are, so a short one such as "API"
+ * is still a full-size target. The text stays centred in the wider box.
+ */
 .site-header__links a {
   align-items: center;
   display: inline-flex;
+  justify-content: center;
   min-block-size: 2.75rem;
+  min-inline-size: 2.75rem;
   text-decoration: none;
+}
+
+/*
+ * The skip link is the first stop in the focus order, so a keyboard user can pass the header's five
+ * links. It is clipped away until it has focus, and then it shows at the start of the page, above
+ * everything else. Its border is transparent in the normal schemes, and forced colours mode paints
+ * it, so the link keeps its outline there, where its background is removed.
+ */
+.skip-link {
+  background-color: var(--home-color-start);
+  border: 2px solid transparent;
+  border-radius: var(--home-radius);
+  color: var(--home-color-start-text);
+  font-weight: 800;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.5rem;
+  padding: 0.75rem 1rem;
+  position: absolute;
+  z-index: 1;
+}
+
+.skip-link:not(:focus) {
+  block-size: 1px;
+  border: 0;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.skip-link:focus,
+.skip-link:hover {
+  color: var(--home-color-start-text);
 }
 
 .site-header__links a:hover {
@@ -230,7 +271,6 @@ main,
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  padding-block: 3rem 3.5rem;
 }
 
 .hero > * {
@@ -346,7 +386,7 @@ main > section {
   border: 1px solid var(--home-color-line);
   border-radius: 1.125rem;
   min-inline-size: 0;
-  padding: 1.25rem var(--home-gutter);
+  padding-inline: var(--home-gutter);
 }
 
 .example-panel > p {
@@ -491,7 +531,7 @@ main > section {
  */
 .how {
   display: grid;
-  gap: 1rem;
+  row-gap: 1rem;
 }
 
 .how > * {
@@ -506,8 +546,12 @@ main > section {
   font-size: 0.875rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
-  padding: 1.25rem;
   white-space: pre-wrap;
+}
+
+/* The sample's size is set on the `pre`, so its `code` keeps it instead of shrinking it again. */
+.how__snippet code {
+  font-size: inherit;
 }
 
 .site-footer {
@@ -519,6 +563,21 @@ main > section {
 
 .site-footer > p {
   margin-block: 0;
+}
+
+/* Below a tablet's width: a narrow gutter, and less room around the hero and in each panel. */
+@media (width < 48rem) {
+  :root {
+    --home-gutter: 1rem;
+  }
+
+  .hero {
+    padding-block: 3rem 3.5rem;
+  }
+
+  .example-panel {
+    padding-block: 1.25rem;
+  }
 }
 
 /* From a tablet's width: a wider gutter, and more room around the hero and in each panel. */
@@ -533,6 +592,13 @@ main > section {
 
   .example-panel {
     padding-block: 1.5rem;
+  }
+}
+
+/* Below a laptop's width: the markup sample follows the paragraph before it, in one column. */
+@media (width < 64rem) {
+  .how__snippet {
+    padding: 1.25rem;
   }
 }
 
