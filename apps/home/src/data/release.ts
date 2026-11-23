@@ -18,20 +18,37 @@ export type Release = {
   readonly installCommand: string;
 };
 
-// A prerelease version has a hyphen after its patch number, then its identifier, such as
-// `0.1.0-beta.0`. The release workflow stages a prerelease under the dist-tag named by that
-// identifier, and a stable version under `latest` (apps/website/src/content/docs/releasing.md).
-const PRERELEASE_PATTERN = /^\d+\.\d+\.\d+-([a-z]+)/i;
+// Semantic Versioning marks a prerelease with a hyphen after the patch number, then dot-separated
+// identifiers: `0.1.0-beta.0`, `1.1.0-rc.1`, or only a number, as in `1.0.0-0`. The release
+// workflow stages a prerelease under the dist-tag named by its first identifier, as `beta` is, and
+// a stable version under `latest` (apps/website/src/content/docs/releasing.md).
+const PRERELEASE_PATTERN = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/;
+
+/** The badge's words for the stages the project names; any other identifier is shown as it is. */
+const STAGE_NAMES: Readonly<Record<string, string>> = {
+  alpha: "Alpha",
+  beta: "Beta",
+  rc: "Release candidate",
+};
 
 export const describeRelease = ({ name, version }: PackageManifest): Release => {
-  const identifier = PRERELEASE_PATTERN.exec(version)?.[1]?.toLowerCase();
+  const identifier = PRERELEASE_PATTERN.exec(version)?.[1];
   const packageAtVersion = `${name}@${version}`;
   if (identifier === undefined) {
     return { badge: packageAtVersion, installCommand: `npm install ${name}` };
   }
-  const stage = `${identifier.charAt(0).toUpperCase()}${identifier.slice(1)}`;
+  // A number alone, as in `1.0.0-0`, names no stage and is not a dist-tag npm accepts: "Tags that
+  // can be interpreted as valid semver ranges will be rejected" (npm dist-tag, "Caveats"). Such a
+  // prerelease is still never `latest`, so the
+  // badge calls it a prerelease and the command pins the exact version.
+  if (/^\d+$/.test(identifier)) {
+    return {
+      badge: `Prerelease · ${packageAtVersion}`,
+      installCommand: `npm install ${packageAtVersion}`,
+    };
+  }
   return {
-    badge: `${stage} · ${packageAtVersion}`,
+    badge: `${STAGE_NAMES[identifier] ?? identifier} · ${packageAtVersion}`,
     installCommand: `npm install ${name}@${identifier}`,
   };
 };
