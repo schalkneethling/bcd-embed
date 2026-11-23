@@ -556,3 +556,13 @@ describe.skipIf(!hasK6)("k6 against a local stub", () => {
     }
   }, 60_000);
 });
+
+describe("the cached 404 policy (#259)", () => {
+  it("accepts only the Worker's max-age=3600 for a 404", () => {
+    const script = readText("load-test/load-test.js");
+    expect(script).toContain('const ERROR_CACHE_POLICY = "max-age=3600";');
+    expect(script).toContain('header(r, "cache-control") === ERROR_CACHE_POLICY');
+    // The edge cache's old 4-hour lifetime must fail the check again, not be accepted.
+    expect(script).not.toMatch(/max-age=14400"/);
+  });
+});

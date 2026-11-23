@@ -105,6 +105,6 @@ such as a proxy's `403`), and on the first `429`. It fails at the end if any che
 exits with code 99 when a threshold fails. See Document 11, section 7, for each pass mark and its source.
 
 The counters to read are `conditional_304` (304 responses, counted apart from everything else),
-`compare_ok` and `compare_mismatch` (compressed body against identity body), `cache_status_responses` by
-`cf-cache-status`, and `current_404_max_age_14400` (how often the edge cache changed a 404's lifetime, issue
-#259).
+`compare_ok` and `compare_mismatch` (compressed body against identity body), and `cache_status_responses` by
+`cf-cache-status`. A cached 404 must keep `max-age=3600`; the check fails if the edge cache changes its
+lifetime (issue #259).

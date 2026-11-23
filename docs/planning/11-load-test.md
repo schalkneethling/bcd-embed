@@ -191,17 +191,17 @@ boolean). The `checks` pass mark and the thresholds in section 7 decide the outc
 | Feature, pinned              | The same with `cache-control: max-age=31536000, immutable`.                                                                                   |
 | `meta.json`                  | `200`; JSON; strong `ETag`; current cache policy; requested encoding; the body's `current` equals the expected snapshot and its `contract` equals `1.1.0`. |
 | `browsers.json`, indexes     | `200`; JSON; current cache policy; snapshot header; Brotli.                                                                                   |
-| `404` under `/v1/current/`   | `404`; JSON; error code `feature_not_found` or `namespace_not_queryable` as expected; `cache-control` is `max-age=3600` **or** `max-age=14400`. |
+| `404` under `/v1/current/`   | `404`; JSON; error code `feature_not_found` or `namespace_not_queryable` as expected; `cache-control` is `max-age=3600`, also when the edge cache answers. |
 | Preflight                    | `204`; `allow: GET, HEAD, OPTIONS`; `access-control-allow-headers` includes `if-none-match`.                                                  |
 | Conditional                  | `304`; same `ETag`; no body.                                                                                                                  |
 | `compare`                    | Both `200`; compressed response really carries `content-encoding`; identity response carries none; **the compressed body decodes to the identity bytes**. |
 
-**Cached 404s (#259).** A `404` under `/v1/current/` that the Worker serves from its edge cache reaches the
-client with `max-age=14400`, where the Worker sets `max-age=3600`. Issue #259 suspects Cloudflare's Browser
-Cache TTL and is not settled. The script therefore accepts both values for that one case, and counts how often
-`14400` appears in `current_404_max_age_14400`. Accepting both is a decision to keep this test about load, not
-about #259. If #259 is fixed first, change `CURRENT_404_CACHES` in `load-test.js` to the one correct value. The
-local server cannot show this behaviour.
+**Cached 404s (#259).** Until 23 November 2026, a `404` under `/v1/current/` that the Worker served from its
+edge cache reached the client with `max-age=14400`, where the Worker sets `max-age=3600`, because the zone's
+Browser Cache TTL replaced any shorter `max-age` with its 4-hour default. The script accepted both values while
+#259 was open, and every run in section 12 did. The owner then set Browser Cache TTL to "Respect Existing
+Headers", after which a cached 404 kept `max-age=3600`, so the script now accepts only that value and fails the
+check if the edge changes it again. The local server cannot show this behaviour.
 
 **The comparison.** `compare` fetches one popular key compressed (Brotli or gzip, chosen at random) and then
 identity, both as binary (`responseType: "binary"`, which returns an `ArrayBuffer`), and compares the two byte
@@ -545,7 +545,6 @@ end of these figures.
 ## 13. Open items
 
 - Section 10's support answer is the owner's.
-- #259 is open. The script accepts both `max-age` values for a cached 404 until it is settled.
 
 ## 14. k6 documentation used (k6 v2.4.0)
 
