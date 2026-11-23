@@ -7,7 +7,7 @@
 // any worker. They run in Chromium. To run them in Chromium, Firefox and WebKit, set
 // BCD_EMBED_HOME_CSP_ENGINES (see apps/home/README.md). Every request that leaves the local server
 // is aborted, and the hosted API is answered from installed BCD, so no test reaches a real server.
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -56,6 +56,7 @@ const ALLOWED_DIRECTIVES = new Set([
   "default-src",
   "script-src",
   "style-src",
+  "font-src",
   "img-src",
   "connect-src",
   "object-src",
@@ -98,6 +99,20 @@ const sentPolicy = (): string => headersFor("/")["content-security-policy"] ?? "
 
 /** Whether the page holds a table that asks the API for its data, which `connect-src` serves. */
 const hasFetchModeTable = (html: string): boolean => /<bcd-compat-table\b[^>]*\squery="/.test(html);
+
+/** Every font format a browser loads with `@font-face`. */
+const FONT_FILE = /\.(?:woff2?|ttf|otf|eot)$/i;
+
+/**
+ * Whether the policy's `font-src` matches the build: exactly `'self'` when it ships a font file,
+ * and absent when it ships none, so `default-src 'none'` denies fonts.
+ */
+const fontPolicyAgrees = (policy: Map<string, string[]>, fontFiles: string[]): boolean => {
+  const sources = policy.get("font-src");
+  return fontFiles.length > 0
+    ? sources?.length === 1 && sources[0] === "'self'"
+    : sources === undefined;
+};
 
 beforeAll(async () => {
   outDirectory = await mkdtemp(join(tmpdir(), "bcd-embed-home-deploy-"));
@@ -204,11 +219,58 @@ describe("the Content-Security-Policy", () => {
     for (const name of policy().keys()) expect(ALLOWED_DIRECTIVES.has(name), name).toBe(true);
   });
 
-  it("allows scripts, styles and images from the site's own files only", () => {
+  it("allows scripts, styles, fonts and images from the site's own files only", () => {
     // The beacon is the one source beyond the site, which the owner allowed on 21 November 2026.
     expect(policy().get("script-src")).toEqual(["'self'", BEACON_SOURCE]);
     expect(policy().get("style-src")).toEqual(["'self'"]);
+    expect(policy().get("font-src")).toEqual(["'self'"]);
     expect(policy().get("img-src")).toEqual(["'self'"]);
+  });
+
+  // `font-src 'self'` is in the policy because the build ships font files. If a later design drops
+  // them, the directive should go too, and a font added without it would be blocked, so the test
+  // ties the two together in both directions.
+  it("names font-src exactly when the build ships font files", async () => {
+    const fonts = (await readdir(outDirectory, { recursive: true })).filter((name) =>
+      FONT_FILE.test(name),
+    );
+    expect(fonts.map((name) => name.replaceAll("\\", "/")).sort()).toEqual([
+      expect.stringMatching(/^_astro\/inter-tight-latin-wght-normal\.[^/]+\.woff2$/),
+      expect.stringMatching(/^_astro\/jetbrains-mono-latin-400-normal\.[^/]+\.woff2$/),
+    ]);
+    expect(fontPolicyAgrees(policy(), fonts)).toBe(true);
+  });
+
+  it("agrees only when fonts and font-src 'self' come together, or neither does", () => {
+    const withFonts = new Map([["font-src", ["'self'"]]]);
+    const without = new Map<string, string[]>();
+    expect(fontPolicyAgrees(withFonts, ["_astro/a.woff2"])).toBe(true);
+    expect(fontPolicyAgrees(without, [])).toBe(true);
+    // A directive with no font to serve, and a font the policy would block.
+    expect(fontPolicyAgrees(withFonts, [])).toBe(false);
+    expect(fontPolicyAgrees(without, ["_astro/a.woff2"])).toBe(false);
+    // Any source beyond the site's own is more than the fonts need.
+    expect(
+      fontPolicyAgrees(new Map([["font-src", ["'self'", "https:"]]]), ["_astro/a.woff2"]),
+    ).toBe(false);
+  });
+
+  it("names in the stylesheet only fonts that the site serves from _astro", async () => {
+    const fonts = (await readdir(join(outDirectory, "_astro"))).filter((name) =>
+      name.endsWith(".woff2"),
+    );
+    // Every font the stylesheet names is one of the site's own files.
+    const css = (
+      await Promise.all(
+        (await readdir(join(outDirectory, "_astro")))
+          .filter((name) => name.endsWith(".css"))
+          .map((name) => readFile(join(outDirectory, "_astro", name), "utf8")),
+      )
+    ).join("\n");
+    const urls = [...css.matchAll(/url\("?([^")]+)"?\)/g)].map((match) => match[1]);
+    expect(urls.filter((url) => url?.endsWith(".woff2")).sort()).toEqual(
+      fonts.map((name) => `/_astro/${name}`).sort(),
+    );
   });
 
   it("closes the directives that default-src does not cover", () => {
@@ -283,6 +345,8 @@ type Visit = {
   readonly liveTables: number;
   /** What the extra markup that a control injects did. */
   readonly injectedScriptRan: boolean;
+  /** The families of the font faces the page loaded, so a count of zero violations means fonts ran. */
+  readonly loadedFonts: string[];
 };
 
 type VisitOptions = {
@@ -398,9 +462,10 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
 
       await page.goto(url);
       const read = () => page.evaluate(() => Reflect.get(window, "cspViolations") as string[]);
+      // The live table is lazy, and it starts below the first screen, so every visit scrolls to it
+      // and it asks for its data. The control without `connect-src` needs that request to fail.
+      await page.locator(".live bcd-compat-table").scrollIntoViewIfNeeded();
       if (options.waitFor === undefined) {
-        // The live table is lazy, so it asks once it comes near the viewport.
-        await page.locator(".live bcd-compat-table").scrollIntoViewIfNeeded();
         await page.locator(".live bcd-compat-table[loaded] table").waitFor({ state: "attached" });
         await page.waitForFunction(
           () => document.querySelectorAll(".example-panel bcd-compat-table[loaded]").length === 4,
@@ -443,6 +508,13 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
         injectedScriptRan: await page.evaluate(
           () => Reflect.get(window, "injectedScriptRan") === true,
         ),
+        loadedFonts: await page.evaluate(async () => {
+          await document.fonts.ready;
+          return [...document.fonts]
+            .filter((face) => face.status === "loaded")
+            .map((face) => face.family.replaceAll('"', ""))
+            .sort();
+        }),
       };
       if (process.env.BCD_EMBED_HOME_CSP_REPORT === "1") {
         const label = options.policy === undefined ? "policy" : "control";
@@ -468,6 +540,8 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
       `${API_ORIGIN}/v1/current/features/${LIVE_EXAMPLE.key}.json`,
     ]);
     expect(visited.foreignRequests).toEqual([]);
+    // Both typefaces loaded under the policy, so `font-src 'self'` was exercised, not skipped.
+    expect(visited.loadedFonts).toEqual(["Inter Tight", "JetBrains Mono"]);
   }, 60_000);
 
   // The controls show that the test above can fail. Without them, a counter that never fired
@@ -509,6 +583,20 @@ describe.each(engineNames)("the built page under the policy in %s", (engineName)
     expect(visited.violations.map((entry) => entry.replace(/:\d+/, ""))).toEqual(
       CHECKS_ICON_AGAINST_IMG_SRC[engineName] ? ["img-src http://127.0.0.1/favicon.svg"] : [],
     );
+  }, 60_000);
+
+  // `default-src 'none'` covers fonts, so without `font-src` every engine blocks both typefaces
+  // and the page falls back to the system fonts. This control shows why the directive is there.
+  it("control: without font-src, both typefaces are blocked", async () => {
+    const policy = sentPolicy().replace(/;\s*font-src[^;]*/, "");
+    expect(policy).not.toContain("font-src");
+    const visited = await visit({ policy });
+    const blocked = visited.violations.map((entry) => entry.replace(/:\d+/, ""));
+    expect(blocked.length).toBeGreaterThan(0);
+    for (const entry of blocked) {
+      expect(entry).toMatch(/^font-src http:\/\/127\.0\.0\.1\/_astro\/[^/]+\.woff2$/);
+    }
+    expect(visited.loadedFonts).toEqual([]);
   }, 60_000);
 
   // Cloudflare inserts the beacon at the edge, so no local build holds it. A stand-in module script

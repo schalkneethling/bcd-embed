@@ -2,6 +2,12 @@
   "extends": ["../../.stylelintrc.json"],
   "ignoreFiles": ["dist/**", "node_modules/**"],
   "rules": {
-    "plugin/use-baseline": [true, { "available": 2025 }]
+    "plugin/use-baseline": [true, { "available": 2025 }],
+    "selector-class-pattern": [
+      "^[a-z][a-z0-9]*(-[a-z0-9]+)*(__[a-z0-9]+(-[a-z0-9]+)*)?(--[a-z0-9]+(-[a-z0-9]+)*)?$",
+      {
+        "message": "Expected class selector \"%s\" to be kebab-case, with an optional BEM __element and --modifier"
+      }
+    ]
   }
 }

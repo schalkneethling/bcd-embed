@@ -518,12 +518,12 @@ deploy (see [Redirecting www to the apex](#redirecting-www-to-the-apex)).
 applies it as it does for the documentation site (one rule per header name,
 because Cloudflare joins a name set by two rules with a comma).
 
-| Path        | Header                    | Value                                                                                                                                                                                                                                                             |
-| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/*`        | `X-Content-Type-Options`  | `nosniff`                                                                                                                                                                                                                                                         |
-| `/*`        | `Referrer-Policy`         | `strict-origin-when-cross-origin`                                                                                                                                                                                                                                 |
-| `/*`        | `Content-Security-Policy` | `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com/beacon.min.js/; style-src 'self'; img-src 'self'; connect-src 'self' https://api.browser-compat.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` |
-| `/_astro/*` | `Cache-Control`           | `public, max-age=31536000, immutable`                                                                                                                                                                                                                             |
+| Path        | Header                    | Value                                                                                                                                                                                                                                                                              |
+| ----------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/*`        | `X-Content-Type-Options`  | `nosniff`                                                                                                                                                                                                                                                                          |
+| `/*`        | `Referrer-Policy`         | `strict-origin-when-cross-origin`                                                                                                                                                                                                                                                  |
+| `/*`        | `Content-Security-Policy` | `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com/beacon.min.js/; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' https://api.browser-compat.dev; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` |
+| `/_astro/*` | `Cache-Control`           | `public, max-age=31536000, immutable`                                                                                                                                                                                                                                              |
 
 The `Cache-Control` rule goes beyond the three headers that issue #211 lists.
 Astro puts a content hash in the name of every file under `_astro/`, so a file
@@ -532,21 +532,22 @@ a request for each of them. It is the documentation site's rule, and a test
 pins that HTML does not inherit it. HTML keeps Cloudflare's default.
 
 The policy is enforcing. The built page is one HTML file, one stylesheet, two
-scripts and one icon, with no inline script, no `<style>` element and no
+scripts, two font files and one icon, with no inline script, no `<style>` element and no
 `style` attribute (tests in `apps/home/tests/home-page.test.ts` check this), so
 most directives are `'none'` or `'self'`. Each directive is here for a measured
 reason:
 
-| Directive                                                                              | Why                                                                                                                                                                                                                                                    |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `default-src 'none'`                                                                   | Anything the page does not name is denied. It also covers `font-src`, `media-src`, `frame-src`, `worker-src` and `manifest-src`, which the page never uses.                                                                                            |
-| `script-src 'self'`                                                                    | The element's script and the status region's script are files from the site. The four `application/json` data blocks are not executed, so the policy does not govern them.                                                                             |
-| `script-src https://static.cloudflareinsights.com/beacon.min.js/`                      | The Cloudflare Web Analytics beacon, which Cloudflare inserts at its edge. The owner allowed it on 21 November 2026. The trailing slash is required (see below).                                                                                       |
-| `style-src 'self'`                                                                     | The page has one stylesheet file. In all three engines, the element and Lit raised no `style-src` violation while rendering and while a reader chose each example and opened a disclosure, so no style the policy blocks is set (see the measurement). |
-| `img-src 'self'`                                                                       | The page's icon, `/favicon.svg` (the project's icon, copied from the documentation site). With `default-src 'none'` alone, Chromium 159 and Firefox 159 report the request for it, and WebKit 27.2 does not. The page has no other image.              |
-| `connect-src https://api.browser-compat.dev`                                           | The live table asks the hosted API for its data. The built page has one fetch-mode table, `<bcd-compat-table query="html.elements.dialog">`. The example tables read built-in data and send no request.                                                |
-| `connect-src 'self'`                                                                   | The beacon's reports. Under automatic setup the data goes to the page's own domain, at `/cdn-cgi/rum`, as the Web Analytics FAQ says. Nothing on the page itself fetches from its own origin.                                                          |
-| `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'` | `default-src` does not cover these four, so each is named. The page has no plugin, `<base>` element or form, and nothing should frame it.                                                                                                              |
+| Directive                                                                              | Why                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default-src 'none'`                                                                   | Anything the page does not name is denied. It also covers `media-src`, `frame-src`, `worker-src` and `manifest-src`, which the page never uses.                                                                                                          |
+| `script-src 'self'`                                                                    | The element's script and the status region's script are files from the site. The four `application/json` data blocks are not executed, so the policy does not govern them.                                                                               |
+| `script-src https://static.cloudflareinsights.com/beacon.min.js/`                      | The Cloudflare Web Analytics beacon, which Cloudflare inserts at its edge. The owner allowed it on 21 November 2026. The trailing slash is required (see below).                                                                                         |
+| `style-src 'self'`                                                                     | The page has one stylesheet file. In all three engines, the element and Lit raised no `style-src` violation while rendering and while a reader chose each example and opened a disclosure, so no style the policy blocks is set (see the measurement).   |
+| `font-src 'self'`                                                                      | The page's two typefaces, Inter Tight and JetBrains Mono, are WOFF2 files in `/_astro/`, bundled from npm font packages (23 November 2026). `default-src 'none'` covers fonts, so without this directive every engine blocks both (see the measurement). |
+| `img-src 'self'`                                                                       | The page's icon, `/favicon.svg` (the project's icon, copied from the documentation site). With `default-src 'none'` alone, Chromium 159 and Firefox 159 report the request for it, and WebKit 27.2 does not. The page has no other image.                |
+| `connect-src https://api.browser-compat.dev`                                           | The live table asks the hosted API for its data. The built page has one fetch-mode table, `<bcd-compat-table query="html.elements.dialog">`. The example tables read built-in data and send no request.                                                  |
+| `connect-src 'self'`                                                                   | The beacon's reports. Under automatic setup the data goes to the page's own domain, at `/cdn-cgi/rum`, as the Web Analytics FAQ says. Nothing on the page itself fetches from its own origin.                                                            |
+| `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'` | `default-src` does not cover these four, so each is named. The page has no plugin, `<base>` element or form, and nothing should frame it.                                                                                                                |
 
 A test (`apps/home/tests/home-deploy.test.ts`) parses the file in `dist/` and
 pins `script-src` to exactly `'self'` and the beacon's source, and `connect-src`
@@ -557,10 +558,11 @@ fetch-mode table, and requires this page to print the policy exactly as sent.
 
 The test also serves the built page on `127.0.0.1` with the exact headers of
 the file and listens for `securitypolicyviolation` events in the page and in
-any worker. In the run of 21 November 2026, in Chromium 159.0.8154.6, Firefox
-159.0 and WebKit 27.2 (the builds Playwright 1.65.1 installs), every engine
-reported zero events and zero console messages about the policy, rendered the
-four built-in tables and the live table, and sent no request off `127.0.0.1`
+any worker. In the run of 23 November 2026, after the page gained its two
+typefaces, in Chromium 159.0.8154.6, Firefox 159.0 and WebKit 27.2 (the builds
+Playwright 1.65.1 installs), every engine reported zero events and zero console
+messages about the policy, loaded both typefaces, rendered the four built-in
+tables and the live table, and sent no request off `127.0.0.1`
 except the API request, which the test answered from a local fixture. The beacon
 is not on the page in that run, so zero is the count without it. The page has no
 worker, so the worker listener heard nothing to report. Each engine ran
@@ -571,6 +573,7 @@ controls to show the counter works:
 | `default-src 'none'` alone                                | 4 events | 4 events | 3 events | The stylesheet and both scripts are blocked; Chromium and Firefox add the icon |
 | The policy without `connect-src`                          | 1 event  | 1 event  | 1 event  | The live table's request is blocked and its table is empty                     |
 | The policy without `img-src`                              | 1 event  | 1 event  | 0 events | Chromium and Firefox report the icon, and WebKit does not                      |
+| The policy without `font-src`                             | 2 events | 4 events | 2 events | Both font files are blocked and no typeface loads; Firefox reports each twice  |
 | The policy, with an inline script and `style=""` injected | 2 events | 2 events | 2 events | Both are blocked, and the script does not run                                  |
 
 Run the same test in three engines with

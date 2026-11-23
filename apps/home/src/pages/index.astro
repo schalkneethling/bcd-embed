@@ -1,13 +1,19 @@
 ---
 import bcd from "@mdn/browser-compat-data";
 
+import "../styles/fonts.css";
 import "@schalkneethling/bcd-embed/base.css";
 import "../styles/home.css";
+import elementManifest from "../../../../packages/element/package.json";
 import { buildHomePageData } from "../data/examples.js";
+import { describeRelease } from "../data/release.js";
 
 // Runs once, at build time. It throws when BCD lacks any of the keys, which fails the build.
 const { bcdVersion, examples, live } = buildHomePageData(bcd);
+// The badge and the install command follow the element's version, so neither goes stale.
+const release = describeRelease(elementManifest);
 const repository = "https://github.com/schalkneethling/bcd-embed";
+const documentation = "https://docs.browser-compat.dev/";
 
 // Shown to readers as text. Astro escapes it, so its `<` characters reach the page as `&lt;`.
 const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-properties-line-clamp">
@@ -31,20 +37,46 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
     />
   </head>
   <body>
-    <main>
-      <h1>bcd-embed</h1>
-      <p>
-        bcd-embed puts a browser compatibility table on any page. A small API serves MDN's Browser
-        Compatibility Data (BCD), and the <code>&lt;bcd-compat-table&gt;</code> web component turns
-        it into an accessible table that you style with your own CSS.
-      </p>
-      <p>
-        The four tables below were built into this page from BCD {bcdVersion}, so showing them sends
-        no request.
-      </p>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header class="site-header">
+      <a class="site-header__brand" href="/">
+        <svg class="site-header__glyph" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+          <rect class="site-header__glyph-mat" x="1" y="1" width="26" height="26" rx="6" />
+          <path class="site-header__glyph-grid" d="M6 10h16M6 16h16M12 6v16" />
+        </svg>
+        bcd-embed
+      </a>
+      <nav class="site-header__nav" aria-label="Main">
+        <ul class="site-header__links">
+          <li><a href="#examples">Examples</a></li>
+          <li><a href={documentation}>Documentation</a></li>
+          <li><a href={`${documentation}#the-endpoints`}>API</a></li>
+          <li><a href={repository}>GitHub</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="main">
+      <div class="hero">
+        <p class="hero__release">{release.badge}</p>
+        <h1 class="hero__title">bcd-embed</h1>
+        <p class="hero__tagline">add MDN-powered browser compatibility tables anywhere</p>
+        <p class="hero__lede">
+          bcd-embed puts a browser compatibility table on any page. A small API serves MDN's Browser
+          Compatibility Data (BCD), and the <code>&lt;bcd-compat-table&gt;</code> web component turns
+          it into an accessible table that you style with your own CSS.
+        </p>
+        <div class="hero__actions">
+          <a class="hero__start" href={`${documentation}component/getting-started/`}>Get started</a>
+          <p class="hero__install"><code>{release.installCommand}</code></p>
+        </div>
+      </div>
 
-      <section class="examples" aria-labelledby="examples-heading">
-        <h2 id="examples-heading">Examples</h2>
+      <section class="examples" id="examples" aria-labelledby="examples-heading">
+        <h2 id="examples-heading">Try an example</h2>
+        <p>
+          The four tables below were built into this page from BCD {bcdVersion}, so showing them sends
+          no request.
+        </p>
         <fieldset class="example-choices">
           <legend>Choose an example</legend>
           {
@@ -95,15 +127,15 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
         </div>
       </section>
 
-      <section aria-labelledby="how-heading">
+      <section class="how" aria-labelledby="how-heading">
         <h2 id="how-heading">How the examples work</h2>
         <p>
           Each example is two pieces of HTML that the build writes into the page: a JSON script
-          that holds the API's answer for the feature, and the element that names it with its
+          that holds the API's answer for the feature, and the element that names it with its{" "}
           <code>source</code> attribute. The element reads the script once, renders the table, and
           sends no request.
         </p>
-        <pre><code>{sourceModeSnippet}</code></pre>
+        <pre class="how__snippet"><code>{sourceModeSnippet}</code></pre>
         <p>
           The link inside the element is its fallback content. It shows until the table renders, and
           it stays when script is turned off, so every reader can reach the data on MDN Web Docs.
@@ -126,12 +158,13 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
         </bcd-compat-table>
       </section>
     </main>
-    <footer>
+    <footer class="site-footer">
       <p>
-        The data comes from
+        The data comes from{" "}
         <a href="https://github.com/mdn/browser-compat-data">MDN Browser Compatibility Data</a>.
-        Read the <a href="https://docs.browser-compat.dev/">documentation</a> or the
-        <a href={repository}>source code</a>.
+        Read the <a href={documentation}>documentation</a> or the{" "}
+        <a href={repository}>source code</a>. The typefaces are used under the{" "}
+        <a href="/font-licenses.txt">SIL Open Font License</a>.
       </p>
     </footer>
     <script>
