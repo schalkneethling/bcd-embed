@@ -81,7 +81,7 @@
     "react-dom": "19.3.1",
     "size-limit": "14.3.0",
     "svelte": "5.57.3",
-    "vue": "3.5.45"
+    "vue": "3.5.46"
   },
   "customElements": "custom-elements.json"
 }
