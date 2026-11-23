@@ -273,6 +273,20 @@ an older beta than `@beta` does.
 6. Open the draft release that the `release` job created on the repository's
    Releases page, and publish it.
 
+7. Redeploy the introduction page from an up-to-date `main`, so its release
+   badge and install command name the new version:
+
+   ```sh
+   pnpm --filter @bcd-embed/home run deploy
+   ```
+
+   The page reads the version from `packages/element/package.json` when it is
+   built, and its deploy is manual, outside this workflow. Wait until the
+   version is approved: the Version Packages merge bumps `package.json` before
+   the version can be installed, so a deploy at that point would advertise a
+   version npm does not serve yet. The checks after a deploy are in
+   [Deploying the introduction page](/deployment/#deploying-the-introduction-page).
+
 ### When a release run fails part way
 
 Re-run the failed jobs of the same workflow run, from its page in the Actions

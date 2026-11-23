@@ -35,6 +35,7 @@ apps/home/
 ├─ public/_headers          the response headers, including the Content-Security-Policy
 ├─ public/favicon.svg       the project's icon, the same file as the documentation site's
 ├─ public/robots.txt        allows every crawler
+├─ public/font-licenses.txt the two fonts' licences, which the footer links
 ├─ wrangler.jsonc           the apex custom domain, static assets only
 ├─ scripts/assert-no-v1.mjs fails when the built site has a top-level v1 entry
 ├─ src/
@@ -75,17 +76,25 @@ started" link to the component's getting started page, and the install command.
 ### The release badge
 
 The badge and the install command are built from `packages/element/package.json` at build time by
-`describeRelease` in `src/data/release.ts`, so a release changes them and nobody edits the page.
-The element's `exports` do not include its `package.json`, so the page imports the file by its
-workspace path.
+`describeRelease` in `src/data/release.ts`, so nobody edits their text for a release. The page
+still has to be rebuilt and redeployed to show a new version, because its deploy is manual and
+outside the release workflow. Step 7 of "Each release" in
+`apps/website/src/content/docs/releasing.md` does that, after the version is approved and
+installable. The element's `exports` do not include its `package.json`, so the page imports the
+file by its workspace path.
 
-| Element version | Badge                                            | Install command                               |
-| --------------- | ------------------------------------------------ | --------------------------------------------- |
-| `0.1.0-beta.0`  | `Beta · @schalkneethling/bcd-embed@0.1.0-beta.0` | `npm install @schalkneethling/bcd-embed@beta` |
-| `1.0.0`         | `@schalkneethling/bcd-embed@1.0.0`               | `npm install @schalkneethling/bcd-embed`      |
+| Element version | Badge                                                       | Install command                                  |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| `0.1.0-beta.0`  | `Beta · @schalkneethling/bcd-embed@0.1.0-beta.0`            | `npm install @schalkneethling/bcd-embed@beta`    |
+| `1.1.0-rc.1`    | `Release candidate · @schalkneethling/bcd-embed@1.1.0-rc.1` | `npm install @schalkneethling/bcd-embed@rc`      |
+| `1.0.0-0`       | `Prerelease · @schalkneethling/bcd-embed@1.0.0-0`           | `npm install @schalkneethling/bcd-embed@1.0.0-0` |
+| `1.0.0`         | `@schalkneethling/bcd-embed@1.0.0`                          | `npm install @schalkneethling/bcd-embed`         |
 
-A prerelease's identifier is both its stage and its dist-tag, as the release workflow stages it
-(`apps/website/src/content/docs/releasing.md`).
+Any text after the hyphen makes a version a prerelease. Its first identifier is its dist-tag, as the
+release workflow stages it, and `alpha`, `beta` and `rc` are named in words; any other identifier is
+shown as it is. A number alone names no stage, and npm rejects a dist-tag that reads as a semver
+range ([npm dist-tag](https://docs.npmjs.com/cli/v11/commands/npm-dist-tag), "Caveats"), so that
+command pins the version.
 
 ### Fonts
 
@@ -106,8 +115,16 @@ Code is set in one weight, so JetBrains Mono ships one static file; `code` and `
 `font-weight: 400` so that code inside a bold heading is not synthesised in bold.
 
 `default-src 'none'` blocks fonts, so the policy names `font-src 'self'`. A test in
-`tests/home-deploy.test.ts` requires the directive exactly while the build ships font files, and
-requires every font the stylesheet names to be one of them.
+`tests/home-deploy.test.ts` requires the directive to be exactly `'self'` when the build ships a
+font file and absent when it ships none, and requires every font the stylesheet names to be one of
+the site's files.
+
+The SIL Open Font License 1.1 requires the licence to accompany each copy of the fonts, and the
+WOFF2 files carry only a copyright line and the licence's address. So `public/font-licenses.txt`
+holds both packages' `LICENSE` files, unchanged, each with its font's copyright line, and the
+footer links it. A test requires the shipped file to contain both installed `LICENSE` texts
+exactly. When a font package is updated, rebuild the file from the two `LICENSE` files in
+`node_modules`.
 
 ### Tokens
 
@@ -177,6 +194,8 @@ border reach 3:1 against the page and against a panel in both schemes (the table
 | Checked border on its label              | 12.80       | 4.40                           | 3       |
 | Control focus ring on the page           | 7.90        | 12.80                          | 3       |
 | Link focus ring on the page              | 7.90        | 12.80                          | 3       |
+| Skip link text on its fill               | 16.35       | 6.62                           | 4.5     |
+| Skip link focus ring on the page         | 7.90        | 12.80                          | 3       |
 | Wordmarks and navigation links           | 7.64        | 6.62 (wordmark), 10.04 (links) | 4.5     |
 | Badge, introduction, legend, footer      | 11.25       | 10.50                          | 4.5     |
 | Footer link                              | 7.64        | 10.04                          | 4.5     |
@@ -195,10 +214,18 @@ border reach 3:1 against the page and against a panel in both schemes (the table
 
 ### Layout
 
-The stylesheet is written Shared First: every rule applies at every width, and two media queries
-change only what a wider viewport needs. From 48rem the gutter grows from 1rem to 2rem and the hero
-gains room; from 64rem the markup sample in "How the examples work" sits beside the text that
-explains it. The content is at most 75rem wide. At 320 pixels the page has no horizontal scroll: the
+The stylesheet is written Shared First: a declaration outside a media query has the same value at
+every width, and each value that differs by viewport is written once for each range, so no
+declaration overrides another:
+
+| Range       | What it sets                                                             |
+| ----------- | ------------------------------------------------------------------------ |
+| Below 48rem | A 1rem gutter, 3rem/3.5rem around the hero, 1.25rem in each panel        |
+| From 48rem  | A 2rem gutter, 6rem/4.5rem around the hero, 1.5rem in each panel         |
+| Below 64rem | The markup sample in one column with the text, with 1.25rem padding      |
+| From 64rem  | The markup sample beside the text that explains it, with 1.75rem padding |
+
+The content is at most 75rem wide. At 320 pixels the page has no horizontal scroll: the
 badge, the install command and the markup sample wrap, and the tables scroll inside their own
 region. Class names that this page adds are BEM (`site-header__brand`, `hero__title`), which the
 repository's kebab-case rule rejects, so this workspace's `.stylelintrc.json` allows a BEM element
@@ -207,7 +234,16 @@ the status script and the tests name them.
 
 Astro's HTML compression removes a line break between a word and an element that starts the next
 source line, which ran "with its" and `source` together. The page writes `{" "}` at the end of such
-a line, and a test fails if the built HTML has a letter directly before an `<a>` or `<code>`.
+a line. A test parses the built HTML with no script running and, inside each block of running text,
+fails if a letter or digit touches either side of a link, `code`, or other inline element, or if a
+space sits between such an element and the punctuation after it.
+
+The skip link, "Skip to main content", is the first stop in the focus order, so a keyboard user
+can pass the header's five links. It is clipped away until it has focus, then shows at the top
+left, at least 44 by 44 pixels, with the Get started link's colours; its transparent border keeps
+its outline in forced colours mode. Each navigation link is at least 44 by 44 pixels too. In the
+markup sample, `code` inherits the 14 pixel size of its `pre`, instead of the 0.9em that inline
+code uses.
 
 ## The examples
 
@@ -440,7 +476,12 @@ server.
 | One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label                                                                              |
 | A header before `main` with the wordmark and four navigation links, with their addresses                                                                                               |
 | The release badge and install command match the element's `package.json`, and Get started links to the getting started page                                                            |
-| No letter in the built HTML runs straight into an `<a>` or `<code>`                                                                                                                    |
+| No word runs into an inline element on either side, and no space comes before the punctuation after one                                                                                |
+| The site ships both font licences unchanged, and the footer links them                                                                                                                 |
+| A skip link is the first stop, shows at 44 by 44 pixels when focused, and moves the next Tab into `main`                                                                               |
+| Every navigation link is at least 44 by 44 pixels at 320 and 1280 pixels wide                                                                                                          |
+| The markup sample's `code` has the sample's 14 pixel size                                                                                                                              |
+| Every `light-dark()` token in `home.css` has a fallback in the `@supports not (color: light-dark(…))` block                                                                            |
 | Every radio is rendered, not `display: none` or `visibility: hidden`, and is in the accessibility tree                                                                                 |
 | Only the HTML panel shows on load; a click on CSS shows only the CSS panel, with its rendered table                                                                                    |
 | Each of three right arrows switches the panel at once, ending on Web API with focus there, and sends no request                                                                        |
