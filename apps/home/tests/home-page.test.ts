@@ -26,6 +26,7 @@ import {
   findSubtree,
   toScriptJson,
 } from "../src/data/examples.js";
+import { describeRelease, type PackageManifest } from "../src/data/release.js";
 import { buildAstroSite } from "../../../tests/astro-build.js";
 import { HOSTILE_NOTE } from "./hostile-note.js";
 import { serve } from "./serve.js";
@@ -207,6 +208,57 @@ describe("the page's structure", () => {
     } finally {
       await context.close();
     }
+  });
+
+  it("has a header with the wordmark and the main navigation, before main", async () => {
+    const { context, page } = await openPage();
+    try {
+      expect(await page.locator("body > header + main").count()).toBe(1);
+      expect(await page.locator("header .site-header__brand").getAttribute("href")).toBe("/");
+      const links = await page
+        .locator('header nav[aria-label="Main"] a')
+        .evaluateAll((anchors) =>
+          anchors.map((anchor) => [anchor.textContent, anchor.getAttribute("href")]),
+        );
+      expect(links).toEqual([
+        ["Examples", "#examples"],
+        ["Documentation", "https://docs.browser-compat.dev/"],
+        ["API", "https://docs.browser-compat.dev/#the-endpoints"],
+        ["GitHub", "https://github.com/schalkneethling/bcd-embed"],
+      ]);
+      expect(await page.locator("#examples").count()).toBe(1);
+      // The glyph is decorative, so the link's name is the wordmark alone.
+      expect(await page.locator(".site-header__glyph").getAttribute("aria-hidden")).toBe("true");
+    } finally {
+      await context.close();
+    }
+  });
+
+  // The badge and the command come from the element's package.json at build time, so a release
+  // changes them and nobody has to edit the page (src/data/release.ts).
+  it("shows the element's release, its install command, and a link to the getting started page", async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("../../../packages/element/package.json", import.meta.url), "utf8"),
+    ) as PackageManifest;
+    const release = describeRelease(manifest);
+    const { context, page } = await openPage();
+    try {
+      expect(await page.locator(".hero__release").textContent()).toBe(release.badge);
+      expect(await page.locator(".hero__release").textContent()).toContain(manifest.version);
+      expect(await page.locator(".hero__install code").textContent()).toBe(release.installCommand);
+      expect(await page.locator(".hero__start").getAttribute("href")).toBe(
+        "https://docs.browser-compat.dev/component/getting-started/",
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  // Astro's HTML compression drops the line break between a word and an element that starts the
+  // next source line, which ran "with its" and "source" together. The page writes `{" "}` there.
+  it("keeps a space between a word and the link or code that follows it", () => {
+    const text = builtHtml.replace(/<script\b[^>]*>[^]*?<\/script>/g, "");
+    expect(text.match(/[A-Za-z]<(?:a|code)[\s>]/g) ?? []).toEqual([]);
   });
 
   it("states the BCD version its inline data came from", async () => {
@@ -627,6 +679,19 @@ const computed = <Name extends string>(
 
 const labelFor = (page: Page, id: string) => page.locator(`label[for="example-${id}"]`);
 
+/**
+ * Presses Tab until the element with this id has focus, as a keyboard user reaches it. The header's
+ * links come before the radio group in the focus order, so one press is not enough. The bound
+ * fails the test if the element is never reached.
+ */
+const tabTo = async (page: Page, id: string): Promise<void> => {
+  for (let presses = 0; presses < 20; presses += 1) {
+    await page.keyboard.press("Tab");
+    if ((await page.evaluate(() => document.activeElement?.id)) === id) return;
+  }
+  throw new Error(`Tab never reached #${id}.`);
+};
+
 // Every style rule in every stylesheet, nested rules included.
 const styleRules = (page: Page) =>
   page.evaluate(() => {
@@ -733,7 +798,7 @@ describe("the segmented control's styles", () => {
           contrastRatio(parseRgb(checked["border-top-color"]), pageBackground),
         ).toBeGreaterThanOrEqual(3);
 
-        await page.keyboard.press("Tab");
+        await tabTo(page, "example-html");
         const ring = await computed(labelFor(page, "html"), [
           "outline-style",
           "outline-width",
@@ -775,7 +840,7 @@ describe("the segmented control's styles", () => {
     try {
       const names = ["outline-width", "outline-style", "outline-offset", "outline-color"] as const;
       expect((await computed(labelFor(page, "html"), names))["outline-style"]).toBe("none");
-      await page.keyboard.press("Tab");
+      await tabTo(page, "example-html");
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("example-html");
       const ring = await computed(labelFor(page, "html"), names);
       expect(ring["outline-style"]).toBe("solid");
@@ -818,6 +883,9 @@ describe("the segmented control's styles", () => {
     try {
       const boxes = () =>
         Promise.all(EXAMPLES.map((example) => labelFor(page, example.id).boundingBox()));
+      // The hero puts the control below the first screen. A box is measured from the viewport, so
+      // the control is scrolled into view first, and the click then has nothing to scroll.
+      await page.locator(".example-choices").scrollIntoViewIfNeeded();
       const before = await boxes();
       await labelFor(page, "javascript").click();
       expect(await boxes()).toEqual(before);
@@ -837,8 +905,10 @@ const keepScreenshot = async (name: string, take: () => Promise<Buffer>): Promis
 };
 
 // A screenshot of the element and the margin around it, which holds a focus ring, taken with the
-// pointer away so that no label is hovered.
+// pointer away so that no label is hovered. The element is scrolled into view first, because a
+// clip is measured in the viewport.
 const photographAround = async (page: Page, locator: Locator, margin = 12): Promise<Buffer> => {
+  await locator.scrollIntoViewIfNeeded();
   await page.mouse.move(0, 0);
   const box = await locator.boundingBox();
   if (box === null) throw new Error("The element has no box.");
@@ -881,7 +951,7 @@ describe.each(SCHEMES)("the segmented control's contrast in the %s scheme", (sch
       const hoverBorder = await colour(label, "border-top-color");
       await page.mouse.move(0, 0);
 
-      await page.keyboard.press("Tab");
+      await tabTo(page, "example-html");
       const ring = await colour(checkedLabel, "outline-color");
 
       const checks: Check[] = [
@@ -928,6 +998,92 @@ describe.each(SCHEMES)("the segmented control's contrast in the %s scheme", (sch
           ({ pair, ratio, minimum }) => `${pair}\t${ratio.toFixed(2)}\t${minimum}`,
         );
         console.info(`\n${scheme}\n${rows.join("\n")}`);
+      }
+      for (const { pair, ratio, minimum } of checks) {
+        expect(ratio, `${pair} in ${scheme}`).toBeGreaterThanOrEqual(minimum);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+// The rest of the page's palette, and the table's tokens, in each scheme. Text needs 4.5:1, even
+// the large wordmark, which WCAG would let pass at 3:1. The focus ring, the table's icons and its
+// cell borders need 3:1 (WCAG 1.4.11). Each icon colour is read from the registered token the base
+// stylesheet uses in that scheme, so every state counts, including those no panel shows today.
+describe.each(SCHEMES)("the page's colours in the %s scheme", (scheme) => {
+  it("meets 4.5:1 for every text colour and 3:1 for the focus ring and the table's tokens", async () => {
+    const { context, page } = await openPage({ colorScheme: scheme });
+    try {
+      await waitForTables(page);
+      const colour = async (selector: string, name: string): Promise<Rgb> =>
+        parseRgb((await computed(page.locator(selector).first(), [name] as const))[name] ?? "");
+      const pageBackground = await colour("html", "background-color");
+      const panel = await colour("#panel-html", "background-color");
+      const start = await colour(".hero__start", "background-color");
+      const install = await colour(".hero__install code", "background-color");
+      const snippet = await colour(".how__snippet", "background-color");
+
+      const checks: Check[] = [
+        ["wordmark in the header", await colour(".site-header__brand", "color"), pageBackground],
+        ["navigation link", await colour(".site-header__links a", "color"), pageBackground],
+        ["release badge", await colour(".hero__release", "color"), pageBackground],
+        ["heading wordmark", await colour(".hero__title", "color"), pageBackground],
+        ["introduction", await colour(".hero__lede", "color"), pageBackground],
+        ["Get started link", await colour(".hero__start", "color"), start],
+        ["install command", await colour(".hero__install code", "color"), install],
+        ["legend", await colour(".example-choices legend", "color"), pageBackground],
+        ["panel heading", await colour("#panel-html > h3", "color"), panel],
+        ["panel summary", await colour("#panel-html > p", "color"), panel],
+        ["markup sample", await colour(".how__snippet", "color"), snippet],
+        ["footer text", await colour(".site-footer", "color"), pageBackground],
+        ["footer link", await colour(".site-footer a", "color"), pageBackground],
+      ].map(([pair, text, background]) => ({
+        pair: pair as string,
+        ratio: contrastRatio(text as Rgb, background as Rgb),
+        minimum: 4.5,
+      }));
+
+      // The first stop in the focus order is the wordmark's link.
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.className)).toBe(
+        "site-header__brand",
+      );
+      const ring = await colour(".site-header__brand", "outline-color");
+      checks.push({
+        pair: "link focus ring on the page",
+        ratio: contrastRatio(ring, pageBackground),
+        minimum: 3,
+      });
+
+      const tokens = [
+        "supported",
+        "partial",
+        "preview",
+        "flagged",
+        "unsupported",
+        "unknown",
+        "no-data",
+        "border",
+      ];
+      for (const token of tokens) {
+        const value = await colour("html", `--bcd-color-${token}-${scheme}`);
+        checks.push(
+          {
+            pair: `table ${token} on the page`,
+            ratio: contrastRatio(value, pageBackground),
+            minimum: 3,
+          },
+          { pair: `table ${token} on a panel`, ratio: contrastRatio(value, panel), minimum: 3 },
+        );
+      }
+
+      if (process.env.BCD_EMBED_HOME_CONTRAST_REPORT === "1") {
+        const rows = checks.map(
+          ({ pair, ratio, minimum }) => `${pair}\t${ratio.toFixed(2)}\t${minimum}`,
+        );
+        console.info(`\npage ${scheme}\n${rows.join("\n")}`);
       }
       for (const { pair, ratio, minimum } of checks) {
         expect(ratio, `${pair} in ${scheme}`).toBeGreaterThanOrEqual(minimum);
@@ -1024,9 +1180,10 @@ describe("forced colours", () => {
 
 describe.each(SCHEMES)("axe in the %s scheme", (scheme) => {
   it("reports no violation with each of the four panels showing", async () => {
-    // A tall viewport brings the live table within the lazy margin, so axe checks it as well.
+    // The live table loads once it scrolls near, so the test scrolls to it, and axe checks it too.
     const { context, page } = await openPage({ colorScheme: scheme, height: 1000 });
     try {
+      await page.locator(".live bcd-compat-table").scrollIntoViewIfNeeded();
       await page.waitForFunction(
         () => document.querySelectorAll("bcd-compat-table[loaded]").length === 5,
       );

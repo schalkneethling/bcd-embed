@@ -1,0 +1,40 @@
+/*
+ * The page's two typefaces, served from the site itself. Astro copies each file into `dist/_astro`
+ * with a content hash in its name, so the policy in public/_headers allows them with
+ * `font-src 'self'` and no other origin.
+ *
+ * Each rule names only the Latin subset, and only its WOFF2 file, so the build ships two font files
+ * and a browser downloads only the ones a glyph on the page needs. The `unicode-range` values are
+ * the Latin ranges from the packages' own CSS (`latin` in each package's unicode.json). Text outside
+ * them, such as a name in another script in a BCD note, falls back to the next family in the stack.
+ *
+ * - Inter Tight is the variable build from @fontsource-variable/inter-tight, so one 45 KB file
+ *   holds every weight the page uses (300, 400, 700 and 800).
+ * - JetBrains Mono is the static 400 weight from @fontsource/jetbrains-mono, 21 KB. The page sets
+ *   code in that one weight, so it never needs another.
+ *
+ * Both are licensed under the SIL Open Font License 1.1, as each package's LICENSE file states.
+ * `font-display: swap` shows the fallback font at once and swaps when the file arrives.
+ */
+@font-face {
+  font-display: swap;
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter-tight/files/inter-tight-latin-wght-normal.woff2")
+    format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

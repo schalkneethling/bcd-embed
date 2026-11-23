@@ -15,6 +15,8 @@
   "dependencies": {
     "@bcd-embed/core": "workspace:*",
     "@bcd-embed/schema": "workspace:*",
+    "@fontsource-variable/inter-tight": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
     "@mdn/browser-compat-data": "8.1.9",
     "@schalkneethling/bcd-embed": "workspace:*",
     "astro": "7.4.12"
