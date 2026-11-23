@@ -55,8 +55,6 @@
   --home-color-line: light-dark(#2a0b09, #6b3a2a);
   --home-color-link: light-dark(#7a3b12, #e8b877);
   --home-color-link-hover: light-dark(#2a0b09, #f7d9a8);
-  --home-color-mat: #2f5236;
-  --home-color-mat-line: #f2d3b0;
   --home-color-muted: light-dark(#4e2a1c, #e3be97);
   --home-color-signal: #e0b04a;
   --home-color-start: light-dark(#2a0b09, #c8914f);
@@ -165,44 +163,14 @@ main,
   padding-inline: var(--home-gutter);
 }
 
-/* The header: the wordmark, which links to this page, and the main navigation. */
+/* The header: the main navigation, at the end of the row. The hero's heading is the page's wordmark. */
 .site-header {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1.5rem;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding-block: 1rem;
-}
-
-.site-header__brand {
-  align-items: center;
-  color: var(--home-color-accent);
-  display: inline-flex;
-  font-size: 1.375rem;
-  font-weight: 800;
-  gap: 0.75rem;
-  letter-spacing: -0.02em;
-  min-block-size: 2.75rem;
-  text-decoration: none;
-}
-
-.site-header__glyph {
-  block-size: 1.75rem;
-  flex: none;
-  inline-size: 1.75rem;
-}
-
-.site-header__glyph-mat {
-  fill: var(--home-color-mat);
-  stroke: var(--home-color-accent);
-  stroke-width: 2;
-}
-
-.site-header__glyph-grid {
-  fill: none;
-  stroke: var(--home-color-mat-line);
-  stroke-width: 1.5;
 }
 
 .site-header__links {
@@ -572,7 +540,7 @@ main > section {
   }
 
   .hero {
-    padding-block: 3rem 3.5rem;
+    padding-block: 1rem 3.5rem;
   }
 
   .example-panel {
@@ -587,7 +555,7 @@ main > section {
   }
 
   .hero {
-    padding-block: 6rem 4.5rem;
+    padding-block: 1.5rem 4.5rem;
   }
 
   .example-panel {

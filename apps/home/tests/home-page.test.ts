@@ -210,11 +210,13 @@ describe("the page's structure", () => {
     }
   });
 
-  it("has a header with the wordmark and the main navigation, before main", async () => {
+  it("has a header with the main navigation, and no second wordmark, before main", async () => {
     const { context, page } = await openPage();
     try {
       expect(await page.locator("body > header + main").count()).toBe(1);
-      expect(await page.locator("header .site-header__brand").getAttribute("href")).toBe("/");
+      // The hero's heading is the page's only wordmark.
+      expect(await page.locator("header a").count()).toBe(4);
+      expect(await page.getByText("bcd-embed", { exact: true }).count()).toBe(1);
       const links = await page
         .locator('header nav[aria-label="Main"] a')
         .evaluateAll((anchors) =>
@@ -227,8 +229,6 @@ describe("the page's structure", () => {
         ["GitHub", "https://github.com/schalkneethling/bcd-embed"],
       ]);
       expect(await page.locator("#examples").count()).toBe(1);
-      // The glyph is decorative, so the link's name is the wordmark alone.
-      expect(await page.locator(".site-header__glyph").getAttribute("aria-hidden")).toBe("true");
     } finally {
       await context.close();
     }
@@ -1193,7 +1193,6 @@ describe.each(SCHEMES)("the page's colours in the %s scheme", (scheme) => {
       const snippet = await colour(".how__snippet", "background-color");
 
       const checks: Check[] = [
-        ["wordmark in the header", await colour(".site-header__brand", "color"), pageBackground],
         ["navigation link", await colour(".site-header__links a", "color"), pageBackground],
         ["release badge", await colour(".hero__release", "color"), pageBackground],
         ["heading wordmark", await colour(".hero__title", "color"), pageBackground],
@@ -1213,7 +1212,7 @@ describe.each(SCHEMES)("the page's colours in the %s scheme", (scheme) => {
       }));
 
       // The first stop in the focus order is the skip link, which shows only while focused, and
-      // the second is the wordmark's link.
+      // the second is the first navigation link.
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.className)).toBe("skip-link");
       checks.push(
@@ -1232,10 +1231,8 @@ describe.each(SCHEMES)("the page's colours in the %s scheme", (scheme) => {
         },
       );
       await page.keyboard.press("Tab");
-      expect(await page.evaluate(() => document.activeElement?.className)).toBe(
-        "site-header__brand",
-      );
-      const ring = await colour(".site-header__brand", "outline-color");
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Examples");
+      const ring = await colour(".site-header__links a", "outline-color");
       checks.push({
         pair: "link focus ring on the page",
         ratio: contrastRatio(ring, pageBackground),

@@ -66,8 +66,8 @@ sets `color-scheme: light dark`:
 | Dark   | Espresso `#2a0b09` page, ochre `#c8914f` wordmark, cream text        | A, "Workbench, dark"    |
 | Light  | Cream `#fbf1e4` page, darker ochre `#7a3b12` wordmark, espresso text | C, "Workshop, light"    |
 
-From top to bottom the page has a header (the wordmark, which links to `/`, and a navigation with
-Examples, Documentation, API and GitHub), a hero, the examples, "How the examples work", the live
+From top to bottom the page has a header (a navigation with Examples, Documentation, API and
+GitHub, at the end of the row; the hero's heading is the page's only wordmark), a hero, the examples, "How the examples work", the live
 table, and the footer. The API link goes to "The endpoints" on the documentation site's first
 page, `https://docs.browser-compat.dev/#the-endpoints`, because the site has no page of its own for
 the API. The hero holds a release badge, the one `<h1>`, the tagline, the introduction, a "Get
@@ -136,7 +136,7 @@ schemes is a `light-dark()` pair; the rest of the stylesheet reads only the toke
 | `--home-color-ground`          | `#fbf1e4` | `#2a0b09` | The page                                               |
 | `--home-color-text`            | `#2a0b09` | `#f2d3b0` | Body text and label text                               |
 | `--home-color-muted`           | `#4e2a1c` | `#e3be97` | Introduction, badge, legend, summaries, footer         |
-| `--home-color-accent`          | `#7a3b12` | `#c8914f` | Both wordmarks                                         |
+| `--home-color-accent`          | `#7a3b12` | `#c8914f` | The wordmark                                           |
 | `--home-color-link`            | `#7a3b12` | `#e8b877` | Links (hover: `--home-color-link-hover`)               |
 | `--home-color-focus`           | `#2f5236` | `#f2d3b0` | Every focus ring                                       |
 | `--home-color-surface`         | `#fff`    | `#34110e` | Panels and the install command                         |
@@ -148,8 +148,7 @@ schemes is a `light-dark()` pair; the rest of the stylesheet reads only the toke
 | `--home-choice-checked-border` | `#2a0b09` | `#e0b04a` | The checked label's border                             |
 | `--home-choice-checked-fill`   | `#f2d3b0` | `#2f5236` | The checked label                                      |
 
-The palette's cutting-mat green (`#2f5236`) fills the header glyph in both schemes, and its yellow
-(`#e0b04a`) is the badge's dot. A browser without `light-dark()` would compute every pair as
+The palette's yellow (`#e0b04a`) is the badge's dot. A browser without `light-dark()` would compute every pair as
 invalid and paint no colour, so an `@supports not (color: light-dark(#000, #fff))` block sets the
 tokens to system colours there, with a grey `#808080` label border and a blue `#4285f4` focus ring,
 the plain colours the control used before.
@@ -196,7 +195,7 @@ border reach 3:1 against the page and against a panel in both schemes (the table
 | Link focus ring on the page              | 7.90        | 12.80                          | 3       |
 | Skip link text on its fill               | 16.35       | 6.62                           | 4.5     |
 | Skip link focus ring on the page         | 7.90        | 12.80                          | 3       |
-| Wordmarks and navigation links           | 7.64        | 6.62 (wordmark), 10.04 (links) | 4.5     |
+| Wordmark and navigation links            | 7.64        | 6.62 (wordmark), 10.04 (links) | 4.5     |
 | Badge, introduction, legend, footer      | 11.25       | 10.50                          | 4.5     |
 | Footer link                              | 7.64        | 10.04                          | 4.5     |
 | Get started text on its fill             | 16.35       | 6.62                           | 4.5     |
@@ -220,14 +219,14 @@ declaration overrides another:
 
 | Range       | What it sets                                                             |
 | ----------- | ------------------------------------------------------------------------ |
-| Below 48rem | A 1rem gutter, 3rem/3.5rem around the hero, 1.25rem in each panel        |
-| From 48rem  | A 2rem gutter, 6rem/4.5rem around the hero, 1.5rem in each panel         |
+| Below 48rem | A 1rem gutter, 1rem/3.5rem around the hero, 1.25rem in each panel        |
+| From 48rem  | A 2rem gutter, 1.5rem/4.5rem around the hero, 1.5rem in each panel       |
 | Below 64rem | The markup sample in one column with the text, with 1.25rem padding      |
 | From 64rem  | The markup sample beside the text that explains it, with 1.75rem padding |
 
 The content is at most 75rem wide. At 320 pixels the page has no horizontal scroll: the
 badge, the install command and the markup sample wrap, and the tables scroll inside their own
-region. Class names that this page adds are BEM (`site-header__brand`, `hero__title`), which the
+region. Class names that this page adds are BEM (`site-header__links`, `hero__title`), which the
 repository's kebab-case rule rejects, so this workspace's `.stylelintrc.json` allows a BEM element
 and modifier. The older class names (`examples`, `example-panel`, `example-choices`) stay, because
 the status script and the tests name them.
@@ -474,7 +473,7 @@ server.
 | What the page test checks                                                                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label                                                                              |
-| A header before `main` with the wordmark and four navigation links, with their addresses                                                                                               |
+| A header before `main` with four navigation links, with their addresses, and no second wordmark                                                                                        |
 | The release badge and install command match the element's `package.json`, and Get started links to the getting started page                                                            |
 | No word runs into an inline element on either side, and no space comes before the punctuation after one                                                                                |
 | The site ships both font licences unchanged, and the footer links them                                                                                                                 |
