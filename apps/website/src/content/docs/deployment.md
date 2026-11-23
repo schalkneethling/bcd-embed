@@ -744,12 +744,7 @@ Expected: `HTTP/2 301` and `location: https://browser-compat.dev/some/path?x=1`.
 
 ## What is still open before a public launch
 
-These items are separate work that a deploy does not cover:
-
-- A test under sustained load. The endpoint verifier and the rate limiting
-  test have run against the live edge, but neither measures sustained
-  traffic. The plan, the k6 script and the key list are in
-  [Document 11](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/11-load-test.md)
-  and [`load-test/`](https://github.com/schalkneethling/bcd-embed/tree/main/load-test).
-  They have run only against a local server. The preflight and the full run
-  (#214) are still to come, so this item stays open.
+Nothing. The last item, a test under sustained load, ran on 23 November 2026: one generator sent 13,510
+requests over about 11 minutes at up to 22.5 per second, with no server error, no `429` and every pass mark
+met. [Document 11](https://github.com/schalkneethling/bcd-embed/blob/main/docs/planning/11-load-test.md)
+section 12 has the results and what one client from one location cannot show.

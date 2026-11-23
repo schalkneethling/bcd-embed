@@ -7,10 +7,10 @@ The data pipeline is built and lives on `main`: a contract, a normalizer, a
 static artifact generator, a read-only HTTP handler, a Cloudflare Worker adapter,
 a private publisher, and the freshness workflows that keep it current with new
 BCD releases. The API Worker has been deployed to Cloudflare since 15 November
-2026, answers on `https://api.browser-compat.dev`, and serves BCD 8.1.9, behind a Cloudflare rate limiting rule and with Sentry alerting. One launch
-requirement remains open, a test under sustained load, which the
+2026, answers on `https://api.browser-compat.dev`, and serves BCD 8.1.9, behind a Cloudflare rate limiting rule and with Sentry alerting. A test under
+sustained load passed on 23 November 2026, so the
 [deployment page](./apps/website/src/content/docs/deployment.md#what-is-still-open-before-a-public-launch)
-lists. The web component, `<bcd-compat-table>` in `packages/element`, renders a
+lists nothing still open before a public launch. The web component, `<bcd-compat-table>` in `packages/element`, renders a
 table from the API, from a `data` property, or from inline JSON. It publishes to npm
 as `@schalkneethling/bcd-embed`, in betas under the `beta` dist-tag until 1.0, and
 [Releasing the component](./apps/website/src/content/docs/releasing.md) describes
