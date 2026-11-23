@@ -32,9 +32,10 @@ const RAMP_SECONDS = 60;
 // Documented headers and policies (packages/server/README.md, Transport policy).
 const CURRENT_CACHE = "max-age=86400, stale-while-revalidate=604800";
 const PINNED_CACHE = "max-age=31536000, immutable";
-// A cached 404 under /v1/current/ reaches clients with 14400 seconds instead of 3600 (issue #259).
-// Both values are accepted for that one case until #259 is settled.
-const CURRENT_404_CACHES = ["max-age=3600", "max-age=14400"];
+// The Worker's policy for an error answer. A cached 404 under /v1/current/ once reached clients with
+// 14400 seconds (issue #259, fixed on 23 November 2026 by the zone's Browser Cache TTL setting), so it
+// is checked on every 404 the script requests.
+const ERROR_CACHE_POLICY = "max-age=3600";
 const ORIGIN_HEADER = "https://example.org";
 
 // Only 200, 204, 304 and 404 are expected answers, so http_req_failed counts everything else
@@ -163,7 +164,6 @@ const conditionalSeed = new Counter("conditional_seed");
 const conditionalNot304 = new Counter("conditional_not_304");
 const compareOk = new Counter("compare_ok");
 const compareMismatch = new Counter("compare_mismatch");
-const cached404Long = new Counter("current_404_max_age_14400");
 
 // State below lives in one virtual user, so it needs no locking.
 const etags = new Map();
@@ -325,14 +325,13 @@ const structuralRequest = (className, path, name) => {
 
 const errorRequest = (className, key, code) => {
   const res = get(featurePath(key), className, "current_404", "br");
-  if (header(res, "cache-control") === "max-age=14400") cached404Long.add(1);
   check(
     res,
     {
       "404: status 404": (r) => r.status === 404,
       "404: JSON content type": isJson,
-      "404: cache policy is 3600 or, from the edge cache, 14400 (#259)": (r) =>
-        CURRENT_404_CACHES.includes(header(r, "cache-control")),
+      "404: cache policy is max-age=3600, also from the edge cache (#259)": (r) =>
+        header(r, "cache-control") === ERROR_CACHE_POLICY,
       "404: error code as documented": (r) => {
         const body = bodyJson(r);
         return body !== null && body.error !== undefined && body.error.code === code;
