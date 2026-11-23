@@ -14,10 +14,10 @@ untested.
 
 ```mermaid
 flowchart TD
-    local["Local run against<br/>the repository's own server<br/>(done)"] --> smoke["Production smoke run<br/>1 iteration per second, 60 s<br/>(coordinator)"]
-    smoke --> preflight["Preflight<br/>5 iterations per second, 60 s<br/>(coordinator, owner reads the dashboard)"]
+    local["Local run against<br/>the repository's own server<br/>(done)"] --> smoke["Production smoke run<br/>1 iteration per second, 60 s<br/>(done)"]
+    smoke --> preflight["Preflight<br/>5 iterations per second, 60 s<br/>(done, owner reads the dashboard)"]
     preflight --> decide{"Pass marks hold and<br/>CPU time is known?"}
-    decide -- yes --> run["Full run, #214<br/>ramp, steady, ceiling"]
+    decide -- yes --> run["Full run, #214<br/>ramp, steady, ceiling<br/>(done, all marks met)"]
     decide -- no --> fix["Fix or re-plan"]
 ```
 
@@ -206,7 +206,7 @@ local server cannot show this behaviour.
 **The comparison.** `compare` fetches one popular key compressed (Brotli or gzip, chosen at random) and then
 identity, both as binary (`responseType: "binary"`, which returns an `ArrayBuffer`), and compares the two byte
 by byte with `sameBytes` (`load-test/lib/bytes.js`, O(n) time, O(1) extra space). k6 decodes a compressed body
-before the script sees it. The k6 pages listed in section 13 do not say so, so I checked it locally: with
+before the script sees it. The k6 pages listed in section 14 do not say so, so I checked it locally: with
 `Accept-Encoding: br` the local server sent `content-encoding: br` and a smaller body, and `sameBytes` passed
 for 4 of 4 comparisons in the smoke run and 32 of 32 in the 105-second run. The script also checks that the
 compressed response carries `content-encoding`, so a pass is never identity compared with identity. Section 9
@@ -465,15 +465,89 @@ and no `CONFIRM_REMOTE`, the script throws in the init stage before any request.
 What the local runs cannot show: any Cloudflare behaviour (edge cache, `cf-cache-status`, Browser Cache TTL,
 `429`), the Worker's CPU time, real latency, and whether the edge keeps the bytes of a compressed body intact.
 
-## 12. Open items
+## 12. Results of the production runs
 
-- The preflight, smoke run and full run are not done. #214 runs the full test.
-- Section 8's processor time and section 10's support answer are blank on purpose.
+Every run went from the owner's Mac through Cloudflare's Johannesburg data centre, with k6 v2.4.0 and the
+commands in section 9. The smoke run and preflight are reported in full on #213.
+
+**Result: every pass mark in section 7 held in every phase of the full run.** The API answered 13,510 requests
+over about 11 minutes at up to 22.5 per second with no server error, transport error, unexpected status or
+`429`, and every one of 95,019 checks passed.
+
+### Before the full run
+
+| Run | When (UTC) | Requests | Errors and `429` | Median | p95 | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Smoke | 22 Nov 2026, 14:17 | 65 | 0 | 825 ms | 1.02 s | 3 of 4 `meta.json` checks failed: the edge still held the `meta.json` cached before contract 1.1.0 was published that morning (`age: 9380`). |
+| Preflight | 23 Nov 2026, 12:17 to 12:18 | 305 | 0 | 580 ms | 1.00 s | All 2,241 checks passed. Only the proposed 250 ms median failed, which led to the 1 s mark. |
+
+### The full run, 23 November 2026, 18:49:49 to 19:01:05 UTC (commit ae73857)
+
+| Phase | Duration | Requests | Rate | 5xx, transport, unexpected, `429` | Checks | Median | p90 | p95 | p99 | Max |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Ramp | 61 s | 637 | 10.4/s | 0, 0, 0, 0 | 4,701 of 4,701 | 91 ms | 965 ms | 1.05 s | 1.23 s | 1.53 s |
+| Steady | 300 s | 6,118 | 20.4/s | 0, 0, 0, 0 | 42,945 of 42,945 | 26 ms | 612 ms | 775 ms | 993 ms | 1.56 s |
+| Ceiling | 300 s | 6,755 | 22.5/s | 0, 0, 0, 0 | 47,373 of 47,373 | 23 ms | 428 ms | 596 ms | 781 ms | 1.36 s |
+
+The other assertions, per phase (ramp, steady, ceiling):
+
+- **Compressed equals identity:** 8, 118 and 155 comparisons, with no mismatch.
+- **Conditional requests:** 4, 313 and 319 answered `304`, and none answered `200`.
+- **Cached `404` with `max-age=14400` (#259):** 5, 295 and 330.
+- **Edge cache:** 372, 4,744 and 5,685 responses carried `cf-cache-status: HIT`; 265, 1,374 and 1,070 carried
+  none. The hit share rose from 58% in the ramp to 84% at the ceiling as the edge warmed, which is why the
+  median fell from 91 ms to 23 ms.
+
+Pass marks (section 7) for the full run:
+
+| Mark | Result |
+| --- | --- |
+| Server errors under 1% | Met: 0 |
+| Transport errors under 1% | Met: 0 |
+| Unexpected statuses under 1% | Met: 0 |
+| `429` responses: 0 | Met |
+| Failed checks under 0.1% | Met: 0 of 95,019 |
+| `compare_mismatch`: 0 | Met |
+| `conditional_not_304`: 0 | Met |
+| Median under 1,000 ms | Met: 91, 26 and 23 ms |
+| p95 under 1,500 ms | Met: 1.05 s, 775 ms and 596 ms |
+
+### From the Cloudflare dashboard (read on 23 November 2026)
+
+For the Worker `bcd-embed-api`, 18:49 to 19:02 UTC:
+
+- **Invocations:** 13.62 thousand, against 13,510 requests sent. The dashboard rounds, and the window may
+  include a few requests from other clients.
+- **Errors:** 0, and no exceeded CPU or memory limits.
+- **CPU time:** median 1.87 ms, p90 4.91 ms, p99 11.49 ms, p99.9 31.39 ms.
+- **Wall time:** median 7.25 ms, p90 537 ms, p99 867 ms.
+
+For the R2 bucket `bcd-embed-artifacts`, the same window: 5.79 thousand Class B (read) operations and no
+Class A (write) operations, about 0.43 reads per request.
+
+**Blocked requests and the Worker.** The run received no `429`, so the rate rule blocked nothing and this run
+cannot show whether blocked requests reach the Worker. Section 8 relies on Document 9 for that: a request the
+rule blocks never reaches the Worker.
+
+**Cost.** 13.6 thousand requests, about 25 thousand CPU ms (13,620 invocations at the 1.87 ms median, an estimate) and 5.79 thousand R2 reads are
+each far inside the monthly allowances in section 8, so the run cost $0.00 beyond the $5 base plan.
+
+**Endpoint verifier.** `node packages/server/scripts/verify-endpoint.mjs --base-url https://api.browser-compat.dev --allow-remote`
+passed after the run.
+
+### What this does not show
+
+One client from one location says nothing about a traffic spike, many clients at once, other data centres, or
+real popularity, as section 2 explains. The edge warmed during the run, so its later phases mostly measured
+cache hits from Johannesburg; a reader elsewhere, or a first visit to an uncommon feature, sees the slower
+end of these figures.
+
+## 13. Open items
+
+- Section 10's support answer is the owner's.
 - #259 is open. The script accepts both `max-age` values for a cached 404 until it is settled.
-- The latency pass marks are proposals from Johannesburg measurements and need the owner's review after the smoke run.
-- `deployment.md`'s list of items open before a public launch stays open until #214 runs.
 
-## 13. k6 documentation used (k6 v2.4.0)
+## 14. k6 documentation used (k6 v2.4.0)
 
 Every k6 name in the script comes from these pages (all under `https://grafana.com/docs/k6/latest/`, read on 22
 November 2026) or from `k6 run --help` on the installed v2.4.0. The `latest` path is the nearest to v2.4.0 the
