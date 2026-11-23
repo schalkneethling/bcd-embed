@@ -6,7 +6,7 @@ description: The markup bcd-compat-table renders, how a screen reader reads it, 
 `<bcd-compat-table>` renders a real `<table>`, and every cell carries a full
 sentence such as "Supported since Chrome 29", so a screen reader announces the
 complete fact instead of an icon. This page describes the markup on the main
-branch today, the screen reader pairs that must pass before a release, and
+branch today, the screen reader pairs that must pass before version 1.0, and
 what the automated tests leave to a person.
 
 ## The markup
@@ -69,8 +69,13 @@ testing is part of the release gate.
 
 ## The release gate
 
-Two pairs of screen reader and browser must pass before each release. JAWS (Job Access With Speech)
-with Chrome is tested on a best-effort basis.
+Two pairs of screen reader and browser must pass before version 1.0, the
+first release outside the beta. JAWS (Job Access With Speech) with Chrome is
+tested on a best-effort basis. Beta releases, published under the `beta`
+dist-tag, ship without the manual pass, as the owner decided on 23 November
+2026: during the beta, the project asks screen reader users to report how the
+table sounds instead, through
+[GitHub issues](https://github.com/schalkneethling/bcd-embed/issues/new).
 
 | Required pair         | How it is tested                                                                                                             |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -119,5 +124,5 @@ The walks are evidence, not the whole gate. They leave these to a person:
   release may change it, and the transcript then shows the new wording.
 - **Forced colours.** A real Windows High Contrast check is manual.
 
-The owner's manual pass with the built component runs at the end of the
-component's development, together with the release gate, and has not run yet.
+The owner's manual pass with the built component runs before version 1.0,
+together with the release gate, and has not run yet.
