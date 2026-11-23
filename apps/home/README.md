@@ -2,7 +2,7 @@
 
 `@bcd-embed/home` is the introduction page for `https://browser-compat.dev`. It is built with
 [Astro](https://astro.build), without Starlight, and produces one static HTML page with one
-stylesheet and two scripts, the element's and the status region's. It is served as static
+stylesheet, two scripts (the element's and the status region's) and two font files. It is served as static
 files by a Cloudflare Worker with no script, only on that address, under an enforcing
 Content-Security-Policy (see "Deploying" below). It has been deployed since 21 November 2026.
 
@@ -30,7 +30,7 @@ load the page in Chromium's headless shell, so install it once with
 
 ```
 apps/home/
-├─ .stylelintrc.json        the Baseline 2025 floor for this workspace's stylesheet
+├─ .stylelintrc.json        the Baseline 2025 floor, and BEM class names, for this workspace
 ├─ astro.config.ts          site address, CSS and script settings, the test-only source plugin
 ├─ public/_headers          the response headers, including the Content-Security-Policy
 ├─ public/favicon.svg       the project's icon, the same file as the documentation site's
@@ -39,17 +39,175 @@ apps/home/
 ├─ scripts/assert-no-v1.mjs fails when the built site has a top-level v1 entry
 ├─ src/
 │  ├─ data/examples.ts      the four examples, and everything the page reads from BCD
+│  ├─ data/release.ts       the release badge and install command, from the element's version
 │  ├─ pages/index.astro     the page
 │  ├─ scripts/example-status.ts  creates the status region and fills it when the choice changes
-│  └─ styles/home.css       the page's own styles, the segmented control, and the panel switching
+│  ├─ styles/fonts.css      the two self-hosted typefaces
+│  └─ styles/home.css       the tokens, the layout, the segmented control, and the panel switching
 └─ tests/
    ├─ contrast.test.ts      the contrast formula, without a build
    ├─ contrast.ts           WCAG contrast ratios from computed colours
    ├─ examples.test.ts      the data module, without a build
    ├─ home-deploy.test.ts   the configuration, the headers, and the policy in a browser
    ├─ home-page.test.ts     builds the page and checks it in Chromium
+   ├─ release.test.ts       the release badge and install command, without a build
    └─ serve.ts              serves a built copy, with the headers of `_headers` if asked
 ```
+
+## Design
+
+The page follows the owner's "Workbench" direction (23 November 2026). Its layout is the same in
+both colour schemes, and the reader's `prefers-color-scheme` picks the palette, because the root
+sets `color-scheme: light dark`:
+
+| Scheme | Palette                                                              | Source of the direction |
+| ------ | -------------------------------------------------------------------- | ----------------------- |
+| Dark   | Espresso `#2a0b09` page, ochre `#c8914f` wordmark, cream text        | A, "Workbench, dark"    |
+| Light  | Cream `#fbf1e4` page, darker ochre `#7a3b12` wordmark, espresso text | C, "Workshop, light"    |
+
+From top to bottom the page has a header (the wordmark, which links to `/`, and a navigation with
+Examples, Documentation, API and GitHub), a hero, the examples, "How the examples work", the live
+table, and the footer. The API link goes to "The endpoints" on the documentation site's first
+page, `https://docs.browser-compat.dev/#the-endpoints`, because the site has no page of its own for
+the API. The hero holds a release badge, the one `<h1>`, the tagline, the introduction, a "Get
+started" link to the component's getting started page, and the install command.
+
+### The release badge
+
+The badge and the install command are built from `packages/element/package.json` at build time by
+`describeRelease` in `src/data/release.ts`, so a release changes them and nobody edits the page.
+The element's `exports` do not include its `package.json`, so the page imports the file by its
+workspace path.
+
+| Element version | Badge                                            | Install command                               |
+| --------------- | ------------------------------------------------ | --------------------------------------------- |
+| `0.1.0-beta.0`  | `Beta · @schalkneethling/bcd-embed@0.1.0-beta.0` | `npm install @schalkneethling/bcd-embed@beta` |
+| `1.0.0`         | `@schalkneethling/bcd-embed@1.0.0`               | `npm install @schalkneethling/bcd-embed`      |
+
+A prerelease's identifier is both its stage and its dist-tag, as the release workflow stages it
+(`apps/website/src/content/docs/releasing.md`).
+
+### Fonts
+
+The two typefaces are served from the site, never from a font service, because the policy allows
+no other origin. `src/styles/fonts.css` points each `@font-face` at a file in an npm package, and
+Vite copies the file into `dist/_astro` with a content hash in its name. Each rule names only the
+Latin subset and only the WOFF2 file, with the Latin `unicode-range` from the package, and
+`font-display: swap`.
+
+| Typeface       | Package                                  | File shipped                            | Size     | Weights used       |
+| -------------- | ---------------------------------------- | --------------------------------------- | -------- | ------------------ |
+| Inter Tight    | `@fontsource-variable/inter-tight` 5.3.0 | `inter-tight-latin-wght-normal.woff2`   | 44,872 B | 300, 400, 700, 800 |
+| JetBrains Mono | `@fontsource/jetbrains-mono` 5.3.0       | `jetbrains-mono-latin-400-normal.woff2` | 21,168 B | 400                |
+
+Both packages are licensed under the SIL Open Font License 1.1. Inter Tight is the variable build,
+so one file covers every weight, including the bold of the table's headers and the checked label.
+Code is set in one weight, so JetBrains Mono ships one static file; `code` and `pre` set
+`font-weight: 400` so that code inside a bold heading is not synthesised in bold.
+
+`default-src 'none'` blocks fonts, so the policy names `font-src 'self'`. A test in
+`tests/home-deploy.test.ts` requires the directive exactly while the build ships font files, and
+requires every font the stylesheet names to be one of them.
+
+### Tokens
+
+`src/styles/home.css` starts with the tokens on `:root`. Each colour that differs between the
+schemes is a `light-dark()` pair; the rest of the stylesheet reads only the tokens.
+
+| Token                          | Light     | Dark      | Used for                                               |
+| ------------------------------ | --------- | --------- | ------------------------------------------------------ |
+| `--home-color-ground`          | `#fbf1e4` | `#2a0b09` | The page                                               |
+| `--home-color-text`            | `#2a0b09` | `#f2d3b0` | Body text and label text                               |
+| `--home-color-muted`           | `#4e2a1c` | `#e3be97` | Introduction, badge, legend, summaries, footer         |
+| `--home-color-accent`          | `#7a3b12` | `#c8914f` | Both wordmarks                                         |
+| `--home-color-link`            | `#7a3b12` | `#e8b877` | Links (hover: `--home-color-link-hover`)               |
+| `--home-color-focus`           | `#2f5236` | `#f2d3b0` | Every focus ring                                       |
+| `--home-color-surface`         | `#fff`    | `#34110e` | Panels and the install command                         |
+| `--home-color-line`            | `#2a0b09` | `#6b3a2a` | Decorative borders and the footer rule                 |
+| `--home-color-code-surface`    | `#2f5236` | `#1c0605` | The markup sample (text: `#f2d3b0` in both)            |
+| `--home-color-start`           | `#2a0b09` | `#c8914f` | The Get started link (text: `--home-color-start-text`) |
+| `--home-choice-border`         | `#7a3b12` | `#b5702e` | An unchecked label's border                            |
+| `--home-choice-fill`           | `#fff`    | `#3a1512` | An unchecked label (hover: `#f5e3cc`, `#4a1d17`)       |
+| `--home-choice-checked-border` | `#2a0b09` | `#e0b04a` | The checked label's border                             |
+| `--home-choice-checked-fill`   | `#f2d3b0` | `#2f5236` | The checked label                                      |
+
+The palette's cutting-mat green (`#2f5236`) fills the header glyph in both schemes, and its yellow
+(`#e0b04a`) is the badge's dot. A browser without `light-dark()` would compute every pair as
+invalid and paint no colour, so an `@supports not (color: light-dark(#000, #fff))` block sets the
+tokens to system colours there, with a grey `#808080` label border and a blue `#4285f4` focus ring,
+the plain colours the control used before.
+
+### Theming the table
+
+The table is themed only through the tokens the component documents
+(`apps/website/src/content/docs/component/styling.md`), set on `:root`; no rule of this page
+reaches into the table's markup. Each registered colour token has a light and a dark member, and the
+base stylesheet chooses between them, so the page sets plain colours:
+
+| Token                                            | Light                                              | Dark      | Palette role                      |
+| ------------------------------------------------ | -------------------------------------------------- | --------- | --------------------------------- |
+| `--bcd-color-supported-*`                        | `#2f5236`                                          | `#9fd3a4` | Cutting-mat green                 |
+| `--bcd-color-partial-*`                          | `#9a5b1e`                                          | `#e0b04a` | Ochre, yellow                     |
+| `--bcd-color-unsupported-*`                      | `#a8332a`                                          | `#e8796d` | Red                               |
+| `--bcd-color-unknown-*`, `--bcd-color-no-data-*` | `#6b4a3a`                                          | `#c9a27c` | Muted brown                       |
+| `--bcd-color-border-*`                           | `#a0805f`                                          | `#9a6448` | Muted ochre                       |
+| `--bcd-color-preview-*`, `--bcd-color-flagged-*` | default                                            | default   | Not set (see below)               |
+| `--bcd-color-sticky-background`                  | the page on `:root`, the panel on `.example-panel` |           | Matches what is behind the column |
+
+Preview and flagged keep the component's blue and violet, because the palette has neither, and
+those hues keep the states apart; each state also has its own icon shape. Every state colour and the
+border reach 3:1 against the page and against a panel in both schemes (the table below).
+
+### Contrast
+
+`tests/home-page.test.ts` reads every colour from the computed style and requires each ratio below
+(text 4.5:1, borders, focus rings and the table's icons and borders 3:1). These are the values of
+23 November 2026; `BCD_EMBED_HOME_CONTRAST_REPORT=1` prints them.
+
+| Pair                                     | Light       | Dark                           | Minimum |
+| ---------------------------------------- | ----------- | ------------------------------ | ------- |
+| Body text on the page                    | 16.35       | 12.80                          | 4.5     |
+| Unchecked label text on its fill         | 18.26       | 11.36                          | 4.5     |
+| Hovered label text                       | 14.55       | 9.95                           | 4.5     |
+| Checked label text                       | 12.80       | 6.18                           | 4.5     |
+| Unchecked border on the page             | 7.64        | 4.63                           | 3       |
+| Unchecked border on its label            | 8.53        | 4.11                           | 3       |
+| Unchecked border on its hovered label    | 6.80        | 3.60                           | 3       |
+| Checked border on the page               | 16.35       | 9.11                           | 3       |
+| Checked border on its label              | 12.80       | 4.40                           | 3       |
+| Control focus ring on the page           | 7.90        | 12.80                          | 3       |
+| Link focus ring on the page              | 7.90        | 12.80                          | 3       |
+| Wordmarks and navigation links           | 7.64        | 6.62 (wordmark), 10.04 (links) | 4.5     |
+| Badge, introduction, legend, footer      | 11.25       | 10.50                          | 4.5     |
+| Footer link                              | 7.64        | 10.04                          | 4.5     |
+| Get started text on its fill             | 16.35       | 6.62                           | 4.5     |
+| Install command on its fill              | 18.26       | 11.94                          | 4.5     |
+| Panel heading on the panel               | 18.26       | 11.94                          | 4.5     |
+| Panel summary on the panel               | 12.56       | 9.80                           | 4.5     |
+| Markup sample                            | 6.18        | 13.66                          | 4.5     |
+| Table supported (page / panel)           | 7.90 / 8.82 | 10.72 / 10.00                  | 3       |
+| Table partial (page / panel)             | 4.84 / 5.40 | 9.11 / 8.50                    | 3       |
+| Table preview (page / panel)             | 4.65 / 5.19 | 5.89 / 5.50                    | 3       |
+| Table flagged (page / panel)             | 6.58 / 7.34 | 6.10 / 5.70                    | 3       |
+| Table unsupported (page / panel)         | 5.93 / 6.62 | 6.42 / 5.99                    | 3       |
+| Table unknown and no data (page / panel) | 7.05 / 7.88 | 7.77 / 7.26                    | 3       |
+| Table border (page / panel)              | 3.27 / 3.65 | 3.73 / 3.48                    | 3       |
+
+### Layout
+
+The stylesheet is written Shared First: every rule applies at every width, and two media queries
+change only what a wider viewport needs. From 48rem the gutter grows from 1rem to 2rem and the hero
+gains room; from 64rem the markup sample in "How the examples work" sits beside the text that
+explains it. The content is at most 75rem wide. At 320 pixels the page has no horizontal scroll: the
+badge, the install command and the markup sample wrap, and the tables scroll inside their own
+region. Class names that this page adds are BEM (`site-header__brand`, `hero__title`), which the
+repository's kebab-case rule rejects, so this workspace's `.stylelintrc.json` allows a BEM element
+and modifier. The older class names (`examples`, `example-panel`, `example-choices`) stay, because
+the status script and the tests name them.
+
+Astro's HTML compression removes a line break between a word and an element that starts the next
+source line, which ran "with its" and `source` together. The page writes `{" "}` at the end of such
+a line, and a test fails if the built HTML has a letter directly before an `<a>` or `<code>`.
 
 ## The examples
 
@@ -135,11 +293,11 @@ The four radios look like one row of four buttons (#210). Each radio is hidden w
 in the accessibility tree and in the focus order. Its label is the visible button, and the rules
 reach the label from the radio with the sibling combinator:
 
-| State         | Selector                            | What changes                                        |
-| ------------- | ----------------------------------- | --------------------------------------------------- |
-| Checked       | `input:checked + label`             | A 4 pixel border in `CanvasText`, bold text, a tint |
-| Keyboard ring | `input:focus-visible + label`       | A 3 pixel outline, offset 3 pixels from the border  |
-| Hover         | `input:not(:checked) + label:hover` | The background only                                 |
+| State         | Selector                            | What changes                                       |
+| ------------- | ----------------------------------- | -------------------------------------------------- |
+| Checked       | `input:checked + label`             | A 4 pixel border, bold text, a filled background   |
+| Keyboard ring | `input:focus-visible + label`       | A 3 pixel outline, offset 3 pixels from the border |
+| Hover         | `input:not(:checked) + label:hover` | The background only                                |
 
 No focus or checked rule of the control uses `:has()`, and none uses `box-shadow`, which forced
 colours mode removes. The checked state does not depend on colour, because its border is thicker
@@ -153,14 +311,14 @@ Minimum). The labels share the row equally, so bold text moves nothing. Nothing 
 `prefers-reduced-motion: reduce` has nothing to turn off, and a test checks that no transition
 starts.
 
-The colours are `light-dark()` pairs with literal arguments. The text and the checked border are
-the system colours `CanvasText` on `Canvas`. Each `light-dark()` declaration follows a plain one: a
-grey border, and a blue ring that holds 3:1 on white and on near black. A browser that parses
-`:has()` but not `light-dark()` drops the second declaration at parse time and keeps the plain one,
-so it still shows a border and a focus ring. A `var()` argument would parse everywhere and then
-compute as invalid, which is why the pairs are literal. The checked label keeps its thicker border
-and bold text in that browser, and hover shows no change, because a light grey would sit under
-white text in a dark scheme. A test plays that browser by renaming `light-dark(` in the stylesheet.
+The colours are the `--home-choice-*` tokens (see "Tokens" above). In the dark scheme the checked
+label is cutting-mat green with a yellow border; in the light scheme it is cream with an espresso
+border. A browser that parses `:has()` but not `light-dark()` gets the system colours from the
+`@supports not (color: light-dark(#000, #fff))` block instead: a grey `#808080` border, a
+`CanvasText` checked border, and a blue `#4285f4` ring, each of which holds 3:1 on white and on near
+black. The checked label keeps its thicker border and bold text there, and hover shows no change.
+A test plays that browser by renaming `light-dark(` in the stylesheet, which also makes the
+`@supports` condition true.
 
 Stylelint with `stylelint-plugin-use-baseline` 1.4.8 treats `light-dark()` as available from 2024:
 it flags it at the `widely` and 2023 floors and reports nothing at 2024 and 2025 (checked on 21
@@ -201,8 +359,11 @@ The page test covers each criterion of #210 that a browser can measure, in Chrom
   luminance formula (`tests/contrast.ts`). In light and dark it requires 3:1 for the unchecked
   border against the page and against the label (resting and hovered), for the checked border
   against the page and against its tint, and for the focus ring against the page, and 4.5:1 for
-  the label text (resting, hovered, checked) and the body text (WCAG 1.4.11 and 1.4.3). axe cannot
-  check non-text contrast.
+  the label text (resting, hovered, checked) and the body text (WCAG 1.4.11 and 1.4.3). A second
+  test covers the rest of the palette: 4.5:1 for every other text colour against what is behind it,
+  3:1 for the links' focus ring, and 3:1 for each of the table's state colours and its border
+  against the page and against a panel. The values are in "Contrast" above. axe cannot check
+  non-text contrast.
 - **Forced colours.** With Playwright's `forcedColors: "active"`, the test photographs one label
   unchecked, checked, and checked with the keyboard ring, and requires all three pictures to
   differ.
@@ -252,16 +413,18 @@ plugin above.
 | `vite.build.cssMinify: false`                                            | Vite's default minifier drops the base stylesheet's `@layer` statement and rewrites its `light-dark()` colours into custom properties the page never defines (#246). |
 | `build.inlineStylesheets: "never"` and `vite.build.assetsInlineLimit: 0` | Every stylesheet and script is a file, never inline, so #211 can serve the page with `style-src 'self'` and `script-src 'self'`.                                     |
 
-`src/styles/home.css` sets `color-scheme: light dark` and paints `Canvas` on the root, because the
-base stylesheet picks its colours with `light-dark()`, and its dark colours fail contrast on white.
+`src/styles/home.css` sets `color-scheme: light dark` and paints the page colour on the root,
+because the base stylesheet picks its colours with `light-dark()`, and its dark colours fail
+contrast on a light background. Vite resolves the package paths in `src/styles/fonts.css` and copies
+each font file into `dist/_astro`, so no setting is needed for the fonts.
 
 ## The live table
 
 `<bcd-compat-table query="html.elements.dialog">` uses fetch mode with the default lazy loading. It
 sends its one request when it comes within 400 pixels of the viewport, to
-`https://api.browser-compat.dev/v1/current/features/html.elements.dialog.json`. In a viewport about
-720 pixels tall the table is already that close when the page loads, so it requests at once; in a
-shorter one it waits until the reader scrolls. The policy in `public/_headers` allows that origin, and only that origin, in `connect-src`.
+`https://api.browser-compat.dev/v1/current/features/html.elements.dialog.json`. The hero and the
+examples put it well below the first screen, so in a viewport up to about 1,000 pixels tall it
+waits until the reader scrolls. The tests that need its table scroll to it first. The policy in `public/_headers` allows that origin, and only that origin, in `connect-src`.
 
 ## Tests
 
@@ -275,6 +438,9 @@ server.
 | What the page test checks                                                                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | One `<h1>`, an introduction, and a fieldset whose legend and four radios are each followed by their label                                                                              |
+| A header before `main` with the wordmark and four navigation links, with their addresses                                                                                               |
+| The release badge and install command match the element's `package.json`, and Get started links to the getting started page                                                            |
+| No letter in the built HTML runs straight into an `<a>` or `<code>`                                                                                                                    |
 | Every radio is rendered, not `display: none` or `visibility: hidden`, and is in the accessibility tree                                                                                 |
 | Only the HTML panel shows on load; a click on CSS shows only the CSS panel, with its rendered table                                                                                    |
 | Each of three right arrows switches the panel at once, ending on Web API with focus there, and sends no request                                                                        |
@@ -316,8 +482,9 @@ rollback are in the
 
 `tests/home-deploy.test.ts` serves a build on `127.0.0.1` with the exact headers of `_headers`,
 listens for `securitypolicyviolation` events in the page and in any worker, and requires no
-violation and all five tables rendered. Controls show the listener works: a policy of
-`default-src 'none'` alone, the policy without `connect-src`, the policy without `img-src`, and the
+violation, all five tables rendered, and both typefaces loaded. Controls show the listener works: a
+policy of `default-src 'none'` alone, the policy without `connect-src`, the policy without
+`img-src`, the policy without `font-src` (both font files blocked, no typeface loaded), and the
 policy with an inline script and a `style` attribute injected. Two more tests serve a stand-in for
 Cloudflare's analytics beacon at a tokenised path under a second origin, and show that it runs under
 the beacon's source with its trailing slash and is blocked without it. `pnpm check` runs the file in
