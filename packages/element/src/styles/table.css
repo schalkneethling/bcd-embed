@@ -173,7 +173,9 @@ bcd-compat-table[loaded] > .bcd-render-container {
   display: inline;
 }
 
+/* Keeps the icon on its text's line against a layered reset that makes svg a block. */
 .bcd-icon {
+  display: inline;
   inline-size: var(--bcd-icon-size, 1em);
   block-size: var(--bcd-icon-size, 1em);
   vertical-align: -0.125em;
