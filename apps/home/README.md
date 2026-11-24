@@ -35,6 +35,7 @@ apps/home/
 ├─ public/_headers          the response headers, including the Content-Security-Policy
 ├─ public/favicon.svg       the project's icon, the same file as the documentation site's
 ├─ public/robots.txt        allows every crawler
+├─ public/og-image.png      the link-preview image that the Open Graph tags name, 1280 by 640
 ├─ public/font-licenses.txt the two fonts' licences, which the footer links
 ├─ wrangler.jsonc           the apex custom domain, static assets only
 ├─ scripts/assert-no-v1.mjs fails when the built site has a top-level v1 entry
