@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
-import { parseReviewApprovals } from "../scripts/freshness-policy.mjs";
+import { BCD_MANIFESTS, parseReviewApprovals } from "../scripts/freshness-policy.mjs";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -35,13 +35,7 @@ describe("freshness automation policy", () => {
       .filter((line: string) => line.trim().startsWith("cp candidate/"))
       .map((line: string) => line.trim().split(" ")[1]);
     expect(copied.sort()).toEqual(
-      [
-        "candidate/apps/worker/package.json",
-        "candidate/packages/core/package.json",
-        "candidate/packages/generator/package.json",
-        "candidate/packages/schema/package.json",
-        "candidate/pnpm-lock.yaml",
-      ].sort(),
+      [...BCD_MANIFESTS, "pnpm-lock.yaml"].map((path) => `candidate/${path}`).sort(),
     );
   });
 

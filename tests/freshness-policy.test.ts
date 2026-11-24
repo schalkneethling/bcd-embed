@@ -1,3 +1,4 @@
+import { globSync, readFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import { parse, stringify } from "yaml";
 
 import {
   ALLOWED_BCD_UPDATE_PATHS,
+  BCD_MANIFESTS,
   BCD_PACKAGE,
   classifyBcdCandidate,
   findReviewApproval,
@@ -16,27 +18,25 @@ import {
 
 const integrity = "sha512-registry-provenance";
 
-const importers = ["packages/core", "packages/generator", "packages/schema", "apps/worker"];
-const devDependencyImporters = new Set(["packages/schema", "apps/worker"]);
+// Mirrors which dependency field each workspace pins BCD in.
+const pins = {
+  "packages/core": "dependencies",
+  "packages/element": "devDependencies",
+  "packages/generator": "dependencies",
+  "packages/schema": "devDependencies",
+  "apps/home": "dependencies",
+  "apps/worker": "devDependencies",
+} as const;
+const importers = Object.keys(pins) as (keyof typeof pins)[];
 
 const writeCandidate = async (root: string, version: string): Promise<void> => {
   await Promise.all(importers.map((path) => mkdir(join(root, path), { recursive: true })));
   await Promise.all([
-    writeFile(
-      join(root, "packages/core/package.json"),
-      JSON.stringify({ dependencies: { [BCD_PACKAGE]: version } }),
-    ),
-    writeFile(
-      join(root, "packages/generator/package.json"),
-      JSON.stringify({ dependencies: { [BCD_PACKAGE]: version } }),
-    ),
-    writeFile(
-      join(root, "packages/schema/package.json"),
-      JSON.stringify({ devDependencies: { [BCD_PACKAGE]: version } }),
-    ),
-    writeFile(
-      join(root, "apps/worker/package.json"),
-      JSON.stringify({ devDependencies: { [BCD_PACKAGE]: version } }),
+    ...importers.map((path) =>
+      writeFile(
+        join(root, path, "package.json"),
+        JSON.stringify({ [pins[path]]: { [BCD_PACKAGE]: version } }),
+      ),
     ),
     writeFile(
       join(root, "pnpm-lock.yaml"),
@@ -46,7 +46,7 @@ const writeCandidate = async (root: string, version: string): Promise<void> => {
           importers.map((path) => [
             path,
             {
-              [devDependencyImporters.has(path) ? "devDependencies" : "dependencies"]: {
+              [pins[path]]: {
                 [BCD_PACKAGE]: { specifier: version, version },
               },
             },
@@ -136,6 +136,22 @@ describe("trusted BCD freshness policy", () => {
 
   it("requires the schema manifest among the allowed BCD paths", () => {
     expect(ALLOWED_BCD_UPDATE_PATHS).toContain("packages/schema/package.json");
+  });
+
+  it("lists every workspace manifest that pins BCD, so a BCD update may change all of them", () => {
+    const root = new URL("..", import.meta.url);
+    const workspace = parse(readFileSync(new URL("pnpm-workspace.yaml", root), "utf8")) as {
+      packages: string[];
+    };
+    const pinning = workspace.packages
+      .flatMap((pattern) => globSync(`${pattern}/package.json`, { cwd: root }))
+      .filter((path) => {
+        const manifest = JSON.parse(readFileSync(new URL(path, root), "utf8"));
+        return [manifest.dependencies, manifest.devDependencies].some(
+          (field) => field?.[BCD_PACKAGE] !== undefined,
+        );
+      });
+    expect(pinning.sort()).toEqual([...BCD_MANIFESTS].sort());
   });
 
   it("rejects malicious manifest and lockfile changes while leaving non-BCD updates neutral", async () => {
