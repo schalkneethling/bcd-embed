@@ -263,6 +263,14 @@ a narrow region the sticky column shrinks to 10em and leaves room for the
 other columns to scroll into view beside it. In right-to-left text the column
 sticks to the right.
 
+Each support cell is at least 12em wide, so an open cell has room for its
+notes. When the columns no longer fit at that width, the region scrolls
+sideways instead of narrowing them further. In a viewport narrower than 24em
+the floor is the viewport's width minus 12em, so a whole column still fits
+beside the sticky column on a 320 CSS pixel screen. The floor follows the
+viewport, not the region, so a table in a narrow sidebar on a wide screen
+keeps the full 12em and shows a column only in part at a time.
+
 The sticky cells paint over the cells that scroll beneath them, so they need a
 background. It is `Canvas`, the browser's page colour for the inherited colour
 scheme. On a page with its own background, set the token to the same colour:

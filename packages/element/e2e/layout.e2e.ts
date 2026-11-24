@@ -306,6 +306,29 @@ test("keeps the table display values at every width", async ({ page }) => {
   }
 });
 
+// The history list takes no width of its own (#204), so without a floor the table squeezed the
+// support columns to their compact status, and an open cell's notes wrapped every word or two.
+test("keeps every data column at least 12em wide, and scrolls the region instead", async ({
+  page,
+}) => {
+  await open(page);
+  await showSixTargets(page);
+  await setContainerSize(page, "50em");
+
+  const narrow = await page.locator("#table tbody td").evaluateAll((cells) =>
+    cells
+      .map(
+        (cell) =>
+          cell.getBoundingClientRect().width / Number.parseFloat(getComputedStyle(cell).fontSize),
+      )
+      // Sub-pixel rounding can put a 12em cell a hair under 12.
+      .filter((ems) => ems < 11.99),
+  );
+
+  expect(narrow).toEqual([]);
+  expect((await overflowOf(page)).inline).toBeGreaterThan(0);
+});
+
 test("needs no scrolling in two directions in a 320 CSS pixel viewport", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
   await open(page);
