@@ -114,6 +114,11 @@ bcd-compat-table[loaded] > .bcd-render-container {
   overflow-wrap: anywhere;
 }
 
+/* Room for an open cell's notes, so the region scrolls first. Capped to fit a 320px viewport. */
+.bcd-table td {
+  min-inline-size: min(12em, 100vw - 12em);
+}
+
 /*
  * The feature column sticks while the others scroll beneath it, so it needs the page's background.
  * It holds at every width, with no container query, because style containment made Chromium
