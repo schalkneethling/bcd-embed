@@ -108,3 +108,17 @@ The counters to read are `conditional_304` (304 responses, counted apart from ev
 `compare_ok` and `compare_mismatch` (compressed body against identity body), and `cache_status_responses` by
 `cf-cache-status`. A cached 404 must keep `max-age=3600`; the check fails if the edge cache changes its
 lifetime (issue #259).
+
+## After a BCD update
+
+`keys.json` is drawn from one BCD release, named in its `sourceVersion` field. A Dependabot BCD pull request may
+change only the BCD pins and the lockfile, so it cannot regenerate the list. While the installed release is
+newer than `sourceVersion`, `tests/load-test.test.ts` skips its two checks against the installed data. Those
+checks are that every listed key still exists, and that no `missing` or `grouping` key has become addressable.
+Regenerate the list once the BCD update is on `main`, so the checks run again:
+
+```sh
+node packages/generator/dist/bin.js --out /tmp/bcd-artifacts \
+  --generated 2026-11-22T08:00:00Z --expires 2027-02-20
+node load-test/build-key-list.mjs --artifacts /tmp/bcd-artifacts
+```
