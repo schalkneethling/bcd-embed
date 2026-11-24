@@ -305,6 +305,47 @@ describe("the Content-Security-Policy", () => {
   });
 });
 
+/** The `content` of the `<meta>` whose `property` or `name` is this key, or undefined. */
+const metaContent = (html: string, key: string): string | undefined => {
+  const tag = html.match(new RegExp(`<meta\\b[^>]*\\b(?:property|name)="${key}"[^>]*>`))?.[0];
+  return tag?.match(/\bcontent="([^"]*)"/)?.[1];
+};
+
+/** The width and height in a PNG file's header, which the IHDR chunk holds at bytes 16 to 23. */
+const pngSize = (file: Buffer): { width: number; height: number } => {
+  expect(file.subarray(1, 4).toString("latin1")).toBe("PNG");
+  return { width: file.readUInt32BE(16), height: file.readUInt32BE(20) };
+};
+
+describe("the link preview", () => {
+  it("names the four properties Open Graph requires, with absolute URLs on the site", () => {
+    expect(metaContent(builtHtml, "og:type")).toBe("website");
+    expect(metaContent(builtHtml, "og:url")).toBe("https://browser-compat.dev/");
+    expect(metaContent(builtHtml, "og:title")).toBe(
+      builtHtml.match(/<title>([^<]*)<\/title>/)?.[1],
+    );
+    expect(metaContent(builtHtml, "og:image")).toBe("https://browser-compat.dev/og-image.png");
+  });
+
+  it("describes the image with its type, its real size, and alt text", async () => {
+    const image = await readFile(join(outDirectory, "og-image.png"));
+    const { width, height } = pngSize(image);
+    expect(metaContent(builtHtml, "og:image:type")).toBe("image/png");
+    expect(metaContent(builtHtml, "og:image:width")).toBe(String(width));
+    expect(metaContent(builtHtml, "og:image:height")).toBe(String(height));
+    // X accepts images under 5 MB and alt text of at most 420 characters.
+    expect(image.byteLength).toBeLessThan(5 * 1024 * 1024);
+    const alt = metaContent(builtHtml, "og:image:alt") ?? "";
+    expect(alt.length).toBeGreaterThan(0);
+    expect(alt.length).toBeLessThanOrEqual(420);
+  });
+
+  it("repeats the page description, and asks X for the large image card", () => {
+    expect(metaContent(builtHtml, "og:description")).toBe(metaContent(builtHtml, "description"));
+    expect(metaContent(builtHtml, "twitter:card")).toBe("summary_large_image");
+  });
+});
+
 describe("robots.txt", () => {
   it("allows every crawler, and names a sitemap only if the build writes one", async () => {
     const robots = await readFile(join(outDirectory, "robots.txt"), "utf8");

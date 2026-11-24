@@ -549,6 +549,9 @@ reason:
 | `connect-src 'self'`                                                                   | The beacon's reports. Under automatic setup the data goes to the page's own domain, at `/cdn-cgi/rum`, as the Web Analytics FAQ says. Nothing on the page itself fetches from its own origin.                                                            |
 | `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'` | `default-src` does not cover these four, so each is named. The page has no plugin, `<base>` element or form, and nothing should frame it.                                                                                                                |
 
+The link-preview image, `/og-image.png`, is not in `img-src`, because link-preview
+crawlers fetch it and the page never does, so the policy does not apply to it.
+
 A test (`apps/home/tests/home-deploy.test.ts`) parses the file in `dist/` and
 pins `script-src` to exactly `'self'` and the beacon's source, and `connect-src`
 to exactly `'self'` and the API's origin. It also requires the other directives
@@ -662,9 +665,10 @@ curl -sS https://browser-compat.dev/ | grep -o '<title>[^<]*'
 ASSET=$(curl -sS https://browser-compat.dev/ | grep -o '/_astro/[^"]*\.js' | head -1)
 curl -sS -D - -o /dev/null "https://browser-compat.dev$ASSET"
 
-# 3. The robots file, the icon, a path with no file, and the /v1/ guard.
+# 3. The robots file, the icon, the link-preview image, a path with no file, and the /v1/ guard.
 curl -sS https://browser-compat.dev/robots.txt
 curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/favicon.svg
+curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' https://browser-compat.dev/og-image.png
 curl -sS -D - -o /dev/null https://browser-compat.dev/no-such-page
 curl -sS -o /dev/null -w '%{http_code}\n' https://browser-compat.dev/v1/meta.json
 

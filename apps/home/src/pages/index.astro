@@ -15,6 +15,20 @@ const release = describeRelease(elementManifest);
 const repository = "https://github.com/schalkneethling/bcd-embed";
 const documentation = "https://docs.browser-compat.dev/";
 
+// What a link preview shows. `og:url` and `og:image` must be absolute, so both are resolved against
+// the `site` in astro.config.ts. The width and height match the file in `public/`, which
+// `tests/home-deploy.test.ts` checks.
+const title = "bcd-embed: browser compatibility tables for any page";
+const description =
+  "Embeddable browser compatibility tables backed by MDN Browser Compatibility Data.";
+const pageUrl = new URL("/", Astro.site).href;
+const preview = {
+  url: new URL("/og-image.png", Astro.site).href,
+  width: 1280,
+  height: 640,
+  alt: "A wooden workbench with a green cutting mat holding a hammer, nails, a screwdriver, wooden planks and small coloured blocks, beside the bcd-embed wordmark and the tagline “add MDN-powered browser compatibility tables anywhere”.",
+};
+
 // Shown to readers as text. Astro escapes it, so its `<` characters reach the page as `&lt;`.
 const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-properties-line-clamp">
   { "contract": "1.1.0", "query": "css.properties.line-clamp", … }
@@ -30,11 +44,20 @@ const sourceModeSnippet = `<script type="application/json" id="bcd-data-css-prop
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>bcd-embed: browser compatibility tables for any page</title>
-    <meta
-      name="description"
-      content="Embeddable browser compatibility tables backed by MDN Browser Compatibility Data."
-    />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="bcd-embed" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={preview.url} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content={String(preview.width)} />
+    <meta property="og:image:height" content={String(preview.height)} />
+    <meta property="og:image:alt" content={preview.alt} />
+    <!-- X reads the title, description, image and alt text from the Open Graph tags above. -->
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>
