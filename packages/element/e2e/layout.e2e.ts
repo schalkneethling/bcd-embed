@@ -306,6 +306,33 @@ test("keeps the table display values at every width", async ({ page }) => {
   }
 });
 
+// Many CSS resets make every svg a block. In a layer the page orders before bcd-embed.base, such
+// a reset broke each compact status into three lines: the disclosure marker, the icon, and the
+// version. An inline box that holds a block is split around it, so a status on one line has one
+// box.
+test("keeps each compact status on one line under a layered reset that makes svg a block", async ({
+  page,
+}) => {
+  await page.goto(STYLED_PAGE);
+  await page.evaluate(() => {
+    const reset = document.createElement("style");
+    reset.textContent =
+      "@layer page-reset { svg { display: block; block-size: auto; max-inline-size: 100%; } }";
+    document.head.prepend(reset);
+  });
+  await page.locator("#table[loaded] table").waitFor();
+
+  const statuses = await page.locator('#table td [aria-hidden="true"]').evaluateAll((spans) =>
+    spans.map((span) => ({
+      icon: getComputedStyle(span.querySelector("svg") as Element).display,
+      boxes: span.getClientRects().length,
+    })),
+  );
+
+  expect(statuses.length).toBeGreaterThan(0);
+  expect(statuses.filter(({ icon, boxes }) => icon !== "inline" || boxes !== 1)).toEqual([]);
+});
+
 // The history list takes no width of its own (#204), so without a floor the table squeezed the
 // support columns to their compact status, and an open cell's notes wrapped every word or two.
 test("keeps every data column at least 12em wide, and scrolls the region instead", async ({
