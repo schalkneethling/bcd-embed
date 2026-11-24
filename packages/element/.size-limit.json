@@ -19,9 +19,9 @@
     "limit": "9.5 kB"
   },
   {
-    "name": "dist/base.css, not bundled (measured 3.41 kB with Brotli on 21 November 2026, with the sticky column, long-name, height and print rules of #201 and the history list width of #204; 1.0 kB without comments)",
+    "name": "dist/base.css, not bundled (measured 3.52 kB with Brotli on 24 November 2026, with the sticky column, long-name, height and print rules of #201, the history list width of #204, the inline icon of #281, and the support column floor)",
     "path": "dist/base.css",
     "rolldown": false,
-    "limit": "3.5 kB"
+    "limit": "3.6 kB"
   }
 ]

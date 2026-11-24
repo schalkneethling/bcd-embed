@@ -649,6 +649,16 @@ In right-to-left text the column sticks to the right, and the borders mirror.
 beside it, even at depth 5 in a 320 CSS pixel viewport. Where the table fits, the column keeps the
 name's full width.
 
+**A floor for the support columns.** The history list takes no width of its own (#204), so nothing
+in a support cell asked for width, and the table spent its spare width on the feature column. Six
+targets in an 850 pixel region left each support column about 110 pixels wide, and an open cell's
+notes wrapped every word or two. Each support cell is now at least `min(12em, 100vw - 12em)` wide.
+Past that, the region scrolls sideways. With three targets in the same region, the columns measured
+248, 198, 198, and 198 pixels instead of 301, 176, 188, and 176. The cap keeps the #201 guarantee
+above: at 320 CSS pixels a 12em column does not fit beside the 10em sticky column, and the test that
+scrolls each column into view fails in three engines without it. A container query would measure
+the region instead of the viewport, but it costs the containment described below.
+
 **There is no breakpoint.** Issue #201 first made the column sticky only in a container narrower
 than 40em, with a container query. A query container applies style containment, and with it
 Chromium 159 laid out the largest real table, 314 rows, in 249 ms instead of 51 ms: five times as
@@ -763,7 +773,7 @@ flags.
 | `screen-reader/`, `playwright.*.config.ts` | The screen reader tests and the fixture page they load (below).                                                                                                                                                                                                                                                            |
 | `vite.config.ts`, `tsconfig.build.json`    | The library build and its type declarations.                                                                                                                                                                                                                                                                               |
 | `vite.screen-reader.config.ts`             | The build of the screen reader fixture page into `dist-screen-reader/`, which is not committed.                                                                                                                                                                                                                            |
-| `.size-limit.json`                         | The size budgets: 25 kB with gzip for `dist/index.js` with Lit, 8 kB with gzip for the renderer alone, and, with Brotli, 9.5 kB for `dist/index.js` without `lit` and `@lit/task` and 3.5 kB for `dist/base.css`.                                                                                                          |
+| `.size-limit.json`                         | The size budgets: 25 kB with gzip for `dist/index.js` with Lit, 8 kB with gzip for the renderer alone, and, with Brotli, 9.5 kB for `dist/index.js` without `lit` and `@lit/task` and 3.6 kB for `dist/base.css`.                                                                                                          |
 | `custom-elements.json`                     | The Custom Elements Manifest. It is committed and published, and `tests/custom-elements-manifest.test.ts` fails when it differs from a fresh run.                                                                                                                                                                          |
 | `.stylelintrc.json`                        | This package's Baseline floor for Stylelint (below, "Styling"), on top of the root configuration.                                                                                                                                                                                                                          |
 | `custom-elements-manifest.config.mjs`      | The Custom Elements Manifest analyzer's settings.                                                                                                                                                                                                                                                                          |
@@ -920,7 +930,7 @@ bundle for the first time, and the total became 8.26 kB (8.07 kB before the revi
 own with Vite's minifier, the client and the cache account for about 1.4 kB of the 1.64 kB of
 growth, and the element's fetch logic for the rest. The icons of #200 add the rest: with both,
 `dist/index.js` measured 8.52 kB, 18 bytes over 8.5 kB, so the limit became 9 kB. Source mode (#205) adds the source reader and the parser wait: with fetch mode, source mode and the icons together, `dist/index.js` measures 8.97 kB, 30 bytes under 9 kB, so the limit is 9.5 kB. `dist/base.css`
-measured 2.94 kB with Brotli against a limit of 3 kB. The sticky column, long-name, height and print rules of #201 brought it to 3.36 kB, so the limit is 3.5 kB. With the comments removed, the source files grew by 0.15 kB with Brotli; the rest of the growth is comments, which the file keeps because it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
+measured 2.94 kB with Brotli against a limit of 3 kB. The sticky column, long-name, height and print rules of #201 brought it to 3.36 kB, so the limit became 3.5 kB. The inline icon of #281 and the support column floor brought it to 3.52 kB on 24 November 2026, so the limit is 3.6 kB. With the comments removed, the source files grew by 0.15 kB with Brotli; the rest of the growth is comments, which the file keeps because it is not minified (below, "Styling"). The entry's `name` in `.size-limit.json` records that measurement, so the
 next person to raise the limit sees what it was set against.
 
 The packaging issue (#206) added the two gzip entries. `size-limit` 14.3.0 measures with Brotli
