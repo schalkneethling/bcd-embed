@@ -3,10 +3,15 @@ import { relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
 
 export const BCD_PACKAGE = "@mdn/browser-compat-data";
+// Every workspace manifest that pins BCD. A Dependabot BCD update changes all of them at once, so
+// a workspace missing from this list makes every BCD update fail the changed-paths check.
+// `tests/freshness-workflow.test.ts` fails when a workspace pins BCD without being listed here.
 export const BCD_MANIFESTS = [
   "packages/core/package.json",
+  "packages/element/package.json",
   "packages/generator/package.json",
   "packages/schema/package.json",
+  "apps/home/package.json",
   "apps/worker/package.json",
 ];
 export const ALLOWED_BCD_UPDATE_PATHS = [...BCD_MANIFESTS, "pnpm-lock.yaml"];
@@ -121,9 +126,7 @@ export const validateBcdCandidate = async ({
   );
   if (new Set(baseVersions).size !== 1) throw new Error("Base BCD pins disagree; blocking update.");
   if (new Set(candidateVersions).size !== 1) {
-    throw new Error(
-      "Candidate BCD pins disagree across the core, generator, schema, and Worker manifests.",
-    );
+    throw new Error(`Candidate BCD pins disagree across ${BCD_MANIFESTS.join(", ")}.`);
   }
   const [baseVersion] = baseVersions;
   const [version] = candidateVersions;

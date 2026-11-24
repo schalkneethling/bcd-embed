@@ -415,10 +415,19 @@ describe("the key list builder", () => {
   });
 });
 
+const requireFromWorker = createRequire(new URL("../apps/worker/package.json", import.meta.url));
+const installedBcd = requireFromWorker("@mdn/browser-compat-data") as Record<string, unknown> & {
+  __meta: { version: string };
+};
+const installedBcdVersion = installedBcd.__meta.version;
+
+// keys.json is drawn from one BCD release. A Dependabot BCD update may change only the BCD pins
+// and the lockfile, so for that one pull request the installed release is newer than the list.
+// The checks against the installed data then wait until keys.json is regenerated for it.
+const keysMatchInstalledBcd = committed.sourceVersion === installedBcdVersion;
+
 /** Every dotted path in BCD that carries `__compat`, which is the contract's addressability rule. */
 const addressableKeys = (): Set<string> => {
-  const require = createRequire(new URL("../apps/worker/package.json", import.meta.url));
-  const bcd = require("@mdn/browser-compat-data") as Record<string, unknown>;
   const keys = new Set<string>();
   const walk = (node: Record<string, unknown>, path: string): void => {
     if (path !== "" && "__compat" in node) keys.add(path);
@@ -429,7 +438,7 @@ const addressableKeys = (): Set<string> => {
       }
     }
   };
-  walk(bcd, "");
+  walk(installedBcd, "");
   return keys;
 };
 
@@ -445,14 +454,26 @@ describe("the committed key list (load-test/keys.json)", () => {
     }
   });
 
-  it("draws every popular, deep and sampled key from BCD at the snapshot's source version", () => {
-    const known = addressableKeys();
-    for (const key of [...committed.popular, ...committed.deep, ...committed.sampled]) {
-      expect(known.has(key), key).toBe(true);
-    }
+  it("is drawn from the installed BCD release or an older one, never a newer one", () => {
+    const parts = (version: string) => version.split(".").map(Number);
+    const [listed, installed] = [parts(committed.sourceVersion), parts(installedBcdVersion)];
+    const firstDifference = listed.findIndex((part, index) => part !== installed[index]);
+    expect(firstDifference === -1 || listed[firstDifference] < installed[firstDifference]).toBe(
+      true,
+    );
   });
 
-  it("holds no missing or grouping key that BCD addresses", () => {
+  it.runIf(keysMatchInstalledBcd)(
+    "draws every popular, deep and sampled key from BCD at the snapshot's source version",
+    () => {
+      const known = addressableKeys();
+      for (const key of [...committed.popular, ...committed.deep, ...committed.sampled]) {
+        expect(known.has(key), key).toBe(true);
+      }
+    },
+  );
+
+  it.runIf(keysMatchInstalledBcd)("holds no missing or grouping key that BCD addresses", () => {
     const known = addressableKeys();
     for (const key of [...committed.missing, ...committed.grouping]) {
       expect(known.has(key), key).toBe(false);
