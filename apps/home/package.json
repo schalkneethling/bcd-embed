@@ -17,7 +17,7 @@
     "@bcd-embed/schema": "workspace:*",
     "@fontsource-variable/inter-tight": "5.3.0",
     "@fontsource/jetbrains-mono": "5.3.0",
-    "@mdn/browser-compat-data": "8.1.9",
+    "@mdn/browser-compat-data": "8.1.10",
     "@schalkneethling/bcd-embed": "workspace:*",
     "astro": "7.4.13"
   },
