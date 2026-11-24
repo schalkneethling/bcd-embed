@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "@astrojs/starlight": "0.43.1",
-    "astro": "7.4.12",
+    "astro": "7.4.13",
     "astro-mermaid": "2.2.0",
     "mermaid": "12.3.0"
   },
   "devDependencies": {
-    "wrangler": "4.160.1"
+    "wrangler": "4.163.0"
   }
 }

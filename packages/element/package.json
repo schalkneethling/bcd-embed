@@ -75,13 +75,13 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "@vitejs/plugin-vue": "6.0.11",
-    "postcss": "8.5.32",
+    "postcss": "8.5.33",
     "publint": "0.3.25",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "size-limit": "14.3.0",
-    "svelte": "5.57.3",
-    "vue": "3.5.45"
+    "svelte": "5.59.1",
+    "vue": "3.5.46"
   },
   "customElements": "custom-elements.json"
 }
