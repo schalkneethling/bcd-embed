@@ -115,7 +115,11 @@ lifetime (issue #259).
 change only the BCD pins and the lockfile, so it cannot regenerate the list. While the installed release is
 newer than `sourceVersion`, `tests/load-test.test.ts` skips its two checks against the installed data. Those
 checks are that every listed key still exists, and that no `missing` or `grouping` key has become addressable.
-Regenerate the list once the BCD update is on `main`, so the checks run again:
+The list also has to name the snapshot the live Worker serves, because the script requests that snapshot's
+paths. So regenerate it only after the new snapshot is published and live, not when the BCD update reaches
+`main`. In the same pull request, change the snapshot that `tests/load-test.test.ts` expects ("names the
+snapshot that the live Worker serves") and the snapshot named in this README's table. The skipped checks then
+run again:
 
 ```sh
 node packages/generator/dist/bin.js --out /tmp/bcd-artifacts \
