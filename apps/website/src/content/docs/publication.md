@@ -281,16 +281,25 @@ R2 bills writes and listings as Class A operations and reads as Class B. The
 publisher counts both and prints them with its result, so a release that
 changes far more than expected is visible in the job log.
 
-| Publication                | Objects written | Storage added | Measured from      |
-| -------------------------- | --------------- | ------------- | ------------------ |
-| The first one, BCD 8.1.9   | 122,312         | 586 MB        | the run against R2 |
-| 8.1.7 → 8.1.8, one release | 3,158           | 55.5 MB       | snapshots on disk  |
+| Publication                 | Objects written | Storage added | Measured from      |
+| --------------------------- | --------------- | ------------- | ------------------ |
+| The first one, BCD 8.1.9    | 122,312         | 586 MB        | the run against R2 |
+| 8.1.9 → 8.1.10, one release | 7,398           | not measured  | the run against R2 |
+| 8.1.7 → 8.1.8, one release  | 3,158           | 55.5 MB       | snapshots on disk  |
 
 The first row is every blob in three encodings, 256 shards and a root, written
 on 14 November 2026. Its storage figure is the whole bucket afterwards, as
 `wrangler r2 bucket info` reported it on 16 November. The second row is 972 new
 blobs in three encodings, 241 shards and a root, measured by comparing two
-generated snapshots; no release-to-release publication has run against R2 yet.
+generated snapshots.
+
+The 8.1.10 row is the first publication from one release to the next against
+R2, which ran on 25 November 2026. It wrote 2,381 new blobs in three encodings,
+254 shards and a root, and its job log reported 7,597 Class A and 8,434 Class B
+operations and no deletions. It wrote more than the 8.1.8 estimate because
+8.1.10 changed more generated content than 8.1.8 did, so the estimate is a
+guide, not a ceiling. Its storage was not measured on its own, because the
+bucket also holds the contract 1.1.0 snapshots published since the first row.
 
 Each written object also costs one read to verify it. Cleanup adds about 257
 reads for each snapshot `meta.json` lists, and one listing for every 1,000
