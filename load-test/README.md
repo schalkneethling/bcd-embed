@@ -9,7 +9,7 @@ requests per second. The plan, the pass marks and the limits of what it shows ar
 | File                 | Purpose                                                                                                                     |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `load-test.js`       | The k6 script. It has no default host.                                                                                      |
-| `keys.json`          | Public feature keys for snapshot `bcd-8.1.9-gen-0.1.0`, in five groups. Regenerate it with `build-key-list.mjs`.            |
+| `keys.json`          | Public feature keys for snapshot `bcd-8.1.10-gen-0.1.0`, in five groups. Regenerate it with `build-key-list.mjs`.           |
 | `build-key-list.mjs` | Writes `keys.json` from a locally generated artifact folder. It sends no request.                                           |
 | `local-server.mjs`   | The repository's request handler over that folder, on `127.0.0.1`. The target for every local run.                          |
 | `lib/`               | Plain modules that both k6 and the unit tests (`tests/load-test.test.ts`) load: the mix, byte comparison, the target guard. |

@@ -24,7 +24,7 @@ any ancestor, or on the document receives them. Neither can be cancelled.
 `mode` names the input that supplied the data, or failed to: `"data"`,
 `"source"`, or `"fetch"`. `snapshot` is the value of the API's
 `bcd-embed-snapshot` response header in fetch mode, such as
-`bcd-8.1.9-gen-0.0.0`, and `null` in the other two modes. `status` and `code`
+`bcd-8.1.10-gen-0.1.0`, and `null` in the other two modes. `status` and `code`
 are `null` for every reason except `http`.
 
 ## Error reasons

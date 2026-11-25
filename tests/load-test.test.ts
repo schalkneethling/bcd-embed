@@ -496,7 +496,7 @@ describe("the committed key list (load-test/keys.json)", () => {
   });
 
   it("names the snapshot that the live Worker serves for contract 1.1.0", () => {
-    expect(committed.snapshot).toBe("bcd-8.1.9-gen-0.1.0");
+    expect(committed.snapshot).toBe("bcd-8.1.10-gen-0.1.0");
     expect(committed.contract).toBe("1.1.0");
   });
 
