@@ -377,7 +377,22 @@ describe("the key list builder", () => {
       expect(known.has(key)).toBe(true);
     }
     expect(list.deep.every((key) => key.split(".").length >= 6)).toBe(true);
-    expect(list.sampled.length).toBeLessThanOrEqual(50);
+    expect(list.sampled.length).toBe(50);
+  });
+
+  it("takes exactly the sampled count, without repeats, whatever the index size", () => {
+    // A whole-number stride of ceil(size / 50) took 49 keys from 1,071, a stride of 22.
+    for (const size of [1071, 1276, 2599]) {
+      const list = buildKeyList({ ...input, indexKeys: indexKeys.slice(0, size) });
+      expect(list.sampled).toHaveLength(50);
+      expect(new Set(list.sampled).size).toBe(50);
+    }
+  });
+
+  it("samples every key when the index is smaller than the sampled count", () => {
+    const small = [...POPULAR_CANDIDATES];
+    const list = buildKeyList({ ...input, indexKeys: small, sampledCount: small.length + 10 });
+    expect(list.sampled).toEqual([...new Set(small)].sort());
   });
 
   it("samples all the way to the end of the sorted keys", () => {
@@ -481,7 +496,7 @@ describe("the committed key list (load-test/keys.json)", () => {
   });
 
   it("names the snapshot that the live Worker serves for contract 1.1.0", () => {
-    expect(committed.snapshot).toBe("bcd-8.1.9-gen-0.1.0");
+    expect(committed.snapshot).toBe("bcd-8.1.10-gen-0.1.0");
     expect(committed.contract).toBe("1.1.0");
   });
 

@@ -99,13 +99,15 @@ export const buildKeyList = ({
   }
   const everyKey = [...keys].sort();
 
-  // ceil, so the stride reaches the end of the sorted keys. floor would take `sampledCount` keys
-  // from the first part of the list and never sample the rest.
-  const stride = Math.max(1, Math.ceil(everyKey.length / sampledCount));
-  const sampled = [];
-  for (let index = 0; index < everyKey.length && sampled.length < sampledCount; index += stride) {
-    sampled.push(everyKey[index]);
-  }
+  // Pick key i at floor(i * length / count), a fractional stride, so the sample always holds
+  // `sampledCount` keys spread over the whole sorted list. A whole-number stride cannot do both:
+  // ceil(length / count) reaches the end but takes as few as half the keys (21,003 keys at a stride
+  // of 22 gave 955), and floor takes `sampledCount` keys from the start and never reaches the end.
+  const sampledLength = Math.min(sampledCount, everyKey.length);
+  const sampled = Array.from(
+    { length: sampledLength },
+    (_, index) => everyKey[Math.floor((index * everyKey.length) / sampledLength)],
+  );
 
   // Deep keys are spread evenly over the namespaces that have them, not in proportion to size,
   // because one namespace (webextensions) holds most of the deep keys and would fill the group.

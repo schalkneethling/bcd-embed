@@ -23,6 +23,6 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
-    "wrangler": "4.160.1"
+    "wrangler": "4.166.0"
   }
 }
