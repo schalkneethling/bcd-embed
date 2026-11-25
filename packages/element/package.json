@@ -1,6 +1,6 @@
 {
   "name": "@schalkneethling/bcd-embed",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "description": "The <bcd-compat-table> web component: embeddable browser compatibility tables from MDN Browser Compatibility Data.",
   "keywords": [
     "bcd",
